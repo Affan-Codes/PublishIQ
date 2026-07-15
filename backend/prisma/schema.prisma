@@ -1,0 +1,436 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum ContentTypeStatus {
+  Active
+  Disabled
+}
+
+enum PromptStatus {
+  Draft
+  Active
+  Deprecated
+}
+
+enum AssetType {
+  Background
+  Font
+  Music
+  Logo
+  Watermark
+  Animation
+  Icon
+}
+
+enum AssetStatus {
+  Active
+  Disabled
+}
+
+enum LicenseStatus {
+  Confirmed
+  Unconfirmed
+}
+
+enum ContentProfileStatus {
+  Active
+  Disabled
+}
+
+enum Language {
+  English
+  Hindi
+  Urdu
+}
+
+enum AutomationMode {
+  Manual
+  Automatic
+  Hybrid
+}
+
+enum ChannelStatus {
+  Active
+  Disabled
+}
+
+enum Platform {
+  YouTube
+  Instagram
+}
+
+enum HealthStatus {
+  Healthy
+  Unhealthy
+  Expired
+  Unknown
+}
+
+enum JobType {
+  ContentPipeline
+  Cleanup
+  Archive
+  RetryPublish
+  TokenRefresh
+  HealthCheck
+}
+
+enum PipelineStage {
+  Draft
+  GeneratingContent
+  Validating
+  GeneratingImage
+  GeneratingVideo
+  SelectingMusic
+  GeneratingCaption
+  GeneratingHashtags
+  Queued
+  Publishing
+  Published
+  Failed
+  Archived
+}
+
+enum PublishStatus {
+  Unpublished
+  Published
+  PublishFailed
+}
+
+enum PublishRecordStatus {
+  Success
+  Failure
+}
+
+enum LogLevel {
+  Debug
+  Info
+  Warn
+  Error
+}
+
+model Workspace {
+  id                  String                @id @default(uuid()) @db.Uuid
+  name                String
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  
+  contentTypes        ContentType[]
+  prompts             Prompt[]
+  templates           Template[]
+  assets              Asset[]
+  contentProfiles     ContentProfile[]
+  channels            Channel[]
+  platformConnections PlatformConnection[]
+  jobs                Job[]
+  generatedContents   GeneratedContent[]
+  domainEvents        DomainEvent[]
+  notifications       Notification[]
+  publishingRecords   PublishingRecord[]
+  featureFlags        FeatureFlag[]
+  systemConfigs       SystemConfiguration[]
+  logs                Log[]
+}
+
+model ContentType {
+  id              String            @id @default(uuid()) @db.Uuid
+  workspaceId     String            @db.Uuid
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name            String
+  status          ContentTypeStatus
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  contentProfiles ContentProfile[]
+}
+
+model Prompt {
+  id          String         @id @default(uuid()) @db.Uuid
+  workspaceId String         @db.Uuid
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name        String
+  status      PromptStatus
+  notes       String?        @db.Text
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  versions    PromptVersion[]
+}
+
+model PromptVersion {
+  id            String         @id @default(uuid()) @db.Uuid
+  promptId      String         @db.Uuid
+  prompt        Prompt         @relation(fields: [promptId], references: [id], onDelete: Restrict)
+  versionNumber Int
+  body          String         @db.Text
+  status        PromptStatus
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now())
+  
+  contentProfiles ContentProfile[]
+
+  @@unique([promptId, versionNumber])
+}
+
+model Template {
+  id          String            @id @default(uuid()) @db.Uuid
+  workspaceId String            @db.Uuid
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name        String
+  status      PromptStatus
+  notes       String?           @db.Text
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  versions    TemplateVersion[]
+}
+
+model TemplateVersion {
+  id             String          @id @default(uuid()) @db.Uuid
+  templateId     String          @db.Uuid
+  template       Template        @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  versionNumber  Int
+  componentPath  String
+  componentSource String?         @db.Text
+  status         PromptStatus
+  notes          String?         @db.Text
+  createdAt      DateTime        @default(now())
+  
+  contentProfiles ContentProfile[]
+
+  @@unique([templateId, versionNumber])
+}
+
+model Asset {
+  id            String        @id @default(uuid()) @db.Uuid
+  workspaceId   String        @db.Uuid
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  type          AssetType
+  name          String
+  status        AssetStatus
+  filePath      String
+  metadata      Json
+  licenseStatus LicenseStatus?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model ContentProfile {
+  id                    String               @id @default(uuid()) @db.Uuid
+  workspaceId           String               @db.Uuid
+  workspace             Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name                  String
+  status                ContentProfileStatus
+  contentTypeId         String               @db.Uuid
+  contentType           ContentType          @relation(fields: [contentTypeId], references: [id], onDelete: Restrict)
+  promptVersionId       String               @db.Uuid
+  promptVersion         PromptVersion        @relation(fields: [promptVersionId], references: [id], onDelete: Restrict)
+  templateVersionId     String               @db.Uuid
+  templateVersion       TemplateVersion      @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  language              Language
+  tone                  String
+  writingStyle          String
+  promptVariables       Json
+  brandingRules         Json
+  watermarkRules        Json
+  captionStrategy       Json
+  hashtagStrategy       Json
+  musicSelectionRules   Json
+  renderingConfiguration Json
+  validationRules       Json
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  channels              Channel[]
+  jobs                  Job[]
+  generatedContents     GeneratedContent[]
+}
+
+model Channel {
+  id                     String             @id @default(uuid()) @db.Uuid
+  workspaceId            String             @db.Uuid
+  workspace              Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name                   String
+  contentProfileId       String             @db.Uuid
+  contentProfile         ContentProfile     @relation(fields: [contentProfileId], references: [id], onDelete: Restrict)
+  automationMode         AutomationMode
+  status                 ChannelStatus
+  scheduleCron           String
+  publishingConfiguration Json
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  jobs                   Job[]
+  publishingRecords      PublishingRecord[]
+  platformConnections    ChannelPlatformConnection[]
+}
+
+model PlatformConnection {
+  id              String         @id @default(uuid()) @db.Uuid
+  workspaceId     String         @db.Uuid
+  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  platform        Platform
+  accessTokenEnc  Bytes
+  refreshTokenEnc Bytes
+  expiresAt       DateTime
+  scopes          String[]
+  healthStatus    HealthStatus
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  channels        ChannelPlatformConnection[]
+  publishingRecords PublishingRecord[]
+}
+
+model ChannelPlatformConnection {
+  channelId            String             @db.Uuid
+  channel              Channel            @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  platformConnectionId String             @db.Uuid
+  platformConnection   PlatformConnection @relation(fields: [platformConnectionId], references: [id], onDelete: Restrict)
+
+  @@id([channelId, platformConnectionId])
+}
+
+model Job {
+  id                String         @id @default(uuid()) @db.Uuid
+  workspaceId       String         @db.Uuid
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  jobType           JobType
+  channelId         String?        @db.Uuid
+  channel           Channel?       @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  contentProfileId  String?        @db.Uuid
+  contentProfile    ContentProfile? @relation(fields: [contentProfileId], references: [id], onDelete: Restrict)
+  configSnapshot    Json?
+  pipelineStage     PipelineStage?
+  maintenanceState  String?
+  failureStage      String?
+  failureReason     String?        @db.Text
+  retryCount        Int            @default(0)
+  failedAt          DateTime?
+  generatedText     String?        @db.Text
+  imageUrl          String?
+  videoUrl          String?
+  caption           String?        @db.Text
+  hashtags          Json?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  generatedContent  GeneratedContent?
+  domainEvents      DomainEvent[]
+  publishingRecords PublishingRecord[]
+
+  @@index([workspaceId, jobType, pipelineStage])
+  @@index([channelId, createdAt])
+}
+
+model GeneratedContent {
+  id                       String            @id @default(uuid()) @db.Uuid
+  workspaceId              String            @db.Uuid
+  workspace                Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  jobId                    String            @unique @db.Uuid
+  job                      Job               @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  sourceGeneratedContentId String?           @db.Uuid
+  contentProfileId         String            @db.Uuid
+  contentProfile           ContentProfile    @relation(fields: [contentProfileId], references: [id], onDelete: Restrict)
+  promptVersionId          String            @db.Uuid
+  templateVersionId        String            @db.Uuid
+  language                 Language
+  contentTypeId            String            @db.Uuid
+  text                     String            @db.Text
+  imageUrl                 String?
+  videoUrl                 String?
+  caption                  String?           @db.Text
+  hashtags                 Json?
+  publishStatus            PublishStatus
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+
+  @@index([contentProfileId])
+  @@index([publishStatus])
+}
+
+model DomainEvent {
+  id           String        @id @default(uuid()) @db.Uuid
+  workspaceId  String        @db.Uuid
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  jobId        String?       @db.Uuid
+  job          Job?          @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  type         String
+  payload      Json
+  createdAt    DateTime      @default(now())
+
+  notifications Notification[]
+
+  @@index([jobId, createdAt])
+}
+
+model Notification {
+  id            String      @id @default(uuid()) @db.Uuid
+  workspaceId   String      @db.Uuid
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  domainEventId String      @db.Uuid
+  domainEvent   DomainEvent @relation(fields: [domainEventId], references: [id], onDelete: Restrict)
+  message       String
+  readAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([readAt])
+}
+
+model PublishingRecord {
+  id                   String             @id @default(uuid()) @db.Uuid
+  workspaceId          String             @db.Uuid
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  jobId                String             @db.Uuid
+  job                  Job                @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  channelId            String             @db.Uuid
+  channel              Channel            @relation(fields: [channelId], references: [id], onDelete: Restrict)
+  platformConnectionId String             @db.Uuid
+  platformConnection   PlatformConnection @relation(fields: [platformConnectionId], references: [id], onDelete: Restrict)
+  contentTypeSnapshot  String
+  status               PublishRecordStatus
+  platformResponse     Json?
+  publishedAt          DateTime
+
+  @@index([channelId, publishedAt])
+  @@index([status])
+  @@index([contentTypeSnapshot])
+}
+
+model FeatureFlag {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  key         String
+  enabled     Boolean
+  description String
+
+  @@unique([workspaceId, key])
+}
+
+model SystemConfiguration {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  key         String
+  value       Json
+
+  @@unique([workspaceId, key])
+}
+
+model Log {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  level       LogLevel
+  message     String    @db.Text
+  context     Json?
+  createdAt   DateTime  @default(now())
+  
+  @@index([createdAt])
+}
