@@ -2,6 +2,12 @@ import { Router } from 'express';
 import healthRouter from './health.router.js';
 import authRouter from './auth.router.js';
 import notificationsRouter from './notifications.router.js';
+import workspacesRouter from './workspaces.router.js';
+import contentTypesRouter from './content-types.router.js';
+import promptsRouter from './prompts.router.js';
+import templatesRouter from './templates.router.js';
+import assetsRouter from './assets.router.js';
+import contentProfilesRouter from './content-profiles.router.js';
 
 const router = Router();
 
@@ -9,5 +15,13 @@ const router = Router();
 router.use('/', healthRouter);
 router.use('/', authRouter);
 router.use('/', notificationsRouter);
+
+// Mount core domains
+router.use('/', workspacesRouter);
+router.use('/', contentTypesRouter);
+router.use('/', promptsRouter);
+router.use('/', templatesRouter);
+router.use('/', assetsRouter);
+router.use('/', contentProfilesRouter);
 
 export default router;

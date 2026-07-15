@@ -9,11 +9,14 @@ import DashboardLayout from './components/shared/DashboardLayout.js';
 import DashboardOverview from './routes/dashboard/DashboardOverview.js';
 import ChannelsView from './routes/channels/ChannelsView.js';
 import ContentProfilesView from './routes/content-profiles/ContentProfilesView.js';
+import PromptsView from './routes/prompts/PromptsView.js';
 import TemplatesView from './routes/templates/TemplatesView.js';
 import JobsView from './routes/jobs/JobsView.js';
 import QueueView from './routes/queue/QueueView.js';
 import PublishingHistoryView from './routes/publishing-history/PublishingHistoryView.js';
 import AssetsView from './routes/assets/AssetsView.js';
+import ContentTypesView from './routes/content-types/ContentTypesView.js';
+import WorkspacesView from './routes/workspaces/WorkspacesView.js';
 import PlatformConnectionsView from './routes/platform-connections/PlatformConnectionsView.js';
 import LogsView from './routes/logs/LogsView.js';
 import SettingsView from './routes/settings/SettingsView.js';
@@ -88,11 +91,14 @@ export const AppContent: React.FC = () => {
             <Route path="/" element={<DashboardOverview />} />
             <Route path="/channels" element={<ChannelsView />} />
             <Route path="/content-profiles" element={<ContentProfilesView />} />
+            <Route path="/prompts" element={<PromptsView />} />
             <Route path="/templates" element={<TemplatesView />} />
             <Route path="/jobs" element={<JobsView />} />
             <Route path="/queue" element={<QueueView />} />
             <Route path="/publishing-history" element={<PublishingHistoryView />} />
             <Route path="/assets" element={<AssetsView />} />
+            <Route path="/content-types" element={<ContentTypesView />} />
+            <Route path="/workspaces" element={<WorkspacesView />} />
             <Route path="/platform-connections" element={<PlatformConnectionsView />} />
             <Route path="/logs" element={<LogsView />} />
             <Route path="/settings" element={<SettingsView />} />
