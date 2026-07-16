@@ -136,7 +136,7 @@ export const TemplatesView: React.FC = () => {
     try {
       const res = await apiClient.get(`/templates/${template.id}`);
       setHistoryTemplate(res.data.data);
-    } catch (err) {
+    } catch {
       alert('Failed to load version details');
     }
   };

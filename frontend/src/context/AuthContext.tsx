@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import apiClient from '../lib/api-client.js';
 
-interface Operator {
+export interface Operator {
+  id: string;
   email: string;
-  workspaceId: string;
+  role: 'Owner' | 'Administrator' | 'User';
+  workspaceId: string | null;
 }
 
 interface AuthContextType {

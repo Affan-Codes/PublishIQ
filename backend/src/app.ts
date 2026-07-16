@@ -1,12 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 import v1Router from './routes/v1.router.js';
 import errorHandler from './middlewares/error-handler.js';
 import { logger } from './utils/logger.js';
 
 export const app = express();
+
+// Secure HTTP headers
+app.use(helmet());
 
 // Configure CORS
 app.use(
@@ -15,6 +20,22 @@ app.use(
     credentials: true,
   })
 );
+
+// Rate limiter for authentication login
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // Limit to 20 attempts
+  message: {
+    success: false,
+    error: {
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Too many login attempts from this IP, please try again after 15 minutes.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1/auth/login', loginLimiter);
 
 // Logging middleware
 app.use((req, res, next) => {

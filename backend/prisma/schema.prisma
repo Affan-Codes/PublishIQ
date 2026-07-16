@@ -62,6 +62,7 @@ enum ChannelStatus {
 enum Platform {
   YouTube
   Instagram
+  Facebook
 }
 
 enum HealthStatus {
@@ -135,6 +136,7 @@ model Workspace {
   featureFlags        FeatureFlag[]
   systemConfigs       SystemConfiguration[]
   logs                Log[]
+  users               User[]
 }
 
 model ContentType {
@@ -270,18 +272,24 @@ model Channel {
   platformConnections    ChannelPlatformConnection[]
 }
 
+enum ConnectionStatus {
+  Active
+  Disabled
+}
+
 model PlatformConnection {
-  id              String         @id @default(uuid()) @db.Uuid
-  workspaceId     String         @db.Uuid
-  workspace       Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  id              String           @id @default(uuid()) @db.Uuid
+  workspaceId     String           @db.Uuid
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   platform        Platform
   accessTokenEnc  Bytes
   refreshTokenEnc Bytes
   expiresAt       DateTime
   scopes          String[]
   healthStatus    HealthStatus
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  status          ConnectionStatus @default(Active)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   channels        ChannelPlatformConnection[]
   publishingRecords PublishingRecord[]
@@ -433,4 +441,32 @@ model Log {
   createdAt   DateTime  @default(now())
   
   @@index([createdAt])
+}
+
+enum Role {
+  Owner
+  Administrator
+  User
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(User)
+  workspaceId  String?   @db.Uuid
+  workspace    Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

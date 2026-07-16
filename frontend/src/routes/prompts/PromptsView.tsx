@@ -134,7 +134,7 @@ export const PromptsView: React.FC = () => {
     try {
       const res = await apiClient.get(`/prompts/${prompt.id}`);
       setHistoryPrompt(res.data.data);
-    } catch (err) {
+    } catch {
       alert('Failed to load version details');
     }
   };

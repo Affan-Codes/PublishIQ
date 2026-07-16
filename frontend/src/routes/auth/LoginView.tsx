@@ -1,27 +1,33 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { useAuth } from '../../context/AuthContext.js';
 import { useNotifications } from '../../context/NotificationContext.js';
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address format'),
+  password: z.string().min(4, 'Password must be at least 4 characters long'),
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export const LoginView: React.FC = () => {
   const { login } = useAuth();
   const { addToast } = useNotifications();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) {
-      addToast('Please fill in all fields', 'error');
-      return;
-    }
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+  });
 
+  const onSubmit = async (data: LoginFormValues) => {
     setIsSubmitting(true);
     try {
-      await login(email, password);
-      addToast('Successfully signed in as operator', 'success');
+      await login(data.email, data.password);
+      addToast('Successfully signed in', 'success');
       navigate('/');
     } catch (err: any) {
       addToast(err.message || 'Login failed. Please verify credentials.', 'error');
@@ -38,19 +44,20 @@ export const LoginView: React.FC = () => {
           <p className="mt-2 text-sm text-[#9c9cb0]">Sign in to the operator dashboard</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
               Operator Email
             </label>
             <input
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               placeholder="operator@publishiq.com"
+              {...register('email')}
               className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-3 text-sm text-white placeholder-[#6e6e80] outline-none transition focus:border-purple-500"
-              required
             />
+            {errors.email && (
+              <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>
+            )}
           </div>
 
           <div>
@@ -59,18 +66,19 @@ export const LoginView: React.FC = () => {
             </label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              {...register('password')}
               className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-3 text-sm text-white placeholder-[#6e6e80] outline-none transition focus:border-purple-500"
-              required
             />
+            {errors.password && (
+              <p className="mt-1 text-xs text-red-400">{errors.password.message}</p>
+            )}
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center rounded-lg bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:bg-purple-600/50"
+            className="flex w-full items-center justify-center rounded-lg bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:bg-purple-600/50 cursor-pointer"
           >
             {isSubmitting ? 'Verifying...' : 'Sign In as Operator'}
           </button>
@@ -78,7 +86,7 @@ export const LoginView: React.FC = () => {
 
         <div className="mt-8 border-t border-[#1a1a24] pt-6 text-center">
           <p className="text-xs text-[#6e6e80]">
-            System configured for single-operator access.
+            System configured for secure operator access.
           </p>
         </div>
       </div>

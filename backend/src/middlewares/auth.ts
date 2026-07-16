@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
-import { UnauthorizedError } from '../errors/custom-errors.js';
+import { Role } from '@prisma/client';
+import authService from '../services/auth.service.js';
+import { prisma } from '../database/db.js';
+import { UnauthorizedError, ForbiddenError } from '../errors/custom-errors.js';
 
 export interface OperatorPayload {
+  id: string;
   email: string;
-  workspaceId: string;
+  role: Role;
+  workspaceId: string | null;
 }
 
 declare global {
@@ -17,21 +20,65 @@ declare global {
   }
 }
 
-export const requireAuth = (req: Request, res: Response, next: NextFunction): void => {
+export const requireAuth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const token = req.cookies?.session;
 
   if (!token) {
-    throw new UnauthorizedError('Authentication session token is missing');
+    next(new UnauthorizedError('Authentication session token is missing'));
+    return;
   }
 
   try {
-    const payload = jwt.verify(token, env.SESSION_SECRET) as OperatorPayload;
-    req.operator = payload;
-    req.workspaceId = payload.workspaceId;
+    const session = await authService.validateSession(token);
+    
+    // Set cookie again in case it was renewed
+    res.cookie('session', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      expires: session.expiresAt,
+    });
+
+    let workspaceId = session.user.workspaceId;
+    if (!workspaceId) {
+      const workspace = await prisma.workspace.findFirst();
+      workspaceId = workspace?.id ?? null;
+    }
+
+    req.operator = {
+      id: session.user.id,
+      email: session.user.email,
+      role: session.user.role,
+      workspaceId,
+    };
+    if (workspaceId) {
+      req.workspaceId = workspaceId;
+    }
+
     next();
   } catch (error) {
-    throw new UnauthorizedError('Invalid or expired authentication session');
+    next(error);
   }
+};
+
+export const requireRole = (allowedRoles: Role[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.operator) {
+      next(new UnauthorizedError('Authentication required'));
+      return;
+    }
+
+    if (!allowedRoles.includes(req.operator.role)) {
+      next(new ForbiddenError('You do not have permission to access this resource'));
+      return;
+    }
+
+    next();
+  };
 };
 
 export default requireAuth;
