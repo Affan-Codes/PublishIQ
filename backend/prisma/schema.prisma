@@ -350,6 +350,8 @@ model GeneratedContent {
   language                 Language
   contentTypeId            String            @db.Uuid
   text                     String            @db.Text
+  textHash                 String?
+  metadata                 Json?
   imageUrl                 String?
   videoUrl                 String?
   caption                  String?           @db.Text
@@ -360,6 +362,7 @@ model GeneratedContent {
 
   @@index([contentProfileId])
   @@index([publishStatus])
+  @@index([textHash])
 }
 
 model DomainEvent {

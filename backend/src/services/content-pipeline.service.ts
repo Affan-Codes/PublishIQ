@@ -1,47 +1,59 @@
-import { PipelineStage, PublishStatus } from '@prisma/client';
+import { PipelineStage, PublishStatus, Job, Asset } from '@prisma/client';
 import { jobRepository } from '../repositories/job.repository.js';
 import { geminiProvider } from '../providers/ai/gemini.provider.js';
-import { localDiskStorageProvider } from '../providers/storage/local-disk.provider.js';
-import { youtubeAdapter } from '../providers/publishing/youtube.provider.js';
-import { instagramAdapter } from '../providers/publishing/instagram.provider.js';
+import { renderingService } from './rendering.service.js';
+import { videoService } from './video.service.js';
+import { systemConfigCache } from '../config/system-config.cache.js';
+import { getNormalizedHash } from '../utils/normalization.js';
 import { logger } from '../utils/logger.js';
-import { ValidationError, ExternalProviderError } from '../errors/custom-errors.js';
+import { ValidationError, NotFoundError, ExternalProviderError } from '../errors/custom-errors.js';
+import { prisma } from '../database/db.js';
 
 export interface PipelineOptions {
   onStageComplete?: (stage: PipelineStage) => Promise<void>;
 }
 
+/**
+ * Executes a single stage of the content pipeline.
+ */
 async function processStage(jobId: string, stage: PipelineStage): Promise<void> {
   const job = await jobRepository.getById(jobId);
-  if (!job) throw new Error('Job not found inside processStage');
+  if (!job) throw new NotFoundError('Job not found inside processStage');
+
+  const profile = job.contentProfile;
+  if (!profile) throw new ValidationError('Job is missing content profile settings');
 
   switch (stage) {
     case PipelineStage.GeneratingContent: {
-      let generatedText = '';
-      try {
-        if (job.contentProfile?.promptVersionId) {
-          const promptVersion = await jobRepository.getPromptVersionById(job.contentProfile.promptVersionId);
-          if (promptVersion) {
-            const aiResponse = await geminiProvider.generate(
-              { body: promptVersion.body, versionNumber: promptVersion.versionNumber },
-              (job.contentProfile.promptVariables as Record<string, unknown>) || {}
-            );
-            generatedText = aiResponse.text;
-          }
-        }
-      } catch (error) {
-        logger.warn({ jobId, error }, 'AI generation failed, using fallback content for testing');
+      // If we already have generated text (e.g. from duplication / clone), we skip generation
+      if (job.generatedText) {
+        logger.info({ jobId }, 'Skipping AI generation, text already prefilled from duplication/clone');
+        await jobRepository.transitionJobStage(jobId, stage, {
+          generatedText: job.generatedText,
+        });
+        break;
       }
 
-      if (!generatedText) {
-        generatedText = 'Simplicity is the ultimate sophistication. - Leonardo da Vinci';
+      const promptVersion = await jobRepository.getPromptVersionById(profile.promptVersionId);
+      if (!promptVersion) {
+        throw new NotFoundError('Prompt version pinned to content profile not found');
       }
 
+      // Call Gemini Provider for structured JSON response
+      const variables = (profile.promptVariables as Record<string, unknown>) || {};
+      const aiResponse = await geminiProvider.generate(
+        { body: promptVersion.body, versionNumber: promptVersion.versionNumber },
+        variables
+      );
+
+      // Save generated quote, caption, and hashtags into Job record
       await jobRepository.transitionJobStage(jobId, stage, {
-        generatedText,
+        generatedText: aiResponse.text,
+        caption: aiResponse.metadata?.caption,
+        hashtags: aiResponse.metadata?.hashtags,
       }, {
         type: 'ContentGenerated',
-        payload: { jobId, text: generatedText },
+        payload: { jobId, text: aiResponse.text },
       });
       break;
     }
@@ -52,143 +64,165 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Validation failed: Empty output generated.');
       }
       if (text.length > 500) {
-        throw new ValidationError('Validation failed: Length exceeds maximum limit.');
+        throw new ValidationError('Validation failed: Quote length exceeds maximum limit of 500 characters.');
       }
 
-      if (text.toLowerCase().includes('profanity')) {
+      // Basic profanity check
+      const lowerText = text.toLowerCase();
+      const profanities = ['profanity', 'badword', 'abuse']; // extend if needed
+      if (profanities.some((word) => lowerText.includes(word))) {
         throw new ValidationError('Validation failed: Content contains prohibited terms.');
       }
 
-      const hashCount = await jobRepository.getDuplicateHashCount(text.trim());
-      if (hashCount > 0) {
+      // Exact duplicate detection using normalized hash
+      const hash = getNormalizedHash(text);
+      const duplicateCount = await prisma.generatedContent.count({
+        where: {
+          textHash: hash,
+        },
+      });
+
+      if (duplicateCount > 0) {
         throw new ValidationError('Validation failed: Duplicate content detected.');
       }
 
+      logger.info({ jobId }, 'Validation stage passed successfully');
       break;
     }
 
     case PipelineStage.GeneratingImage: {
-      const mockPngBuffer = Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-        'base64'
-      );
-      const relativeImagePath = `images/${jobId}_render.png`;
-      const imagePath = await localDiskStorageProvider.save(mockPngBuffer, relativeImagePath);
+      // Get branding and watermark configurations
+      const brandingRules = profile.brandingRules as Record<string, any> || {};
+      const watermarkRules = profile.watermarkRules as Record<string, any> || {};
+
+      const branding = brandingRules.logoText || profile.name || 'PUBLISHIQ';
+      const watermark = watermarkRules.text || '@publishiq';
+
+      // Call image renderer using Playwright
+      const imageUrl = await renderingService.renderImage(jobId, job.generatedText || '', {
+        language: profile.language,
+        branding,
+        watermark,
+      });
 
       await jobRepository.transitionJobStage(jobId, stage, {
-        imageUrl: imagePath,
+        imageUrl,
       }, {
         type: 'ImageGenerated',
-        payload: { jobId, imageUrl: imagePath },
-      });
-      break;
-    }
-
-    case PipelineStage.GeneratingVideo: {
-      const mockMp4Buffer = Buffer.from('MOCK_MP4_VIDEO_STREAM');
-      const relativeVideoPath = `videos/${jobId}_render.mp4`;
-      const videoPath = await localDiskStorageProvider.save(mockMp4Buffer, relativeVideoPath);
-
-      await jobRepository.transitionJobStage(jobId, stage, {
-        videoUrl: videoPath,
-      }, {
-        type: 'VideoGenerated',
-        payload: { jobId, videoUrl: videoPath },
+        payload: { jobId, imageUrl },
       });
       break;
     }
 
     case PipelineStage.SelectingMusic: {
+      // Read music selection rules (e.g. mood, genre, language)
+      const selectionRules = profile.musicSelectionRules as Record<string, any> || {};
+      
+      // Find all active and licensed music assets
+      const musicAssets = await prisma.asset.findMany({
+        where: {
+          workspaceId: job.workspaceId,
+          type: 'Music',
+          status: 'Active',
+          licenseStatus: 'Confirmed',
+        },
+      });
+
+      if (musicAssets.length === 0) {
+        throw new ValidationError('No active, licensed music track available in the asset library.');
+      }
+
+      // Filter music assets based on profile rules
+      let matchedAssets = musicAssets;
+      if (selectionRules.mood) {
+        matchedAssets = matchedAssets.filter((asset) => {
+          const meta = asset.metadata as Record<string, any> || {};
+          return String(meta.mood).toLowerCase() === String(selectionRules.mood).toLowerCase();
+        });
+      }
+      if (selectionRules.genre) {
+        matchedAssets = matchedAssets.filter((asset) => {
+          const meta = asset.metadata as Record<string, any> || {};
+          return String(meta.genre).toLowerCase() === String(selectionRules.genre).toLowerCase();
+        });
+      }
+
+      // Fallback to any active licensed track if no direct matches found to avoid pipeline block,
+      // but if we want strict enforcement, throw a validation error.
+      // The PRD says: "No music track matches selection rules -> Job fails at Selecting Music".
+      if (matchedAssets.length === 0) {
+        throw new ValidationError(`No music track matches profile selection rules: ${JSON.stringify(selectionRules)}`);
+      }
+
+      // Pick the first matched asset
+      const selectedAsset = matchedAssets[0]!;
+      logger.info({ jobId, assetId: selectedAsset.id }, 'Music track selected successfully');
+
+      // Store the selected music asset file path in configSnapshot (since no direct music column exists)
+      const updatedSnapshot = {
+        ...(job.configSnapshot as Record<string, any> || {}),
+        selectedMusicAssetId: selectedAsset.id,
+        selectedMusicFilePath: selectedAsset.filePath,
+      };
+
+      await jobRepository.transitionJobStage(jobId, stage, {
+        configSnapshot: updatedSnapshot,
+      });
+      break;
+    }
+
+    case PipelineStage.GeneratingVideo: {
+      if (!job.imageUrl) {
+        throw new ValidationError('Image URL is missing before video generation.');
+      }
+
+      // Load selected music file path from the configSnapshot
+      const snapshot = job.configSnapshot as Record<string, any> || {};
+      const musicFilePath = snapshot.selectedMusicFilePath;
+      if (!musicFilePath) {
+        throw new ValidationError('No music track was selected or stored in the snapshot.');
+      }
+
+      // Load duration from system configurations
+      const durationVal = await systemConfigCache.get<number>('default_video_duration_seconds');
+      const duration = typeof durationVal === 'number' ? durationVal : 15;
+
+      // Render the video using FFmpeg
+      const videoUrl = await videoService.renderVideo(jobId, job.imageUrl, musicFilePath, duration);
+
+      await jobRepository.transitionJobStage(jobId, stage, {
+        videoUrl,
+      }, {
+        type: 'VideoGenerated',
+        payload: { jobId, videoUrl },
+      });
       break;
     }
 
     case PipelineStage.GeneratingCaption: {
-      const text = job.generatedText || '';
-      const caption = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
-      await jobRepository.transitionJobStage(jobId, stage, {
-        caption,
-      });
+      // Captions are generated in GeneratingContent and stored. Here we just format or save.
+      if (!job.caption) {
+        const text = job.generatedText || '';
+        const fallbackCaption = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
+        await jobRepository.transitionJobStage(jobId, stage, {
+          caption: fallbackCaption,
+        });
+      } else {
+        await jobRepository.transitionJobStage(jobId, stage, {});
+      }
       break;
     }
 
     case PipelineStage.GeneratingHashtags: {
-      const hashtags = ['wisdom', 'quotes', 'daily', 'motivation'];
-      await jobRepository.transitionJobStage(jobId, stage, {
-        hashtags,
-      });
-      break;
-    }
-
-    case PipelineStage.Queued: {
-      break;
-    }
-
-    case PipelineStage.Publishing: {
-      const connections = await jobRepository.getChannelPlatformConnections(job.channelId || '');
-
-      if (connections.length === 0) {
-        logger.warn({ jobId }, 'No platform connections configured for publishing. Skipping external publish.');
-        break;
-      }
-
-      for (const conn of connections) {
-        const adapter = conn.platformConnection.platform === 'YouTube' 
-          ? youtubeAdapter 
-          : instagramAdapter;
-
-        const contentData = {
-          text: job.generatedText || '',
-          imageUrl: job.imageUrl,
-          videoUrl: job.videoUrl,
-          caption: job.caption,
-          hashtags: job.hashtags,
-        };
-
-        const violations = adapter.validate(contentData);
-        if (violations.length > 0) {
-          throw new ValidationError(
-            `Platform limit violations on ${adapter.platform}: ${violations.map((v) => v.message).join(', ')}`
-          );
-        }
-
-        const result = await adapter.publish(contentData, {
-          accessTokenEnc: conn.platformConnection.accessTokenEnc,
-          refreshTokenEnc: conn.platformConnection.refreshTokenEnc,
-          expiresAt: conn.platformConnection.expiresAt,
+      // Hashtags are generated in GeneratingContent. We just verify/ensure list format.
+      if (!job.hashtags) {
+        const fallbackHashtags = ['wisdom', 'quotes', 'daily', 'motivation'];
+        await jobRepository.transitionJobStage(jobId, stage, {
+          hashtags: fallbackHashtags,
         });
-
-        if (!result.success) {
-          throw new ExternalProviderError(adapter.platform, result.errorMessage || 'Publishing failed');
-        }
-
-        await jobRepository.createPublishingRecord({
-          workspaceId: job.workspaceId,
-          jobId: job.id,
-          channelId: job.channelId || '',
-          platformConnectionId: conn.platformConnectionId,
-          contentTypeSnapshot: job.contentProfile?.contentTypeId || 'unknown',
-          status: 'Success',
-          platformResponse: result.platformResponse || {},
-          publishedAt: new Date(),
-        });
+      } else {
+        await jobRepository.transitionJobStage(jobId, stage, {});
       }
-
-      await jobRepository.saveGeneratedContent({
-        workspaceId: job.workspaceId,
-        jobId: job.id,
-        contentProfileId: job.contentProfileId || '',
-        promptVersionId: job.contentProfile?.promptVersionId || '',
-        templateVersionId: job.contentProfile?.templateVersionId || '',
-        language: job.contentProfile?.language || 'English',
-        contentTypeId: job.contentProfile?.contentTypeId || '',
-        text: job.generatedText || '',
-        imageUrl: job.imageUrl,
-        videoUrl: job.videoUrl,
-        caption: job.caption,
-        hashtags: job.hashtags,
-        publishStatus: PublishStatus.Published,
-      });
-
       break;
     }
 
@@ -197,24 +231,26 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
   }
 }
 
+/**
+ * Runs the content pipeline stages for a Job.
+ */
 export async function runContentPipeline(jobId: string, options?: PipelineOptions): Promise<void> {
-  const job = await jobRepository.getById(jobId);
+  let job: any = await jobRepository.getById(jobId);
   if (!job) {
     throw new Error(`Job not found: ${jobId}`);
   }
 
   logger.info({ jobId }, 'Starting content pipeline execution');
 
+  // Pipeline sequence for Milestone 5 (we stop before publishing)
   const stages: PipelineStage[] = [
     PipelineStage.GeneratingContent,
     PipelineStage.Validating,
     PipelineStage.GeneratingImage,
-    PipelineStage.GeneratingVideo,
     PipelineStage.SelectingMusic,
+    PipelineStage.GeneratingVideo,
     PipelineStage.GeneratingCaption,
     PipelineStage.GeneratingHashtags,
-    PipelineStage.Queued,
-    PipelineStage.Publishing,
   ];
 
   let startIndex = 0;
@@ -230,31 +266,110 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
     for (let i = startIndex; i < stages.length; i++) {
       const stage = stages[i]!;
 
-      await jobRepository.transitionJobStage(job.id, stage, {}, {
+      // Transition stage to started
+      job = await jobRepository.transitionJobStage(job.id, stage, {}, {
         type: `${stage}Started`,
         payload: { jobId: job.id, message: `Pipeline stage ${stage} started` },
       });
 
-      await processStage(job.id, stage);
+      // Special handling for content generation + validation to enable duplicate regeneration loop
+      if (stage === PipelineStage.GeneratingContent) {
+        let attempts = 0;
+        const maxDuplicateRetriesVal = await systemConfigCache.get<number>('retry_limit.duplicate_regeneration');
+        const maxDuplicateRetries = typeof maxDuplicateRetriesVal === 'number' ? maxDuplicateRetriesVal : 5;
+
+        while (true) {
+          try {
+            // Run content generation
+            await processStage(job.id, PipelineStage.GeneratingContent);
+            
+            // Run validation immediately to check duplicates
+            await processStage(job.id, PipelineStage.Validating);
+            
+            // If validation succeeds, break generation/validation loop!
+            // We increment the loop counter in the outer loop for stages
+            i++; // skip validating stage execution in the next outer iteration since we ran it here
+            break;
+          } catch (err: any) {
+            if (err instanceof ValidationError && err.message.includes('Duplicate content detected')) {
+              attempts++;
+              if (attempts >= maxDuplicateRetries) {
+                throw new ValidationError(
+                  `Validation failed: Duplicate content detected. Automatically regenerated ${attempts} times but could not produce unique content.`
+                );
+              }
+              logger.warn({ jobId, attempts }, 'Duplicate content detected. Triggering automatic regeneration...');
+              
+              // Clear previous generation text/caption/hashtags to ensure a clean rerun
+              await jobRepository.transitionJobStage(job.id, PipelineStage.Draft, {
+                generatedText: null,
+                caption: null,
+                hashtags: null,
+              });
+              continue;
+            }
+            throw err; // rethrow other validation/network errors to fail the job
+          }
+        }
+      } else {
+        // Run standard stage execution
+        await processStage(job.id, stage);
+      }
 
       if (options?.onStageComplete) {
         await options.onStageComplete(stage);
       }
     }
 
-    await jobRepository.transitionJobStage(job.id, PipelineStage.Published, {
+    // Pipeline completed! Save GeneratedContent and mark job as Queued (waiting for manual approval/publishing)
+    const finalizedJob = await jobRepository.getById(job.id);
+    if (!finalizedJob) throw new Error('Job not found after pipeline execution');
+
+    // Store final generated content output in the database
+    await jobRepository.saveGeneratedContent({
+      workspaceId: finalizedJob.workspaceId,
+      jobId: finalizedJob.id,
+      contentProfileId: finalizedJob.contentProfileId || '',
+      promptVersionId: finalizedJob.contentProfile?.promptVersionId || '',
+      templateVersionId: finalizedJob.contentProfile?.templateVersionId || '',
+      language: finalizedJob.contentProfile?.language || 'English',
+      contentTypeId: finalizedJob.contentProfile?.contentTypeId || '',
+      text: finalizedJob.generatedText || '',
+      imageUrl: finalizedJob.imageUrl,
+      videoUrl: finalizedJob.videoUrl,
+      caption: finalizedJob.caption,
+      hashtags: finalizedJob.hashtags,
+      publishStatus: PublishStatus.Unpublished, // Saved as unpublished preview content
+    });
+
+    // Save hash on GeneratedContent for duplicate check
+    const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
+    const genContent = await prisma.generatedContent.findFirst({
+      where: { jobId: finalizedJob.id }
+    });
+    if (genContent) {
+      await prisma.generatedContent.update({
+        where: { id: genContent.id },
+        data: {
+          textHash: normalizedHash,
+        }
+      });
+    }
+
+    // Set job final stage to Queued (terminal stage for generation before publishing)
+    await jobRepository.transitionJobStage(job.id, PipelineStage.Queued, {
       failedAt: null,
       failureReason: null,
       failureStage: null,
     }, {
-      type: 'PublishSucceeded',
-      payload: { jobId: job.id, message: 'Content published successfully' },
+      type: 'ContentGenerated',
+      payload: { jobId: job.id, message: 'Content generated and rendered successfully' },
     });
 
-    logger.info({ jobId }, 'Content pipeline execution completed successfully');
+    logger.info({ jobId: job.id }, 'Content pipeline execution completed successfully');
   } catch (err: any) {
     const failedStage = job.pipelineStage || PipelineStage.GeneratingContent;
-    logger.error({ jobId, stage: failedStage, err }, 'Content pipeline stage failed');
+    logger.error({ jobId: job.id, stage: failedStage, err }, 'Content pipeline stage failed');
 
     const failureReason = err.message || 'Unknown error occurred during pipeline execution';
     const retryCount = (job.retryCount || 0) + 1;
@@ -265,11 +380,11 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       failureStage: failedStage.toString(),
       retryCount,
     }, {
-      type: 'PublishFailed',
+      type: 'JobFailed',
       payload: {
         jobId: job.id,
         stage: failedStage,
-        message: `Publish failed at stage ${failedStage}: ${failureReason}`,
+        message: `Pipeline failed at stage ${failedStage}: ${failureReason}`,
         retryCount,
       },
     });

@@ -124,6 +124,98 @@ async function main() {
   }
   console.log('Content types seeded.');
 
+  // 5. Seed default Prompts and PromptVersions
+  const defaultPrompt = await prisma.prompt.upsert({
+    where: { id: 'd3b07384-d113-495f-a558-9c5c8ee058c4' }, // deterministic UUID
+    update: {},
+    create: {
+      id: 'd3b07384-d113-495f-a558-9c5c8ee058c4',
+      workspaceId: workspace.id,
+      name: 'Default Content Generation Prompt',
+      status: 'Active',
+      notes: 'Initial default prompt version',
+    }
+  });
+
+  const promptBody = `You are an expert quote generator. Based on the Content Type: {{contentType}}, Language: {{language}}, and Tone: {{tone}}, generate a beautiful quote or Shayari.
+Response MUST be in structured JSON format matching this exact schema:
+{
+  "title": "A short descriptive title for the quote",
+  "quote": "The quote or Shayari text itself, shaped in beautiful formatting",
+  "caption": "A social media caption description",
+  "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
+  "metadata": {},
+  "language": "{{language}}",
+  "contentType": "{{contentType}}"
+}
+Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON string.`;
+
+  await prisma.promptVersion.upsert({
+    where: {
+      promptId_versionNumber: {
+        promptId: defaultPrompt.id,
+        versionNumber: 1,
+      }
+    },
+    update: { body: promptBody },
+    create: {
+      promptId: defaultPrompt.id,
+      versionNumber: 1,
+      body: promptBody,
+      status: 'Active',
+      notes: 'Initial version',
+    }
+  });
+  console.log('Default prompts seeded.');
+
+  // 6. Seed default Templates and TemplateVersions
+  const defaultTemplate = await prisma.template.upsert({
+    where: { id: 'e3b07384-d113-495f-a558-9c5c8ee058c4' }, // deterministic UUID
+    update: {},
+    create: {
+      id: 'e3b07384-d113-495f-a558-9c5c8ee058c4',
+      workspaceId: workspace.id,
+      name: 'Default Quote Template',
+      status: 'Active',
+      notes: 'Initial default template',
+    }
+  });
+
+  await prisma.templateVersion.upsert({
+    where: {
+      templateId_versionNumber: {
+        templateId: defaultTemplate.id,
+        versionNumber: 1,
+      }
+    },
+    update: {},
+    create: {
+      templateId: defaultTemplate.id,
+      versionNumber: 1,
+      componentPath: 'DefaultQuoteTemplate',
+      status: 'Active',
+      notes: 'Initial version',
+    }
+  });
+  console.log('Default templates seeded.');
+
+  // 7. Seed default Music Asset
+  await prisma.asset.upsert({
+    where: { id: 'f3b07384-d113-495f-a558-9c5c8ee058c4' }, // deterministic UUID
+    update: {},
+    create: {
+      id: 'f3b07384-d113-495f-a558-9c5c8ee058c4',
+      workspaceId: workspace.id,
+      type: 'Music',
+      name: 'Default Inspiring Acoustic',
+      status: 'Active',
+      filePath: 'music/default_inspiring_acoustic.mp3',
+      licenseStatus: 'Confirmed',
+      metadata: { mood: 'Inspiring', genre: 'Acoustic' },
+    }
+  });
+  console.log('Default music asset seeded.');
+
   console.log('Database seeding complete!');
 }
 

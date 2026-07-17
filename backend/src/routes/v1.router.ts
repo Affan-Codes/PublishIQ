@@ -11,6 +11,9 @@ import assetsRouter from './assets.router.js';
 import contentProfilesRouter from './content-profiles.router.js';
 import channelsRouter from './channels.router.js';
 import platformConnectionsRouter from './platform-connections.router.js';
+import jobsRouter from './jobs.router.js';
+import generatedContentsRouter from './generated-contents.router.js';
+import queueRouter from './queue.router.js';
 
 const router = Router();
 
@@ -29,5 +32,8 @@ router.use('/', assetsRouter);
 router.use('/', contentProfilesRouter);
 router.use('/', channelsRouter);
 router.use('/', platformConnectionsRouter);
+router.use('/', jobsRouter);
+router.use('/', generatedContentsRouter);
+router.use('/', queueRouter);
 
 export default router;
