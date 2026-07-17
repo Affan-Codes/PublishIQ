@@ -22,6 +22,7 @@ import LogsView from './routes/logs/LogsView.js';
 import SettingsView from './routes/settings/SettingsView.js';
 import LoginView from './routes/auth/LoginView.js';
 import NotFoundView from './routes/NotFoundView.js';
+import NotificationsView from './routes/notifications/NotificationsView.js';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -95,6 +96,7 @@ export const AppContent: React.FC = () => {
             <Route path="/templates" element={<TemplatesView />} />
             <Route path="/jobs" element={<JobsView />} />
             <Route path="/queue" element={<QueueView />} />
+            <Route path="/notifications" element={<NotificationsView />} />
             <Route path="/publishing-history" element={<PublishingHistoryView />} />
             <Route path="/assets" element={<AssetsView />} />
             <Route path="/content-types" element={<ContentTypesView />} />

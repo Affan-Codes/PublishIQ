@@ -8,7 +8,16 @@ const connection = getRedisInstance();
 // Helper to construct queue names with the prefix
 const getQueueName = (name: string) => `${env.QUEUE_PREFIX}:${name}`;
 
-export const contentPipelineQueue = new Queue(getQueueName('content-pipeline'), { connection: connection as any });
+export const contentPipelineQueue = new Queue(getQueueName('content-pipeline'), {
+  connection: connection as any,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 1000,
+    },
+  },
+});
 export const cleanupQueue = new Queue(getQueueName('cleanup'), { connection: connection as any });
 export const archiveQueue = new Queue(getQueueName('archive'), { connection: connection as any });
 export const retryPublishQueue = new Queue(getQueueName('retry-publish'), { connection: connection as any });

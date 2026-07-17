@@ -29,14 +29,14 @@ export const queueController = {
       // Define which stages map to which queue categories
       const waitingStages: PipelineStage[] = [PipelineStage.Draft, PipelineStage.Queued];
       const activeStages: PipelineStage[] = [
+        PipelineStage.Running,
         PipelineStage.GeneratingContent,
         PipelineStage.Validating,
-        PipelineStage.GeneratingImage,
-        PipelineStage.SelectingMusic,
-        PipelineStage.GeneratingVideo,
+        PipelineStage.RenderingImage,
+        PipelineStage.AttachingMusic,
+        PipelineStage.RenderingVideo,
         PipelineStage.GeneratingCaption,
         PipelineStage.GeneratingHashtags,
-        PipelineStage.Publishing,
       ];
 
       for (const group of groupings) {

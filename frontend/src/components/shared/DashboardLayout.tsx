@@ -117,7 +117,10 @@ export const DashboardLayout: React.FC = () => {
           {/* Right Header Controls */}
           <div className="flex items-center gap-4">
             <button
-              onClick={resetUnreadCount}
+              onClick={() => {
+                resetUnreadCount();
+                navigate('/notifications');
+              }}
               className="relative rounded-full p-2 text-[#9c9cb0] transition hover:bg-[#161620] hover:text-white"
             >
               <Bell className="h-5 w-5" />

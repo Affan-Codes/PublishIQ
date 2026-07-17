@@ -88,6 +88,32 @@ export const jobController = {
       next(error);
     }
   },
+
+  async approve(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const job = await jobService.approveJob(req.params.id as string, req.workspaceId!);
+      res.json({
+        success: true,
+        data: job,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async reject(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const job = await jobService.rejectJob(req.params.id as string, req.workspaceId!);
+      res.json({
+        success: true,
+        data: job,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 };
 
 export default jobController;

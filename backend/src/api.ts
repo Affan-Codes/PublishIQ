@@ -6,6 +6,7 @@ import { eventBus } from './events/event-bus.js';
 import { logger } from './utils/logger.js';
 import { systemConfigCache } from './config/system-config.cache.js';
 import { featureFlagCache } from './config/feature-flag.cache.js';
+import notificationService from './services/notification.service.js';
 
 async function main() {
   logger.info('Starting PublishIQ API Server...');
@@ -21,6 +22,7 @@ async function main() {
 
   // 3. Initialize EventBus as subscriber (to process SSE notification re-emits)
   await eventBus.init(true);
+  notificationService.startEventListener();
 
   // 4. Initial cache loading
   await systemConfigCache.reload();

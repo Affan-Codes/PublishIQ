@@ -90,7 +90,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       break;
     }
 
-    case PipelineStage.GeneratingImage: {
+    case PipelineStage.RenderingImage: {
       // Get branding and watermark configurations
       const brandingRules = profile.brandingRules as Record<string, any> || {};
       const watermarkRules = profile.watermarkRules as Record<string, any> || {};
@@ -114,7 +114,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       break;
     }
 
-    case PipelineStage.SelectingMusic: {
+    case PipelineStage.AttachingMusic: {
       // Read music selection rules (e.g. mood, genre, language)
       const selectionRules = profile.musicSelectionRules as Record<string, any> || {};
       
@@ -171,7 +171,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       break;
     }
 
-    case PipelineStage.GeneratingVideo: {
+    case PipelineStage.RenderingVideo: {
       if (!job.imageUrl) {
         throw new ValidationError('Image URL is missing before video generation.');
       }
@@ -242,19 +242,25 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
 
   logger.info({ jobId }, 'Starting content pipeline execution');
 
-  // Pipeline sequence for Milestone 5 (we stop before publishing)
+  // Pipeline sequence for Milestone 6
   const stages: PipelineStage[] = [
     PipelineStage.GeneratingContent,
     PipelineStage.Validating,
-    PipelineStage.GeneratingImage,
-    PipelineStage.SelectingMusic,
-    PipelineStage.GeneratingVideo,
+    PipelineStage.RenderingImage,
+    PipelineStage.AttachingMusic,
+    PipelineStage.RenderingVideo,
     PipelineStage.GeneratingCaption,
     PipelineStage.GeneratingHashtags,
   ];
 
+  // Set the job to Running stage initially
+  job = await jobRepository.transitionJobStage(job.id, PipelineStage.Running, {}, {
+    type: 'JobRunning',
+    payload: { jobId: job.id, message: 'Content pipeline execution started' },
+  });
+
   let startIndex = 0;
-  if (job.pipelineStage && job.pipelineStage !== PipelineStage.Draft) {
+  if (job.pipelineStage && job.pipelineStage !== PipelineStage.Running && job.pipelineStage !== PipelineStage.Draft) {
     const lastStageIndex = stages.indexOf(job.pipelineStage);
     if (lastStageIndex !== -1) {
       startIndex = lastStageIndex;
@@ -287,7 +293,6 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
             await processStage(job.id, PipelineStage.Validating);
             
             // If validation succeeds, break generation/validation loop!
-            // We increment the loop counter in the outer loop for stages
             i++; // skip validating stage execution in the next outer iteration since we ran it here
             break;
           } catch (err: any) {
@@ -321,7 +326,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       }
     }
 
-    // Pipeline completed! Save GeneratedContent and mark job as Queued (waiting for manual approval/publishing)
+    // Pipeline completed! Save GeneratedContent and mark job according to automation mode
     const finalizedJob = await jobRepository.getById(job.id);
     if (!finalizedJob) throw new Error('Job not found after pipeline execution');
 
@@ -356,17 +361,46 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       });
     }
 
-    // Set job final stage to Queued (terminal stage for generation before publishing)
-    await jobRepository.transitionJobStage(job.id, PipelineStage.Queued, {
-      failedAt: null,
-      failureReason: null,
-      failureStage: null,
-    }, {
-      type: 'ContentGenerated',
-      payload: { jobId: job.id, message: 'Content generated and rendered successfully' },
-    });
+    // Fetch the channel to decide the automation mode flow
+    const channel = finalizedJob.channelId ? await prisma.channel.findUnique({
+      where: { id: finalizedJob.channelId },
+    }) : null;
 
-    logger.info({ jobId: job.id }, 'Content pipeline execution completed successfully');
+    const automationMode = channel?.automationMode || 'Manual';
+
+    if (automationMode === 'Hybrid') {
+      // Set job final stage to Queued (operator approval pending)
+      await jobRepository.transitionJobStage(job.id, PipelineStage.Queued, {
+        failedAt: null,
+        failureReason: null,
+        failureStage: null,
+      }, {
+        type: 'ApprovalRequired',
+        payload: { jobId: job.id, message: 'Content generated successfully. Operator approval required.' },
+      });
+      logger.info({ jobId: job.id }, 'Job execution held at Queued stage for Hybrid mode approval');
+    } else {
+      // Automatic/Manual: Complete the job immediately
+      await jobRepository.transitionJobStage(job.id, PipelineStage.Completed, {
+        failedAt: null,
+        failureReason: null,
+        failureStage: null,
+      }, {
+        type: 'JobCompleted',
+        payload: { jobId: job.id, message: 'Content generated and job completed successfully' },
+      });
+
+      // Update generated content status to Published
+      if (genContent) {
+        await prisma.generatedContent.update({
+          where: { id: genContent.id },
+          data: {
+            publishStatus: 'Published',
+          }
+        });
+      }
+      logger.info({ jobId: job.id }, 'Job execution completed and marked as Completed');
+    }
   } catch (err: any) {
     const failedStage = job.pipelineStage || PipelineStage.GeneratingContent;
     logger.error({ jobId: job.id, stage: failedStage, err }, 'Content pipeline stage failed');

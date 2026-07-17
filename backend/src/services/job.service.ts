@@ -206,7 +206,7 @@ export const jobService = {
     }
 
     if (
-      job.pipelineStage === PipelineStage.Published ||
+      job.pipelineStage === PipelineStage.Completed ||
       job.pipelineStage === PipelineStage.Failed ||
       job.pipelineStage === PipelineStage.Archived
     ) {
@@ -227,6 +227,66 @@ export const jobService = {
     }, {
       type: 'JobFailed',
       payload: { jobId: id, message: 'Job cancelled by operator' },
+    });
+
+    return updatedJob;
+  },
+
+  /**
+   * Approves a Hybrid job waiting at Queued stage, transitioning it to Completed.
+   */
+  async approveJob(id: string, workspaceId: string): Promise<Job> {
+    const job = await jobRepository.getById(id);
+    if (!job) {
+      throw new NotFoundError('Job not found');
+    }
+
+    if (job.pipelineStage !== PipelineStage.Queued) {
+      throw new ConflictError('Only jobs in Queued stage (pending approval) can be approved');
+    }
+
+    // Transition database Job to Completed
+    const updatedJob = await jobRepository.transitionJobStage(id, PipelineStage.Completed, {
+      failedAt: null,
+      failureReason: null,
+      failureStage: null,
+    }, {
+      type: 'JobCompleted',
+      payload: { jobId: id, message: 'Content approved and job completed' },
+    });
+
+    // Mark the generated content status as Published to reflect successful completion
+    await prisma.generatedContent.updateMany({
+      where: { jobId: id, workspaceId },
+      data: {
+        publishStatus: 'Published',
+      },
+    });
+
+    return updatedJob;
+  },
+
+  /**
+   * Rejects a Hybrid job waiting at Queued stage, transitioning it to Failed.
+   */
+  async rejectJob(id: string, workspaceId: string): Promise<Job> {
+    const job = await jobRepository.getById(id);
+    if (!job) {
+      throw new NotFoundError('Job not found');
+    }
+
+    if (job.pipelineStage !== PipelineStage.Queued) {
+      throw new ConflictError('Only jobs in Queued stage can be rejected');
+    }
+
+    // Transition database Job to Failed
+    const updatedJob = await jobRepository.transitionJobStage(id, PipelineStage.Failed, {
+      failedAt: new Date(),
+      failureReason: 'Rejected by operator',
+      failureStage: PipelineStage.Queued.toString(),
+    }, {
+      type: 'JobFailed',
+      payload: { jobId: id, stage: PipelineStage.Queued, message: 'Job rejected by operator' },
     });
 
     return updatedJob;

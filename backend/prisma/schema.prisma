@@ -83,16 +83,21 @@ enum JobType {
 
 enum PipelineStage {
   Draft
+  Queued
+  Running
   GeneratingContent
   Validating
   GeneratingImage
+  RenderingImage
   GeneratingVideo
+  RenderingVideo
   SelectingMusic
+  AttachingMusic
   GeneratingCaption
   GeneratingHashtags
-  Queued
   Publishing
   Published
+  Completed
   Failed
   Archived
 }
@@ -263,6 +268,9 @@ model Channel {
   automationMode         AutomationMode
   status                 ChannelStatus
   scheduleCron           String
+  scheduleTimezone       String?
+  scheduleType           String?
+  scheduleConfig         Json?
   publishingConfiguration Json
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt

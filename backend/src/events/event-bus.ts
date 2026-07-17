@@ -1,85 +1,160 @@
 import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
+import { prisma } from '../database/db.js';
+import { getRedisInstance } from '../database/redis.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
-const emitter = new EventEmitter();
+export const localEventBus = new EventEmitter();
 
-let pubClient: Redis | null = null;
-let subClient: Redis | null = null;
-const channelName = `${env.QUEUE_PREFIX}:domain-events`;
+const REDIS_EVENT_CHANNEL = 'publishiq:domain-events';
+let redisSubscriber: Redis | null = null;
 
-export async function initEventBus(isSubscriber: boolean = false): Promise<void> {
-  pubClient = new Redis(env.REDIS_URL);
-  
-  if (isSubscriber) {
-    subClient = new Redis(env.REDIS_URL);
-    
-    await subClient.subscribe(channelName);
-    logger.info(`Subscribed to Redis Pub/Sub channel: ${channelName}`);
+/**
+ * Persists a DomainEvent in the database and broadcasts it system-wide using Redis Pub/Sub.
+ * Supports both:
+ * - 4-arg format: emitDomainEvent(workspaceId, type, payload, jobId)
+ * - 2-arg format: emitDomainEvent(type, payload) (for backwards compatibility)
+ */
+export async function emitDomainEvent(
+  arg1: string,
+  arg2: any,
+  arg3?: any,
+  arg4?: string
+): Promise<any> {
+  let workspaceId: string;
+  let type: string;
+  let payload: any;
+  let jobId: string | null = null;
 
-    subClient.on('message', (channel: string, message: string) => {
-      if (channel === channelName) {
-        try {
-          const event = JSON.parse(message);
-          logger.debug({ eventType: event.type }, 'Cross-process event received via Redis Pub/Sub');
-          emitter.emit(event.type, event);
-          emitter.emit('*', event);
-        } catch (err) {
-          logger.error({ err, message }, 'Failed to parse Pub/Sub event message');
-        }
-      }
+  if (arg3 !== undefined) {
+    // 3 or 4 arguments format
+    workspaceId = arg1;
+    type = arg2;
+    payload = arg3;
+    jobId = arg4 || null;
+  } else {
+    // 2 arguments format: emitDomainEvent(type, payload)
+    type = arg1;
+    payload = arg2;
+    workspaceId = payload.workspaceId || '';
+    jobId = payload.jobId || payload.domainEvent?.jobId || null;
+  }
+
+  // Fallback to resolve workspaceId if missing (v1 has exactly one Workspace)
+  if (!workspaceId) {
+    const firstWorkspace = await prisma.workspace.findFirst();
+    workspaceId = firstWorkspace?.id || '';
+  }
+
+  // 1. Create and commit the DomainEvent in PostgreSQL
+  const domainEvent = await prisma.domainEvent.create({
+    data: {
+      workspaceId,
+      type,
+      payload,
+      jobId: jobId || null,
+    },
+  });
+
+  // 2. Publish to Redis Pub/Sub channel
+  try {
+    const redis = getRedisInstance();
+    const eventMsg = JSON.stringify({
+      id: domainEvent.id,
+      workspaceId: domainEvent.workspaceId,
+      type: domainEvent.type,
+      payload: domainEvent.payload,
+      jobId: domainEvent.jobId,
+      createdAt: domainEvent.createdAt,
     });
+    
+    await redis.publish(REDIS_EVENT_CHANNEL, eventMsg);
+  } catch (err: any) {
+    logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Redis Pub/Sub');
   }
-}
 
-export async function emitDomainEvent(eventType: string, eventPayload: any): Promise<void> {
-  const event = {
-    type: eventType,
-    payload: eventPayload,
-    timestamp: new Date().toISOString(),
-  };
+  // 3. Emit on the local process event bus
+  localEventBus.emit(type, domainEvent);
+  localEventBus.emit('*', domainEvent);
 
-  emitter.emit(eventType, event);
-  emitter.emit('*', event);
-
-  if (pubClient) {
-    try {
-      await pubClient.publish(channelName, JSON.stringify(event));
-      logger.trace({ eventType }, 'Event published to Redis Pub/Sub');
-    } catch (err) {
-      logger.error({ err, eventType }, 'Failed to publish event to Redis Pub/Sub');
-    }
-  }
-}
-
-export async function closeEventBus(): Promise<void> {
-  if (pubClient) {
-    await pubClient.quit();
-  }
-  if (subClient) {
-    await subClient.quit();
-  }
+  logger.debug({ type, eventId: domainEvent.id }, 'Domain Event emitted');
+  return domainEvent;
 }
 
 export const eventBus = {
-  init: initEventBus,
-  emitDomainEvent: emitDomainEvent,
-  close: closeEventBus,
+  /**
+   * Initializes the Redis Pub/Sub connection bridge for subscription.
+   */
+  async init(isSubscriber: boolean = false): Promise<void> {
+    if (isSubscriber) {
+      if (redisSubscriber) return;
+
+      try {
+        redisSubscriber = new Redis(env.REDIS_URL, {
+          maxRetriesPerRequest: null,
+        });
+
+        redisSubscriber.on('connect', () => {
+          logger.info('Redis event bridge subscriber connected');
+        });
+
+        redisSubscriber.on('error', (err) => {
+          logger.error({ err }, 'Redis event bridge subscriber error');
+        });
+
+        await redisSubscriber.subscribe(REDIS_EVENT_CHANNEL);
+
+        redisSubscriber.on('message', (channel: string, message: string) => {
+          if (channel === REDIS_EVENT_CHANNEL) {
+            try {
+              const domainEvent = JSON.parse(message);
+              
+              // Emit on the local process emitter
+              localEventBus.emit(domainEvent.type, domainEvent);
+              localEventBus.emit('*', domainEvent);
+            } catch (err: any) {
+              logger.error({ err }, 'Failed to parse Redis Pub/Sub message');
+            }
+          }
+        });
+      } catch (err: any) {
+        logger.error({ err }, 'Failed to initialize Redis Event Bridge');
+        throw err;
+      }
+    }
+  },
+
+  /**
+   * Closes the Redis Pub/Sub subscriber connection.
+   */
+  async close(): Promise<void> {
+    if (redisSubscriber) {
+      await redisSubscriber.quit();
+      redisSubscriber = null;
+      logger.info('Redis event bridge subscriber closed');
+    }
+  },
+
+  emitDomainEvent,
+
   on(event: string, listener: (...args: any[]) => void) {
-    emitter.on(event, listener);
+    localEventBus.on(event, listener);
     return this;
   },
+
   off(event: string, listener: (...args: any[]) => void) {
-    emitter.off(event, listener);
+    localEventBus.off(event, listener);
     return this;
   },
+
   once(event: string, listener: (...args: any[]) => void) {
-    emitter.once(event, listener);
+    localEventBus.once(event, listener);
     return this;
   },
+
   emit(event: string, ...args: any[]) {
-    return emitter.emit(event, ...args);
+    return localEventBus.emit(event, ...args);
   },
 };
 

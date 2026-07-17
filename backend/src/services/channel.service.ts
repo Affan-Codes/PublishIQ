@@ -4,6 +4,7 @@ import platformConnectionRepository from '../repositories/platformConnection.rep
 import { NotFoundError, ValidationError, ConflictError } from '../errors/custom-errors.js';
 import { AutomationMode, ChannelStatus, ConnectionStatus, ContentProfileStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
+import schedulerService from './scheduler.service.js';
 
 export const channelService = {
   async getChannelById(id: string) {
@@ -58,7 +59,9 @@ export const channelService = {
       }
     }
 
-    return channelRepository.create(data);
+    const channel = await channelRepository.create(data);
+    await schedulerService.syncChannelSchedule(channel.id);
+    return channel;
   },
 
   async updateChannel(
@@ -106,12 +109,15 @@ export const channelService = {
       }
     }
 
-    return channelRepository.update(id, data);
+    const channel = await channelRepository.update(id, data);
+    await schedulerService.syncChannelSchedule(id);
+    return channel;
   },
 
   async deleteChannel(id: string) {
     logger.warn({ id }, 'Deleting channel');
     await this.getChannelById(id); // Ensure exists
+    await schedulerService.removeChannelSchedule(id);
     return channelRepository.delete(id);
   },
 
@@ -127,7 +133,7 @@ export const channelService = {
       suffix++;
     }
 
-    return channelRepository.create({
+    const duplicated = await channelRepository.create({
       workspaceId,
       name: newName,
       contentProfileId: channel.contentProfileId,
@@ -137,6 +143,8 @@ export const channelService = {
       publishingConfiguration: channel.publishingConfiguration,
       platformConnectionIds: channel.platformConnections.map((pc: any) => pc.id),
     });
+    await schedulerService.syncChannelSchedule(duplicated.id);
+    return duplicated;
   },
 };
 

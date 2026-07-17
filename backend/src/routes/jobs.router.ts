@@ -56,4 +56,16 @@ router.post(
   jobController.cancel
 );
 
+router.post(
+  '/jobs/:id/approve',
+  validateRequest({ params: idParamSchema }),
+  jobController.approve
+);
+
+router.post(
+  '/jobs/:id/reject',
+  validateRequest({ params: idParamSchema }),
+  jobController.reject
+);
+
 export default router;
