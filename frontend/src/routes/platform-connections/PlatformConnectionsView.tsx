@@ -8,8 +8,8 @@ import { Plus, Trash2, Edit2, X, AlertTriangle, CheckCircle, Wifi, RefreshCw } f
 
 const connectionSchema = z.object({
   platform: z.enum(['YouTube', 'Instagram', 'Facebook']),
-  accessTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Access token must be a valid hexadecimal string'),
-  refreshTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Refresh token must be a valid hexadecimal string'),
+  accessTokenHex: z.string().min(1, 'Access token is required'),
+  refreshTokenHex: z.string().min(1, 'Refresh token is required'),
   expiresAt: z.string().refine((val) => !isNaN(Date.parse(val)), 'Invalid expiration date'),
   scopes: z.string().min(1, 'At least one scope is required'),
   healthStatus: z.enum(['Healthy', 'Unhealthy', 'Expired', 'Unknown']),

@@ -367,6 +367,7 @@ model GeneratedContent {
   publishStatus            PublishStatus
   createdAt                DateTime          @default(now())
   updatedAt                DateTime          @updatedAt
+  publishingRecords        PublishingRecord[]
 
   @@index([contentProfileId])
   @@index([publishStatus])
@@ -416,9 +417,21 @@ model PublishingRecord {
   platformResponse     Json?
   publishedAt          DateTime
 
+  // Milestone 7 Additions
+  platform             Platform           @default(YouTube)
+  generatedContentId   String?            @db.Uuid
+  generatedContent     GeneratedContent?  @relation(fields: [generatedContentId], references: [id], onDelete: SetNull)
+  publishedUrl         String?
+  platformPostId       String?
+  duration             Int?
+  retries              Int                @default(0)
+  providerMetadata     Json?
+  errorDetails         String?            @db.Text
+
   @@index([channelId, publishedAt])
   @@index([status])
   @@index([contentTypeSnapshot])
+  @@index([platform])
 }
 
 model FeatureFlag {

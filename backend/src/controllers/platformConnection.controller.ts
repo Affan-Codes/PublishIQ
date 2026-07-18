@@ -9,8 +9,8 @@ const mapConnectionResponse = (conn: any) => ({
   scopes: conn.scopes,
   healthStatus: conn.healthStatus,
   status: conn.status,
-  accessTokenHex: conn.accessTokenEnc?.toString('hex') || '',
-  refreshTokenHex: conn.refreshTokenEnc?.toString('hex') || '',
+  accessTokenHex: conn.accessTokenEnc ? '********' : '',
+  refreshTokenHex: conn.refreshTokenEnc ? '********' : '',
   createdAt: conn.createdAt,
   updatedAt: conn.updatedAt,
 });

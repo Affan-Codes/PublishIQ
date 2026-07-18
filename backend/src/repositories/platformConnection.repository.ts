@@ -1,5 +1,6 @@
 import { PlatformConnection, Platform, HealthStatus, ConnectionStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
+import { encrypt } from '../utils/crypto.js';
 
 export const platformConnectionRepository = {
   async getById(id: string): Promise<PlatformConnection | null> {
@@ -29,8 +30,8 @@ export const platformConnectionRepository = {
       data: {
         workspaceId: data.workspaceId,
         platform: data.platform,
-        accessTokenEnc: Buffer.from(data.accessTokenHex, 'hex'),
-        refreshTokenEnc: Buffer.from(data.refreshTokenHex, 'hex'),
+        accessTokenEnc: encrypt(data.accessTokenHex) as any,
+        refreshTokenEnc: encrypt(data.refreshTokenHex) as any,
         expiresAt: data.expiresAt,
         scopes: data.scopes,
         healthStatus: data.healthStatus,
@@ -53,11 +54,11 @@ export const platformConnectionRepository = {
   ): Promise<PlatformConnection> {
     const updateData: Record<string, any> = {};
     if (data.platform !== undefined) updateData.platform = data.platform;
-    if (data.accessTokenHex !== undefined) {
-      updateData.accessTokenEnc = Buffer.from(data.accessTokenHex, 'hex');
+    if (data.accessTokenHex !== undefined && data.accessTokenHex !== '********') {
+      updateData.accessTokenEnc = encrypt(data.accessTokenHex);
     }
-    if (data.refreshTokenHex !== undefined) {
-      updateData.refreshTokenEnc = Buffer.from(data.refreshTokenHex, 'hex');
+    if (data.refreshTokenHex !== undefined && data.refreshTokenHex !== '********') {
+      updateData.refreshTokenEnc = encrypt(data.refreshTokenHex);
     }
     if (data.expiresAt !== undefined) updateData.expiresAt = data.expiresAt;
     if (data.scopes !== undefined) updateData.scopes = data.scopes;

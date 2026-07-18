@@ -233,7 +233,7 @@ export const jobService = {
   },
 
   /**
-   * Approves a Hybrid job waiting at Queued stage, transitioning it to Completed.
+   * Approves a Hybrid/Manual job waiting at Queued stage, transitioning it to Publishing and enqueuing it.
    */
   async approveJob(id: string, workspaceId: string): Promise<Job> {
     const job = await jobRepository.getById(id);
@@ -245,23 +245,26 @@ export const jobService = {
       throw new ConflictError('Only jobs in Queued stage (pending approval) can be approved');
     }
 
-    // Transition database Job to Completed
-    const updatedJob = await jobRepository.transitionJobStage(id, PipelineStage.Completed, {
+    const updatedSnapshot = {
+      ...(job.configSnapshot as Record<string, any> || {}),
+      isApproved: true,
+    };
+
+    // Transition database Job to Publishing
+    const updatedJob = await jobRepository.transitionJobStage(id, PipelineStage.Publishing, {
+      configSnapshot: updatedSnapshot,
       failedAt: null,
       failureReason: null,
       failureStage: null,
     }, {
-      type: 'JobCompleted',
-      payload: { jobId: id, message: 'Content approved and job completed' },
+      type: 'PublishStarted',
+      payload: { jobId: id, message: 'Content approved, starting publishing phase' },
     });
 
-    // Mark the generated content status as Published to reflect successful completion
-    await prisma.generatedContent.updateMany({
-      where: { jobId: id, workspaceId },
-      data: {
-        publishStatus: 'Published',
-      },
-    });
+    // Enqueue the job in BullMQ to execute the Publishing stage
+    await contentPipelineQueue.add('content-pipeline', { jobId: id });
+
+    logger.info({ jobId: id }, 'Enqueued approved Content Pipeline Job to execute publishing');
 
     return updatedJob;
   },

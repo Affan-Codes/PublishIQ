@@ -17,6 +17,7 @@ const envSchema = z.object({
   OPERATOR_EMAIL: z.string().email().default('admin@publishiq.com'),
   OPERATOR_PASSWORD: z.string().min(4).default('admin1234'),
   GEMINI_API_KEY: z.string().optional(),
+  APP_BASE_URL: z.string().url().default('http://localhost:4000'),
 });
 
 const parsed = envSchema.safeParse(process.env);

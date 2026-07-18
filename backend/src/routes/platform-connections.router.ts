@@ -9,8 +9,8 @@ const router = Router();
 
 const connectionCreateSchema = z.object({
   platform: z.nativeEnum(Platform),
-  accessTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Access token must be a valid hex string'),
-  refreshTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Refresh token must be a valid hex string'),
+  accessTokenHex: z.string().min(1, 'Access token is required'),
+  refreshTokenHex: z.string().min(1, 'Refresh token is required'),
   expiresAt: z.string().datetime(),
   scopes: z.array(z.string()).default([]),
   healthStatus: z.nativeEnum(HealthStatus).default(HealthStatus.Healthy),
@@ -18,8 +18,8 @@ const connectionCreateSchema = z.object({
 });
 
 const connectionUpdateSchema = z.object({
-  accessTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Access token must be a valid hex string').optional(),
-  refreshTokenHex: z.string().regex(/^[0-9a-fA-F]+$/, 'Refresh token must be a valid hex string').optional(),
+  accessTokenHex: z.string().min(1).optional(),
+  refreshTokenHex: z.string().min(1).optional(),
   expiresAt: z.string().datetime().optional(),
   scopes: z.array(z.string()).optional(),
   healthStatus: z.nativeEnum(HealthStatus).optional(),
