@@ -37,6 +37,22 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/v1/auth/login', loginLimiter);
 
+// Global API rate limiter
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // Limit to 300 requests per 15 minutes per IP
+  message: {
+    success: false,
+    error: {
+      code: 'TOO_MANY_REQUESTS',
+      message: 'Too many requests from this IP, please try again after 15 minutes.',
+    },
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1', globalApiLimiter);
+
 // Logging middleware
 app.use((req, res, next) => {
   logger.trace({ method: req.method, path: req.path }, 'Inbound HTTP request');

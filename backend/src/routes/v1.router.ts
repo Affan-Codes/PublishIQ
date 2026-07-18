@@ -16,6 +16,8 @@ import generatedContentsRouter from './generated-contents.router.js';
 import queueRouter from './queue.router.js';
 import schedulerRouter from './scheduler.router.js';
 import publishingHistoryRouter from './publishing-history.router.js';
+import dashboardRouter from './dashboard.router.js';
+import searchRouter from './search.router.js';
 
 const router = Router();
 
@@ -39,5 +41,7 @@ router.use('/', generatedContentsRouter);
 router.use('/', queueRouter);
 router.use('/', schedulerRouter);
 router.use('/', publishingHistoryRouter);
+router.use('/', dashboardRouter);
+router.use('/', searchRouter);
 
 export default router;
