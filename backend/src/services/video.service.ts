@@ -5,6 +5,7 @@ import fs from 'fs';
 import util from 'util';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { localDiskStorageProvider } from '../providers/storage/local-disk.provider.js';
 
 const execFilePromise = util.promisify(execFile);
 const ffmpegPath = ffmpegInstaller.path;

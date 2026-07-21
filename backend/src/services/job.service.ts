@@ -54,8 +54,61 @@ export const jobService = {
     if (filters.channelId) listFilters.channelId = filters.channelId;
 
     const { items, total } = await jobRepository.list(workspaceId, listFilters);
-
     return { items, total };
+  },
+
+  async getQueueStats(workspaceId: string) {
+    const groupings = await jobRepository.getJobGroupingsByWorkspace(workspaceId);
+
+    const stats = {
+      total: 0,
+      waiting: 0,
+      active: 0,
+      delayed: 0,
+      failed: 0,
+      archived: 0,
+      byType: {} as Record<JobType, { waiting: number; active: number; failed: number; total: number }>,
+    };
+
+    const waitingStages: PipelineStage[] = [PipelineStage.Draft, PipelineStage.Queued];
+    const activeStages: PipelineStage[] = [
+      PipelineStage.Running,
+      PipelineStage.GeneratingContent,
+      PipelineStage.Validating,
+      PipelineStage.RenderingImage,
+      PipelineStage.AttachingMusic,
+      PipelineStage.RenderingVideo,
+      PipelineStage.GeneratingCaption,
+      PipelineStage.GeneratingHashtags,
+    ];
+
+    for (const group of groupings) {
+      const count = group._count.id;
+      const stage = group.pipelineStage;
+      const type = group.jobType;
+
+      if (!stats.byType[type]) {
+        stats.byType[type] = { waiting: 0, active: 0, failed: 0, total: 0 };
+      }
+
+      stats.total += count;
+      stats.byType[type].total += count;
+
+      if (stage === PipelineStage.Failed) {
+        stats.failed += count;
+        stats.byType[type].failed += count;
+      } else if (stage === PipelineStage.Archived) {
+        stats.archived += count;
+      } else if (stage && waitingStages.includes(stage)) {
+        stats.waiting += count;
+        stats.byType[type].waiting += count;
+      } else if (stage && activeStages.includes(stage)) {
+        stats.active += count;
+        stats.byType[type].active += count;
+      }
+    }
+
+    return stats;
   },
 
   /**

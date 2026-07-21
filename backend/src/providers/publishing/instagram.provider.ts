@@ -183,6 +183,30 @@ export const instagramAdapter: PublishingAdapter = {
         platformResponse: err.response?.data,
       };
     }
+  },
+
+  async checkHealth(accessToken: string): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') return true;
+    await axios.get('https://graph.facebook.com/v19.0/me', {
+      params: { fields: 'id', access_token: accessToken }
+    });
+    return true;
+  },
+
+  async refreshToken(refreshToken: string) {
+    const res = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
+      params: {
+        grant_type: 'fb_exchange_token',
+        client_id: process.env.FACEBOOK_APP_ID || 'dummy_app_id',
+        client_secret: process.env.FACEBOOK_APP_SECRET || 'dummy_app_secret',
+        fb_exchange_token: refreshToken,
+      }
+    });
+
+    return {
+      accessToken: res.data.access_token,
+      expiresInSeconds: res.data.expires_in || 5184000,
+    };
   }
 };
 

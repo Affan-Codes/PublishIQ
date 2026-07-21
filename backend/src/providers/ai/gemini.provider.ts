@@ -3,6 +3,7 @@ import { env } from '../../config/env.js';
 import { ExternalProviderError } from '../../errors/custom-errors.js';
 import { logger } from '../../utils/logger.js';
 import { AIContentResponseSchema } from '../../schemas/ai-response.schema.js';
+import { systemConfigCache } from '../../config/system-config.cache.js';
 
 const apiKey = env.GEMINI_API_KEY;
 
@@ -136,8 +137,9 @@ export const geminiProvider: AIProviderAdapter = {
     };
 
     try {
-      // Execute the call with retries (3 attempts default)
-      return await retryWithBackoff(executeCall, 3, 1000, 2);
+      const retryVal = await systemConfigCache.get<number>('retry_limit.generation');
+      const maxRetries = typeof retryVal === 'number' ? retryVal : 3;
+      return await retryWithBackoff(executeCall, maxRetries, 1000, 2);
     } catch (err: any) {
       logger.error({ err }, 'Gemini API generation failed after all retries');
       throw new ExternalProviderError('Gemini', err.message, err);

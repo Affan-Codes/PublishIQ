@@ -12,7 +12,7 @@ const cronRegex = /^(\*|([0-5]?\d)(-[0-5]?\d)?(\/[0-5]?\d)?)( +(\*|([0-9]|1\d|2[
 const channelSchema = z.object({
   name: z.string().min(1, 'Channel name is required').max(100),
   contentProfileId: z.string().uuid('Please select a Content Profile'),
-  automationMode: z.enum(['Manual', 'Automatic', 'Hybrid']),
+  automationMode: z.enum(['Manual', 'Automatic', 'Hybrid', 'FullyAutomated']),
   status: z.enum(['Active', 'Disabled']),
   scheduleCron: z.string().regex(cronRegex, 'Must be a valid 5-field cron expression (e.g. "0 9 * * *")'),
   maxDurationSeconds: z.number().min(5, 'Duration must be at least 5 seconds').max(3600, 'Duration cannot exceed 1 hour'),
@@ -39,8 +39,8 @@ interface Channel {
   id: string;
   name: string;
   contentProfileId: string;
-  contentProfile: ContentProfile;
-  automationMode: 'Manual' | 'Automatic' | 'Hybrid';
+  contentProfile?: ContentProfile | { id: string; name: string; status?: string };
+  automationMode: 'Manual' | 'Automatic' | 'Hybrid' | 'FullyAutomated';
   status: 'Active' | 'Disabled';
   scheduleCron: string;
   publishingConfiguration: {

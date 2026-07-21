@@ -3,6 +3,7 @@ import { jobRepository } from '../repositories/job.repository.js';
 import { channelRepository } from '../repositories/channel.repository.js';
 import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
 import { contentTypeRepository } from '../repositories/contentType.repository.js';
+import { contentProfileRepository } from '../repositories/contentProfile.repository.js';
 import { assetRepository } from '../repositories/asset.repository.js';
 import { templateRepository } from '../repositories/template.repository.js';
 import { geminiProvider } from '../providers/ai/gemini.provider.js';
@@ -80,7 +81,10 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       const configProfanity = await systemConfigCache.get<string[]>('profanity_filter_words');
       const defaultProfanities = ['abuse', 'asshole', 'bitch', 'bastard', 'crap', 'cunt', 'dick', 'fuck', 'motherfucker', 'piss', 'pussy', 'shit', 'slut', 'whore'];
       const profanityList = Array.isArray(configProfanity) ? configProfanity : defaultProfanities;
-      const containsProfanity = profanityList.some((word) => text.toLowerCase().includes(word.toLowerCase()));
+      const containsProfanity = profanityList.some((word) => {
+        const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        return regex.test(text);
+      });
       if (containsProfanity) {
         throw new ValidationError('Generated text contains filtered profanity words.');
       }
@@ -202,9 +206,20 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
     case PipelineStage.GeneratingCaption: {
       if (!job.caption) {
         const text = job.generatedText || '';
-        const fallbackCaption = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
+        let captionText = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
+
+        if (job.contentProfileId) {
+          const profile = await contentProfileRepository.getById(job.contentProfileId);
+          const captionStrat = profile?.captionStrategy as Record<string, any> | undefined;
+          if (captionStrat?.template) {
+            captionText = captionStrat.template.replace('{{text}}', text);
+          } else if (captionStrat?.prefix || captionStrat?.suffix) {
+            captionText = `${captionStrat.prefix || ''}${text}${captionStrat.suffix || ''}`;
+          }
+        }
+
         await jobRepository.transitionJobStage(jobId, stage, {
-          caption: fallbackCaption,
+          caption: captionText,
         });
       } else {
         await jobRepository.transitionJobStage(jobId, stage, {});
@@ -214,9 +229,18 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
 
     case PipelineStage.GeneratingHashtags: {
       if (!job.hashtags) {
-        const fallbackHashtags = ['wisdom', 'quotes', 'daily', 'motivation'];
+        let hashtagsList = ['wisdom', 'quotes', 'daily', 'motivation'];
+
+        if (job.contentProfileId) {
+          const profile = await contentProfileRepository.getById(job.contentProfileId);
+          const hashtagStrat = profile?.hashtagStrategy as Record<string, any> | undefined;
+          if (Array.isArray(hashtagStrat?.tags) && hashtagStrat.tags.length > 0) {
+            hashtagsList = hashtagStrat.tags;
+          }
+        }
+
         await jobRepository.transitionJobStage(jobId, stage, {
-          hashtags: fallbackHashtags,
+          hashtags: hashtagsList,
         });
       } else {
         await jobRepository.transitionJobStage(jobId, stage, {});
@@ -266,16 +290,15 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
   }
 
   let startIndex = 0;
-  if (
-    job.pipelineStage &&
-    job.pipelineStage !== PipelineStage.Running &&
-    job.pipelineStage !== PipelineStage.Draft &&
-    job.pipelineStage !== PipelineStage.Publishing
-  ) {
-    const lastStageIndex = generationStages.indexOf(job.pipelineStage);
-    if (lastStageIndex !== -1) {
-      startIndex = lastStageIndex;
-      logger.info({ jobId, resumeStage: job.pipelineStage }, 'Resuming job pipeline from last stage');
+  const resumeStageStr = (job.pipelineStage === PipelineStage.Failed && job.failureStage)
+    ? job.failureStage
+    : job.pipelineStage;
+
+  if (resumeStageStr) {
+    const stageIndex = generationStages.indexOf(resumeStageStr as PipelineStage);
+    if (stageIndex !== -1) {
+      startIndex = stageIndex;
+      logger.info({ jobId, resumeStage: resumeStageStr }, 'Resuming job pipeline from stage');
     }
   }
 
@@ -432,5 +455,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
         retryCount,
       },
     });
+
+    throw err;
   }
 }

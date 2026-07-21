@@ -410,29 +410,17 @@ export const publishingService = {
       logger.info({ connectionId: connection.id }, 'Platform Connection tokens expired. Attempting refresh...');
       await this.refreshConnectionTokens(connection.id);
     } else {
-      // Basic health ping check
       try {
         const decryptedToken = decrypt(Buffer.from(connection.accessTokenEnc));
-        if (decryptedToken === 'mock_token' || decryptedToken === '********' || decryptedToken.startsWith('ig_') || decryptedToken.startsWith('yt_')) {
-          return; // Skip actual ping for mock tokens
-        }
-
-        if (connection.platform === Platform.YouTube) {
-          await axios.get('https://www.googleapis.com/oauth2/v3/tokeninfo', {
-            params: { access_token: decryptedToken }
-          });
-        } else {
-          // Meta (Facebook/Instagram) token health ping
-          await axios.get('https://graph.facebook.com/v19.0/me', {
-            params: { fields: 'id', access_token: decryptedToken }
-          });
+        const adapter = getPublishingAdapter(connection.platform);
+        if (adapter.checkHealth) {
+          await adapter.checkHealth(decryptedToken);
         }
       } catch (err: any) {
         logger.warn({ connectionId: connection.id, err: err.message }, 'Health check ping failed. Attempting refresh...');
         try {
           await this.refreshConnectionTokens(connection.id);
         } catch (refreshErr) {
-          // Set connection status Unhealthy
           await platformConnectionRepository.updateRaw(connection.id, { healthStatus: 'Unhealthy' });
           throw new Error('Connection unhealthy, and automatic token refresh failed.');
         }
@@ -449,54 +437,34 @@ export const publishingService = {
     if (!connection) throw new NotFoundError('Connection not found');
 
     const refreshToken = decrypt(Buffer.from(connection.refreshTokenEnc));
-    if (!refreshToken || refreshToken === 'mock_token' || refreshToken === '********') {
+    if (!refreshToken) {
       throw new Error('No refresh token available.');
     }
 
     try {
-      if (connection.platform === Platform.YouTube) {
-        const res = await axios.post('https://oauth2.googleapis.com/token', null, {
-          params: {
-            client_id: process.env.GOOGLE_CLIENT_ID || 'dummy_client_id',
-            client_secret: process.env.GOOGLE_CLIENT_SECRET || 'dummy_client_secret',
-            refresh_token: refreshToken,
-            grant_type: 'refresh_token',
-          }
-        });
-
-        const newAccessToken = res.data.access_token;
-        const expiresInSeconds = res.data.expires_in || 3600;
-        const newExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
-
-        await platformConnectionRepository.updateRaw(connectionId, {
-          accessTokenEnc: encrypt(newAccessToken) as any,
-          expiresAt: newExpiresAt,
-          healthStatus: 'Healthy'
-        });
-      } else {
-        // Facebook Page / Instagram user long-lived token exchange refresh (expires every 60 days)
-        const res = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
-          params: {
-            grant_type: 'fb_exchange_token',
-            client_id: process.env.FACEBOOK_APP_ID || 'dummy_app_id',
-            client_secret: process.env.FACEBOOK_APP_SECRET || 'dummy_app_secret',
-            exchange_token: refreshToken,
-          }
-        });
-
-        const newAccessToken = res.data.access_token;
-        const newExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days from now
-
-        await platformConnectionRepository.updateRaw(connectionId, {
-          accessTokenEnc: encrypt(newAccessToken) as any,
-          expiresAt: newExpiresAt,
-          healthStatus: 'Healthy'
-        });
+      const adapter = getPublishingAdapter(connection.platform);
+      if (!adapter.refreshToken) {
+        throw new Error(`Platform adapter ${connection.platform} does not support token refresh.`);
       }
-      logger.info({ connectionId }, 'Successfully refreshed platform connection tokens');
+
+      const refreshed = await adapter.refreshToken(refreshToken);
+      const newExpiresAt = new Date(Date.now() + refreshed.expiresInSeconds * 1000);
+
+      const updateData: any = {
+        accessTokenEnc: encrypt(refreshed.accessToken) as any,
+        expiresAt: newExpiresAt,
+        healthStatus: 'Healthy',
+      };
+
+      if (refreshed.refreshToken) {
+        updateData.refreshTokenEnc = encrypt(refreshed.refreshToken) as any;
+      }
+
+      await platformConnectionRepository.updateRaw(connectionId, updateData);
     } catch (err: any) {
-      logger.error({ connectionId, err }, 'Failed to refresh tokens');
-      throw new Error(`Token refresh failed: ${err.message}`);
+      logger.error({ connectionId, err: err.message }, 'Failed to refresh connection tokens');
+      await platformConnectionRepository.updateRaw(connectionId, { healthStatus: 'Unhealthy' });
+      throw err;
     }
   },
 
@@ -515,6 +483,24 @@ export const publishingService = {
       default:
         return null;
     }
+  },
+
+  /**
+   * Lists publishing history with filters and pagination.
+   */
+  async listHistory(workspaceId: string, filters: any, skip: number, limit: number) {
+    const [items, total] = await Promise.all([
+      publishingRecordRepository.list(workspaceId, { ...filters, skip, take: limit }),
+      publishingRecordRepository.count(workspaceId, filters),
+    ]);
+    return { items, total };
+  },
+
+  /**
+   * Retrieves detail log for a publishing record.
+   */
+  async getRecordById(id: string, workspaceId: string) {
+    return publishingRecordRepository.getById(id, workspaceId);
   },
 
   /**

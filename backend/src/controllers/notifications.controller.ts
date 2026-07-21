@@ -1,6 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { notificationRepository } from '../repositories/notification.repository.js';
-import { NotFoundError } from '../errors/custom-errors.js';
 import notificationService from '../services/notification.service.js';
 
 export const notificationsController = {
@@ -12,7 +10,6 @@ export const notificationsController = {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
-      // Set access control headers if needed, Express handles basic CORS
       res.flushHeaders();
 
       const workspaceId = req.workspaceId as string;
@@ -46,10 +43,7 @@ export const notificationsController = {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const skip = (page - 1) * limit;
 
-      const [items, total] = await Promise.all([
-        notificationRepository.list(workspaceId, skip, limit),
-        notificationRepository.count(workspaceId),
-      ]);
+      const { items, total } = await notificationService.listNotifications(workspaceId, skip, limit);
 
       res.json({
         success: true,
@@ -73,15 +67,7 @@ export const notificationsController = {
       const { id } = req.params;
       const workspaceId = req.workspaceId as string;
 
-      const existing = await notificationRepository.getById(id as string);
-
-      if (!existing || existing.workspaceId !== workspaceId) {
-        throw new NotFoundError('Notification not found');
-      }
-
-      const notification = await notificationRepository.update(id as string, {
-        readAt: new Date(),
-      });
+      const notification = await notificationService.markAsRead(id as string, workspaceId);
 
       res.json({
         success: true,
@@ -100,7 +86,7 @@ export const notificationsController = {
     try {
       const workspaceId = req.workspaceId as string;
 
-      await notificationRepository.markAllAsRead(workspaceId);
+      await notificationService.markAllAsRead(workspaceId);
 
       res.json({
         success: true,

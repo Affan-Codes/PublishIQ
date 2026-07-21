@@ -25,7 +25,7 @@ export const requireAuth = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const token = req.signedCookies?.session || req.cookies?.session;
+  const token = req.signedCookies?.session;
 
   if (!token) {
     next(new UnauthorizedError('Authentication session token is missing'));

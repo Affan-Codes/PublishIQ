@@ -14,6 +14,12 @@ export interface PublishResult {
   errorMessage?: string;
 }
 
+export interface RefreshTokenResult {
+  accessToken: string;
+  expiresInSeconds: number;
+  refreshToken?: string;
+}
+
 export interface GeneratedContentData {
   text: string;
   imageUrl?: string | null;
@@ -32,5 +38,8 @@ export interface PublishingAdapter {
   readonly platform: Platform;
   validate(content: GeneratedContentData): PlatformLimitViolation[];
   publish(content: GeneratedContentData, connection: PlatformConnectionData): Promise<PublishResult>;
+  checkHealth?(accessToken: string): Promise<boolean>;
+  refreshToken?(refreshToken: string): Promise<RefreshTokenResult>;
 }
+
 export default PublishingAdapter;

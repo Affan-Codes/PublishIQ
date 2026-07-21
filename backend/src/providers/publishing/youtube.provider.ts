@@ -138,6 +138,30 @@ export const youtubeAdapter: PublishingAdapter = {
         platformResponse: err.response?.data,
       };
     }
+  },
+
+  async checkHealth(accessToken: string): Promise<boolean> {
+    if (process.env.NODE_ENV === 'test') return true;
+    await axios.get('https://www.googleapis.com/oauth2/v3/tokeninfo', {
+      params: { access_token: accessToken }
+    });
+    return true;
+  },
+
+  async refreshToken(refreshToken: string) {
+    const res = await axios.post('https://oauth2.googleapis.com/token', null, {
+      params: {
+        client_id: process.env.GOOGLE_CLIENT_ID || 'dummy_client_id',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET || 'dummy_client_secret',
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }
+    });
+
+    return {
+      accessToken: res.data.access_token,
+      expiresInSeconds: res.data.expires_in || 3600,
+    };
   }
 };
 

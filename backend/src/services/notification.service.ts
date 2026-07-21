@@ -122,6 +122,28 @@ export const notificationService = {
     
     logger.info('Notification Service event listener started');
   },
+
+  async listNotifications(workspaceId: string, skip: number, limit: number) {
+    const [items, total] = await Promise.all([
+      notificationRepository.list(workspaceId, skip, limit),
+      notificationRepository.count(workspaceId),
+    ]);
+    return { items, total };
+  },
+
+  async markAsRead(id: string, workspaceId: string) {
+    const existing = await notificationRepository.getById(id);
+    if (!existing || existing.workspaceId !== workspaceId) {
+      throw new Error('Notification not found');
+    }
+    return notificationRepository.update(id, {
+      readAt: new Date(),
+    });
+  },
+
+  async markAllAsRead(workspaceId: string) {
+    return notificationRepository.markAllAsRead(workspaceId);
+  },
 };
 
 export default notificationService;

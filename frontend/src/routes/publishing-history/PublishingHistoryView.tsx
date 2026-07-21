@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../lib/api-client.js';
 import { 
   Search, 
-  Filter, 
   CheckCircle, 
   XCircle, 
   Clock, 
@@ -12,9 +11,9 @@ import {
   ChevronRight, 
   Play, 
   AlertTriangle,
-  Youtube,
-  Instagram,
-  Facebook,
+  Video as Youtube,
+  Camera as Instagram,
+  Share2 as Facebook,
   X,
   FileText
 } from 'lucide-react';
@@ -499,7 +498,7 @@ export const PublishingHistoryView: React.FC = () => {
                       className="flex-1 bg-[#161622] border border-[#222235] px-4 py-2.5 rounded-xl text-sm text-[#9c9cb0] focus:outline-none focus:border-purple-500"
                     >
                       <option value="">-- Choose Channel --</option>
-                      {channels.data?.map((ch: any) => (
+                      {(Array.isArray(channels) ? channels : (channels as any)?.data || [])?.map((ch: any) => (
                         <option key={ch.id} value={ch.id}>{ch.name}</option>
                       ))}
                     </select>

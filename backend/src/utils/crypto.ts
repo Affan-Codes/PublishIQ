@@ -8,7 +8,7 @@ const TAG_LENGTH = 16;
 // Derive the key once at startup to avoid blocking the event loop on scrypt sync calls
 const KEY = crypto.scryptSync(
   env.ENCRYPTION_KEY,
-  process.env.ENCRYPTION_SALT || 'publishiq_secure_static_salt_v1',
+  env.ENCRYPTION_SALT,
   32
 );
 

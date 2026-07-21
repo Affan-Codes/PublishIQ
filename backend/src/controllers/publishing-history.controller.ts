@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { publishingRecordRepository } from '../repositories/publishingRecord.repository.js';
 import publishingService from '../services/publishing.service.js';
 import { PublishRecordStatus } from '@prisma/client';
 
@@ -27,10 +26,7 @@ export const publishingHistoryController = {
       if (contentTypeSnapshot) filters.contentTypeSnapshot = contentTypeSnapshot;
       if (search) filters.search = search;
 
-      const [items, total] = await Promise.all([
-        publishingRecordRepository.list(workspaceId, { ...filters, skip, take: limit }),
-        publishingRecordRepository.count(workspaceId, filters),
-      ]);
+      const { items, total } = await publishingService.listHistory(workspaceId, filters, skip, limit);
 
       res.json({
         success: true,
@@ -52,7 +48,7 @@ export const publishingHistoryController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.workspaceId as string;
-      const record = await publishingRecordRepository.getById(req.params.id as string, workspaceId);
+      const record = await publishingService.getRecordById(req.params.id as string, workspaceId);
 
       if (!record) {
         res.status(404).json({

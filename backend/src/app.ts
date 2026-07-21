@@ -40,7 +40,7 @@ app.use('/api/v1/auth/login', loginLimiter);
 // Global API rate limiter
 const globalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // Limit to 300 requests per 15 minutes per IP
+  max: 1000, // Limit to 1000 requests per 15 minutes per IP
   message: {
     success: false,
     error: {

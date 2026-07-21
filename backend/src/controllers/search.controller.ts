@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { searchRepository } from '../repositories/search.repository.js';
+import searchService from '../services/search.service.js';
 
 export const searchController = {
   async search(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -7,25 +7,7 @@ export const searchController = {
       const workspaceId = req.workspaceId as string;
       const query = (req.query.q as string || '').trim();
 
-      if (!query) {
-        res.json({
-          success: true,
-          data: {
-            channels: [],
-            generatedContents: [],
-            jobs: [],
-            publishingRecords: [],
-            assets: [],
-            templates: [],
-            prompts: [],
-            contentProfiles: [],
-          },
-          meta: {},
-        });
-        return;
-      }
-
-      const results = await searchRepository.searchAll(workspaceId, query);
+      const results = await searchService.searchAll(workspaceId, query);
 
       res.json({
         success: true,
@@ -41,4 +23,3 @@ export const searchController = {
 };
 
 export default searchController;
-

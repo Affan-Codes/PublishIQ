@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { dashboardRepository } from '../repositories/dashboard.repository.js';
+import dashboardService from '../services/dashboard.service.js';
 import { getRedisInstance } from '../database/redis.js';
 import { requireAuth } from '../middlewares/auth.js';
 import os from 'os';
@@ -28,7 +28,7 @@ router.get('/health/diagnostics', requireAuth, async (req: Request, res: Respons
   try {
     // 1. Check PostgreSQL health and measure latency
     const dbStart = Date.now();
-    await dashboardRepository.pingDatabase();
+    await dashboardService.checkDatabaseHealth();
     const dbLatencyMs = Date.now() - dbStart;
     const dbStatus = 'healthy';
 

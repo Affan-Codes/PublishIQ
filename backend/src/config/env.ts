@@ -10,6 +10,7 @@ const envSchema = z.object({
   REDIS_URL: z.string(),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
   ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 characters long'),
+  ENCRYPTION_SALT: z.string().min(16, 'ENCRYPTION_SALT must be at least 16 characters long').default('publishiq_secure_static_salt_v1'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('debug'),
   MEDIA_ROOT: z.string().default('./media'),
   QUEUE_PREFIX: z.string().default('publishiq'),
@@ -23,12 +24,13 @@ const envSchema = z.object({
     if (data.NODE_ENV === 'production') {
       if (data.OPERATOR_PASSWORD === 'admin1234_default_secret_passphrase' || !process.env.OPERATOR_PASSWORD) return false;
       if (data.OPERATOR_EMAIL === 'admin@publishiq.com' || !process.env.OPERATOR_EMAIL) return false;
+      if (data.ENCRYPTION_SALT === 'publishiq_secure_static_salt_v1' || !process.env.ENCRYPTION_SALT) return false;
     }
     return true;
   },
   {
-    message: 'Custom OPERATOR_EMAIL and OPERATOR_PASSWORD must be explicitly provided in production NODE_ENV',
-    path: ['OPERATOR_PASSWORD'],
+    message: 'Custom OPERATOR_EMAIL, OPERATOR_PASSWORD, and ENCRYPTION_SALT must be explicitly provided in production NODE_ENV',
+    path: ['ENCRYPTION_SALT'],
   }
 );
 
