@@ -37,6 +37,18 @@ export const configRepository = {
       create: { workspaceId, key, enabled, description: '' },
     });
   },
+
+  async listFlags(workspaceId: string): Promise<FeatureFlag[]> {
+    return prisma.featureFlag.findMany({
+      where: { workspaceId },
+    });
+  },
+
+  async listConfigs(workspaceId: string): Promise<SystemConfiguration[]> {
+    return prisma.systemConfiguration.findMany({
+      where: { workspaceId },
+    });
+  },
 };
 
 export default configRepository;

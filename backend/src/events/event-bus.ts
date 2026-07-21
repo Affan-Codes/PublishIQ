@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
-import { prisma } from '../database/db.js';
+import { workspaceRepository } from '../repositories/workspace.repository.js';
+import { logRepository } from '../repositories/log.repository.js';
 import { getRedisInstance } from '../database/redis.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
@@ -43,18 +44,16 @@ export async function emitDomainEvent(
 
   // Fallback to resolve workspaceId if missing (v1 has exactly one Workspace)
   if (!workspaceId) {
-    const firstWorkspace = await prisma.workspace.findFirst();
+    const firstWorkspace = await workspaceRepository.getFirst();
     workspaceId = firstWorkspace?.id || '';
   }
 
   // 1. Create and commit the DomainEvent in PostgreSQL
-  const domainEvent = await prisma.domainEvent.create({
-    data: {
-      workspaceId,
-      type,
-      payload,
-      jobId: jobId || null,
-    },
+  const domainEvent = await logRepository.createDomainEvent({
+    workspaceId,
+    type,
+    payload,
+    jobId: jobId || null,
   });
 
   // 2. Publish to Redis Pub/Sub channel

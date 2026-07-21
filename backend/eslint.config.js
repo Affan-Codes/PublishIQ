@@ -20,6 +20,10 @@ export default [
         {
           paths: [
             {
+              name: './database/db.js',
+              message: 'Database connection client can only be imported from repository layer files.',
+            },
+            {
               name: '../database/db.js',
               message: 'Database connection client can only be imported from repository layer files.',
             },
@@ -37,7 +41,7 @@ export default [
     },
   },
   {
-    files: ['src/repositories/**/*.ts'],
+    files: ['src/repositories/**/*.ts', 'src/api.ts', 'src/worker.ts'],
     rules: {
       'no-restricted-imports': 'off',
     },

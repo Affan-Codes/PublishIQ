@@ -1,4 +1,5 @@
-import { prisma } from '../database/db.js';
+import { workspaceRepository } from '../repositories/workspace.repository.js';
+import { configRepository } from '../repositories/config.repository.js';
 import { logger } from '../utils/logger.js';
 
 const cache = new Map<string, boolean>();
@@ -8,7 +9,7 @@ let workspaceId: string | null = null;
 
 async function getWorkspaceId(): Promise<string> {
   if (workspaceId) return workspaceId;
-  const workspace = await prisma.workspace.findFirst();
+  const workspace = await workspaceRepository.getFirst();
   if (!workspace) {
     throw new Error('No workspace found in the database. Ensure seeding has been run.');
   }
@@ -26,9 +27,7 @@ export async function isFeatureFlagEnabled(key: string): Promise<boolean> {
 export async function reloadFeatureFlags(): Promise<void> {
   try {
     const wsId = await getWorkspaceId();
-    const flags = await prisma.featureFlag.findMany({
-      where: { workspaceId: wsId },
-    });
+    const flags = await configRepository.listFlags(wsId);
 
     cache.clear();
     for (const flag of flags) {

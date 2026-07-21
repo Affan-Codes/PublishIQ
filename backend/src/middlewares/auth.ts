@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { Role } from '@prisma/client';
 import authService from '../services/auth.service.js';
-import { prisma } from '../database/db.js';
+import { workspaceRepository } from '../repositories/workspace.repository.js';
 import { UnauthorizedError, ForbiddenError } from '../errors/custom-errors.js';
 
 export interface OperatorPayload {
@@ -46,7 +46,7 @@ export const requireAuth = async (
 
     let workspaceId = session.user.workspaceId;
     if (!workspaceId) {
-      const workspace = await prisma.workspace.findFirst();
+      const workspace = await workspaceRepository.getFirst();
       workspaceId = workspace?.id ?? null;
     }
 
