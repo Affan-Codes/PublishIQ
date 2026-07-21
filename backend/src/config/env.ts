@@ -15,10 +15,22 @@ const envSchema = z.object({
   QUEUE_PREFIX: z.string().default('publishiq'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   OPERATOR_EMAIL: z.string().email().default('admin@publishiq.com'),
-  OPERATOR_PASSWORD: z.string().min(4).default('admin1234'),
+  OPERATOR_PASSWORD: z.string().min(12, 'OPERATOR_PASSWORD must be at least 12 characters long').default('admin1234_default_secret_passphrase'),
   GEMINI_API_KEY: z.string().optional(),
   APP_BASE_URL: z.string().url().default('http://localhost:4000'),
-});
+}).refine(
+  (data) => {
+    if (data.NODE_ENV === 'production') {
+      if (data.OPERATOR_PASSWORD === 'admin1234_default_secret_passphrase' || !process.env.OPERATOR_PASSWORD) return false;
+      if (data.OPERATOR_EMAIL === 'admin@publishiq.com' || !process.env.OPERATOR_EMAIL) return false;
+    }
+    return true;
+  },
+  {
+    message: 'Custom OPERATOR_EMAIL and OPERATOR_PASSWORD must be explicitly provided in production NODE_ENV',
+    path: ['OPERATOR_PASSWORD'],
+  }
+);
 
 const parsed = envSchema.safeParse(process.env);
 

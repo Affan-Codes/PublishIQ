@@ -71,6 +71,25 @@ export const platformConnectionRepository = {
     });
   },
 
+  async updateRaw(id: string, data: any): Promise<PlatformConnection> {
+    return prisma.platformConnection.update({
+      where: { id },
+      data,
+    });
+  },
+
+  async getExpiringConnections(thresholdDate: Date): Promise<PlatformConnection[]> {
+    return prisma.platformConnection.findMany({
+      where: {
+        expiresAt: { lt: thresholdDate },
+      },
+    });
+  },
+
+  async listAll(): Promise<PlatformConnection[]> {
+    return prisma.platformConnection.findMany();
+  },
+
   async delete(id: string): Promise<PlatformConnection> {
     return prisma.platformConnection.delete({
       where: { id },
@@ -79,3 +98,4 @@ export const platformConnectionRepository = {
 };
 
 export default platformConnectionRepository;
+

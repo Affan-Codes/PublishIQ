@@ -44,9 +44,9 @@ export const facebookAdapter: PublishingAdapter = {
       return { success: false, errorMessage: 'Failed to decrypt access token: ' + err.message };
     }
 
-    // Check if it's a test token or dummy connection
-    if (accessToken === 'mock_token' || accessToken === '********' || accessToken.startsWith('ig_') || accessToken.startsWith('yt_')) {
-      logger.info('Simulating Facebook publishing success for test token');
+    // Check if it's a test environment for publishing simulation
+    if (process.env.NODE_ENV === 'test') {
+      logger.info('Simulating Facebook publishing success for test environment');
       const mockId = `fb_post_${Date.now()}`;
       return {
         success: true,

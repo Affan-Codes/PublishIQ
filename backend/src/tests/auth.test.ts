@@ -5,13 +5,13 @@ import { z } from 'zod';
 test('Authentication Schema and Middlewares Unit Tests', async (t) => {
   const userCreateSchema = z.object({
     email: z.string().email('Invalid email address format'),
-    password: z.string().min(4, 'Password must be at least 4 characters long'),
+    password: z.string().min(12, 'Password must be at least 12 characters long'),
   });
 
   await t.test('User validation schemas - correct inputs', () => {
     const valid = userCreateSchema.safeParse({
       email: 'admin@publishiq.com',
-      password: 'adminpassword',
+      password: 'adminpassword123',
     });
     assert.strictEqual(valid.success, true);
   });
@@ -19,7 +19,7 @@ test('Authentication Schema and Middlewares Unit Tests', async (t) => {
   await t.test('User validation schemas - invalid email format rejected', () => {
     const invalid = userCreateSchema.safeParse({
       email: 'invalid-email-address',
-      password: 'validpassword',
+      password: 'validpassword123',
     });
     assert.strictEqual(invalid.success, false);
     if (!invalid.success) {
@@ -30,11 +30,11 @@ test('Authentication Schema and Middlewares Unit Tests', async (t) => {
   await t.test('User validation schemas - short passwords rejected', () => {
     const invalid = userCreateSchema.safeParse({
       email: 'admin@publishiq.com',
-      password: '123',
+      password: '1234567890',
     });
     assert.strictEqual(invalid.success, false);
     if (!invalid.success) {
-      assert.strictEqual(invalid.error?.issues[0]?.message, 'Password must be at least 4 characters long');
+      assert.strictEqual(invalid.error?.issues[0]?.message, 'Password must be at least 12 characters long');
     }
   });
 });

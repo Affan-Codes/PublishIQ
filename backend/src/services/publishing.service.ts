@@ -1,12 +1,16 @@
-import { prisma } from '../database/db.js';
 import { logger } from '../utils/logger.js';
 import { getPublishingAdapter } from '../providers/publishing/index.js';
-import { PlatformConnection, Platform, PublishRecordStatus, PublishStatus, Job, Prisma } from '@prisma/client';
+import { PlatformConnection, Platform, PublishRecordStatus, PublishStatus, Job, Prisma, PipelineStage } from '@prisma/client';
 import { decrypt, encrypt } from '../utils/crypto.js';
 import axios from 'axios';
 import { env } from '../config/env.js';
 import { NotFoundError, ValidationError, ConflictError } from '../errors/custom-errors.js';
 import eventBus from '../events/event-bus.js';
+import { jobRepository } from '../repositories/job.repository.js';
+import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
+import { publishingRecordRepository } from '../repositories/publishingRecord.repository.js';
+import { platformConnectionRepository } from '../repositories/platformConnection.repository.js';
+import { channelRepository } from '../repositories/channel.repository.js';
 
 export const publishingService = {
   /**
@@ -15,20 +19,7 @@ export const publishingService = {
   async publishJobContent(jobId: string): Promise<void> {
     logger.info({ jobId }, 'Initiating publishing phase for Content Pipeline Job');
 
-    const job = await prisma.job.findUnique({
-      where: { id: jobId },
-      include: {
-        channel: {
-          include: {
-            platformConnections: {
-              include: {
-                platformConnection: true
-              }
-            }
-          }
-        }
-      }
-    });
+    const job = await jobRepository.getJobForPublishing(jobId);
 
     if (!job) {
       throw new NotFoundError(`Job not found: ${jobId}`);
@@ -40,9 +31,7 @@ export const publishingService = {
       return;
     }
 
-    const generatedContent = await prisma.generatedContent.findFirst({
-      where: { jobId },
-    });
+    const generatedContent = await generatedContentRepository.findByJobId(jobId);
 
     if (!generatedContent) {
       throw new ValidationError(`No generated content output found for Job ${jobId}`);
@@ -53,6 +42,8 @@ export const publishingService = {
       logger.info({ jobId, channelId: channel.id }, 'No platform connections found for channel. Publishing complete.');
       return;
     }
+
+    const contentTypeSnapshot = (channel as any).contentProfile?.contentType?.name || 'Unknown';
 
     let anyFailure = false;
 
@@ -75,20 +66,18 @@ export const publishingService = {
         const errorMsg = `Platform limits violation: ${violations.map(v => v.message).join(', ')}`;
         logger.error({ jobId, platform, violations }, errorMsg);
         
-        await prisma.publishingRecord.create({
-          data: {
-            workspaceId: job.workspaceId,
-            jobId: job.id,
-            channelId: channel.id,
-            platformConnectionId: connection.id,
-            contentTypeSnapshot: channel.contentProfileId, // snapshot content profile reference
-            status: PublishRecordStatus.Failure,
-            publishedAt: new Date(),
-            platform: platform,
-            generatedContentId: generatedContent.id,
-            errorDetails: errorMsg,
-            retries: 0,
-          }
+        await publishingRecordRepository.create({
+          workspaceId: job.workspaceId,
+          jobId: job.id,
+          channelId: channel.id,
+          platformConnectionId: connection.id,
+          contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+          status: PublishRecordStatus.Failure,
+          publishedAt: new Date(),
+          platform: platform,
+          generatedContentId: generatedContent.id,
+          errorDetails: errorMsg,
+          retries: 0,
         });
 
         anyFailure = true;
@@ -102,20 +91,18 @@ export const publishingService = {
         const errorMsg = `Connection health check failed: ${err.message}`;
         logger.error({ connectionId: connection.id, err }, errorMsg);
 
-        await prisma.publishingRecord.create({
-          data: {
-            workspaceId: job.workspaceId,
-            jobId: job.id,
-            channelId: channel.id,
-            platformConnectionId: connection.id,
-            contentTypeSnapshot: channel.contentProfileId,
-            status: PublishRecordStatus.Failure,
-            publishedAt: new Date(),
-            platform: platform,
-            generatedContentId: generatedContent.id,
-            errorDetails: errorMsg,
-            retries: 0,
-          }
+        await publishingRecordRepository.create({
+          workspaceId: job.workspaceId,
+          jobId: job.id,
+          channelId: channel.id,
+          platformConnectionId: connection.id,
+          contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+          status: PublishRecordStatus.Failure,
+          publishedAt: new Date(),
+          platform: platform,
+          generatedContentId: generatedContent.id,
+          errorDetails: errorMsg,
+          retries: 0,
         });
 
         anyFailure = true;
@@ -123,9 +110,7 @@ export const publishingService = {
       }
 
       // Reload fresh connection tokens (in case refresh occurred)
-      const freshConnection = await prisma.platformConnection.findUnique({
-        where: { id: connection.id }
-      });
+      const freshConnection = await platformConnectionRepository.getById(connection.id);
       if (!freshConnection) throw new Error('Connection lost.');
 
       const startTime = Date.now();
@@ -186,24 +171,22 @@ export const publishingService = {
       const duration = Date.now() - startTime;
 
       // 3. Persist Publishing Record
-      await prisma.publishingRecord.create({
-        data: {
-          workspaceId: job.workspaceId,
-          jobId: job.id,
-          channelId: channel.id,
-          platformConnectionId: connection.id,
-          contentTypeSnapshot: channel.contentProfileId,
-          status: success ? PublishRecordStatus.Success : PublishRecordStatus.Failure,
-          publishedAt: new Date(),
-          platform: platform,
-          generatedContentId: generatedContent.id,
-          publishedUrl: success ? this.getPublishedUrl(platform, externalId, platformResponse) : null,
-          platformPostId: externalId || null,
-          duration,
-          retries: publishRetries,
-          providerMetadata: platformResponse ? (platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
-          errorDetails: success ? null : lastErrorMessage,
-        }
+      await publishingRecordRepository.create({
+        workspaceId: job.workspaceId,
+        jobId: job.id,
+        channelId: channel.id,
+        platformConnectionId: connection.id,
+        contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+        status: success ? PublishRecordStatus.Success : PublishRecordStatus.Failure,
+        publishedAt: new Date(),
+        platform: platform,
+        generatedContentId: generatedContent.id,
+        publishedUrl: success ? this.getPublishedUrl(platform, externalId, platformResponse) : null,
+        platformPostId: externalId || null,
+        duration,
+        retries: publishRetries,
+        providerMetadata: platformResponse ? (platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
+        errorDetails: success ? null : lastErrorMessage,
       });
 
       if (!success) {
@@ -227,11 +210,8 @@ export const publishingService = {
     }
 
     // 4. Update GeneratedContent publish status
-    await prisma.generatedContent.update({
-      where: { id: generatedContent.id },
-      data: {
-        publishStatus: anyFailure ? PublishStatus.PublishFailed : PublishStatus.Published,
-      }
+    await generatedContentRepository.update(generatedContent.id, {
+      publishStatus: anyFailure ? PublishStatus.PublishFailed : PublishStatus.Published,
     });
 
     if (anyFailure) {
@@ -243,29 +223,19 @@ export const publishingService = {
    * Publishes an existing GeneratedContent manually.
    */
   async republishContent(generatedContentId: string, channelId: string, workspaceId: string): Promise<void> {
-    const generatedContent = await prisma.generatedContent.findUnique({
-      where: { id: generatedContentId, workspaceId },
-      include: { job: true }
-    });
+    const generatedContent = await generatedContentRepository.getByIdWithJob(generatedContentId, workspaceId);
 
     if (!generatedContent) {
       throw new NotFoundError('Generated content not found');
     }
 
-    const channel = await prisma.channel.findFirst({
-      where: { id: channelId, workspaceId },
-      include: {
-        platformConnections: {
-          include: { platformConnection: true }
-        }
-      }
-    });
+    const channel = await channelRepository.getById(channelId);
 
     if (!channel) {
       throw new NotFoundError('Target channel not found');
     }
 
-    const connections = channel.platformConnections.map(pc => pc.platformConnection);
+    const connections = channel.platformConnections;
     if (connections.length === 0) {
       throw new ValidationError('No active platform connections linked to this channel.');
     }
@@ -273,48 +243,38 @@ export const publishingService = {
     logger.info({ generatedContentId, channelId }, 'Operator triggered manual republish of content');
 
     // Create a new Job to track this republish attempt
-    const republishJob = await prisma.job.create({
-      data: {
-        workspaceId,
-        jobType: 'RetryPublish',
-        channelId: channel.id,
-        contentProfileId: channel.contentProfileId,
-        pipelineStage: 'Publishing',
-        generatedText: generatedContent.text,
-        imageUrl: generatedContent.imageUrl,
-        videoUrl: generatedContent.videoUrl,
-        caption: generatedContent.caption,
-        hashtags: (generatedContent.hashtags as Prisma.InputJsonValue) || Prisma.JsonNull,
-        configSnapshot: {
-          originalJobId: generatedContent.jobId,
-          republishTrigger: 'manual'
-        }
+    const republishJob = await jobRepository.createJob({
+      workspaceId,
+      jobType: 'RetryPublish',
+      channelId: channel.id,
+      contentProfileId: channel.contentProfileId,
+      pipelineStage: 'Publishing',
+      generatedText: generatedContent.text,
+      imageUrl: generatedContent.imageUrl,
+      videoUrl: generatedContent.videoUrl,
+      caption: generatedContent.caption,
+      hashtags: (generatedContent.hashtags as Prisma.InputJsonValue) || Prisma.JsonNull,
+      configSnapshot: {
+        originalJobId: generatedContent.jobId,
+        republishTrigger: 'manual'
       }
     });
 
     // Link the generated content to the job
-    await prisma.generatedContent.update({
-      where: { id: generatedContent.id },
-      data: { jobId: republishJob.id }
+    await generatedContentRepository.update(generatedContent.id, {
+      jobId: republishJob.id,
     });
 
     // Run the publish process using the new Job context
     try {
       await this.publishJobContent(republishJob.id);
       
-      await prisma.job.update({
-        where: { id: republishJob.id },
-        data: { pipelineStage: 'Completed' }
-      });
+      await jobRepository.transitionJobStage(republishJob.id, PipelineStage.Completed, {});
     } catch (err: any) {
-      await prisma.job.update({
-        where: { id: republishJob.id },
-        data: {
-          pipelineStage: 'Failed',
-          failedAt: new Date(),
-          failureReason: err.message,
-          failureStage: 'Publishing'
-        }
+      await jobRepository.transitionJobStage(republishJob.id, PipelineStage.Failed, {
+        failedAt: new Date(),
+        failureReason: err.message,
+        failureStage: 'Publishing'
       });
       throw err;
     }
@@ -324,15 +284,10 @@ export const publishingService = {
    * Retries a single failed publishing record.
    */
   async retryPublishRecord(publishRecordId: string, workspaceId: string): Promise<void> {
-    const record = await prisma.publishingRecord.findUnique({
-      where: { id: publishRecordId, workspaceId },
-      include: {
-        generatedContent: true,
-        platformConnection: true,
-        channel: true,
-        job: true,
-      }
-    });
+    const record = await publishingRecordRepository.getById(publishRecordId);
+    if (!record || record.workspaceId !== workspaceId) {
+      throw new NotFoundError('Publishing record not found');
+    }
 
     if (!record) {
       throw new NotFoundError('Publishing record not found');
@@ -370,9 +325,7 @@ export const publishingService = {
     await this.ensureConnectionHealth(connection);
 
     // Reload connection tokens
-    const freshConnection = await prisma.platformConnection.findUnique({
-      where: { id: connection.id }
-    });
+    const freshConnection = await platformConnectionRepository.getById(connection.id);
     if (!freshConnection) throw new Error('Connection lost.');
 
     const startTime = Date.now();
@@ -395,39 +348,30 @@ export const publishingService = {
 
     if (res.success) {
       // Update record to Success
-      await prisma.publishingRecord.update({
-        where: { id: record.id },
-        data: {
-          status: PublishRecordStatus.Success,
-          publishedUrl: this.getPublishedUrl(platform, res.externalId, res.platformResponse),
-          platformPostId: res.externalId || null,
-          duration,
-          retries: record.retries + 1,
-          providerMetadata: res.platformResponse ? (res.platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
-          errorDetails: null,
-          publishedAt: new Date(),
-        }
+      await publishingRecordRepository.update(record.id, {
+        status: PublishRecordStatus.Success,
+        publishedUrl: this.getPublishedUrl(platform, res.externalId, res.platformResponse),
+        platformPostId: res.externalId || null,
+        duration,
+        retries: record.retries + 1,
+        providerMetadata: res.platformResponse ? (res.platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
+        errorDetails: null,
+        publishedAt: new Date(),
       });
 
       // Recalculate compile/publish status for the content
-      const siblingFailures = await prisma.publishingRecord.count({
-        where: {
-          jobId: record.jobId,
-          status: PublishRecordStatus.Failure,
-          id: { not: record.id }
-        }
+      const siblingFailures = await publishingRecordRepository.count(workspaceId, {
+        jobId: record.jobId,
+        status: PublishRecordStatus.Failure,
+        excludeId: record.id,
       });
 
       if (siblingFailures === 0) {
-        await prisma.generatedContent.update({
-          where: { id: generatedContent.id },
-          data: { publishStatus: PublishStatus.Published }
+        await generatedContentRepository.update(generatedContent.id, {
+          publishStatus: PublishStatus.Published,
         });
         
-        await prisma.job.update({
-          where: { id: record.jobId },
-          data: { pipelineStage: 'Completed' }
-        });
+        await jobRepository.transitionJobStage(record.jobId, PipelineStage.Completed, {});
       }
 
       await eventBus.emitDomainEvent(
@@ -438,14 +382,11 @@ export const publishingService = {
       );
     } else {
       // Update retries count and last error
-      await prisma.publishingRecord.update({
-        where: { id: record.id },
-        data: {
-          retries: record.retries + 1,
-          errorDetails: res.errorMessage || 'Publish failed',
-          providerMetadata: res.platformResponse ? (res.platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
-          publishedAt: new Date(),
-        }
+      await publishingRecordRepository.update(record.id, {
+        retries: record.retries + 1,
+        errorDetails: res.errorMessage || 'Publish failed',
+        providerMetadata: res.platformResponse ? (res.platformResponse as Prisma.InputJsonValue) : Prisma.JsonNull,
+        publishedAt: new Date(),
       });
 
       await eventBus.emitDomainEvent(
@@ -492,10 +433,7 @@ export const publishingService = {
           await this.refreshConnectionTokens(connection.id);
         } catch (refreshErr) {
           // Set connection status Unhealthy
-          await prisma.platformConnection.update({
-            where: { id: connection.id },
-            data: { healthStatus: 'Unhealthy' }
-          });
+          await platformConnectionRepository.updateRaw(connection.id, { healthStatus: 'Unhealthy' });
           throw new Error('Connection unhealthy, and automatic token refresh failed.');
         }
       }
@@ -506,9 +444,7 @@ export const publishingService = {
    * Refreshes access tokens using refresh token credentials.
    */
   async refreshConnectionTokens(connectionId: string): Promise<void> {
-    const connection = await prisma.platformConnection.findUnique({
-      where: { id: connectionId }
-    });
+    const connection = await platformConnectionRepository.getById(connectionId);
 
     if (!connection) throw new NotFoundError('Connection not found');
 
@@ -532,13 +468,10 @@ export const publishingService = {
         const expiresInSeconds = res.data.expires_in || 3600;
         const newExpiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
-        await prisma.platformConnection.update({
-          where: { id: connectionId },
-          data: {
-            accessTokenEnc: encrypt(newAccessToken) as any,
-            expiresAt: newExpiresAt,
-            healthStatus: 'Healthy'
-          }
+        await platformConnectionRepository.updateRaw(connectionId, {
+          accessTokenEnc: encrypt(newAccessToken) as any,
+          expiresAt: newExpiresAt,
+          healthStatus: 'Healthy'
         });
       } else {
         // Facebook Page / Instagram user long-lived token exchange refresh (expires every 60 days)
@@ -554,13 +487,10 @@ export const publishingService = {
         const newAccessToken = res.data.access_token;
         const newExpiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days from now
 
-        await prisma.platformConnection.update({
-          where: { id: connectionId },
-          data: {
-            accessTokenEnc: encrypt(newAccessToken) as any,
-            expiresAt: newExpiresAt,
-            healthStatus: 'Healthy'
-          }
+        await platformConnectionRepository.updateRaw(connectionId, {
+          accessTokenEnc: encrypt(newAccessToken) as any,
+          expiresAt: newExpiresAt,
+          healthStatus: 'Healthy'
         });
       }
       logger.info({ connectionId }, 'Successfully refreshed platform connection tokens');

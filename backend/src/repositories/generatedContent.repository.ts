@@ -97,6 +97,31 @@ export const generatedContentRepository = {
       where: { id },
     });
   },
+
+  async findByTextHash(workspaceId: string, textHash: string): Promise<GeneratedContent | null> {
+    return prisma.generatedContent.findFirst({
+      where: {
+        workspaceId,
+        textHash,
+      },
+    });
+  },
+
+  async findByJobId(jobId: string): Promise<GeneratedContent | null> {
+    return prisma.generatedContent.findFirst({
+      where: {
+        jobId,
+      },
+    });
+  },
+
+  async getByIdWithJob(id: string, workspaceId: string): Promise<any> {
+    return prisma.generatedContent.findFirst({
+      where: { id, workspaceId },
+      include: { job: true },
+    });
+  },
 };
 
 export default generatedContentRepository;
+

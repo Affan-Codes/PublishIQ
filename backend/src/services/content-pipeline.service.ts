@@ -1,5 +1,10 @@
 import { PipelineStage, PublishStatus, Job, Asset } from '@prisma/client';
 import { jobRepository } from '../repositories/job.repository.js';
+import { channelRepository } from '../repositories/channel.repository.js';
+import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
+import { contentTypeRepository } from '../repositories/contentType.repository.js';
+import { assetRepository } from '../repositories/asset.repository.js';
+import { templateRepository } from '../repositories/template.repository.js';
 import { geminiProvider } from '../providers/ai/gemini.provider.js';
 import { renderingService } from './rendering.service.js';
 import { videoService } from './video.service.js';
@@ -8,7 +13,6 @@ import { systemConfigCache } from '../config/system-config.cache.js';
 import { getNormalizedHash } from '../utils/normalization.js';
 import { logger } from '../utils/logger.js';
 import { ValidationError, NotFoundError, ExternalProviderError } from '../errors/custom-errors.js';
-import { prisma } from '../database/db.js';
 
 export interface PipelineOptions {
   onStageComplete?: (stage: PipelineStage) => Promise<void>;
@@ -32,12 +36,8 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
-      const promptVersion = await prisma.promptVersion.findUnique({
-        where: { id: profile.promptVersionId }
-      });
-      const contentType = await prisma.contentType.findUnique({
-        where: { id: profile.contentTypeId }
-      });
+      const promptVersion = await jobRepository.getPromptVersionById(profile.promptVersionId);
+      const contentType = await contentTypeRepository.getById(profile.contentTypeId);
 
       if (!promptVersion) {
         throw new ValidationError(`Prompt version not found: ${profile.promptVersionId}`);
@@ -77,20 +77,17 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       }
 
       // Profanity filtering check
-      const profanityList = ['swearword1', 'swearword2']; // basic profanity stub
-      const containsProfanity = profanityList.some((word) => text.toLowerCase().includes(word));
+      const configProfanity = await systemConfigCache.get<string[]>('profanity_filter_words');
+      const defaultProfanities = ['abuse', 'asshole', 'bitch', 'bastard', 'crap', 'cunt', 'dick', 'fuck', 'motherfucker', 'piss', 'pussy', 'shit', 'slut', 'whore'];
+      const profanityList = Array.isArray(configProfanity) ? configProfanity : defaultProfanities;
+      const containsProfanity = profanityList.some((word) => text.toLowerCase().includes(word.toLowerCase()));
       if (containsProfanity) {
         throw new ValidationError('Generated text contains filtered profanity words.');
       }
 
       // Normalized Hash duplicate check
       const normalizedHash = getNormalizedHash(text);
-      const duplicateContent = await prisma.generatedContent.findFirst({
-        where: {
-          textHash: normalizedHash,
-          workspaceId: job.workspaceId,
-        },
-      });
+      const duplicateContent = await generatedContentRepository.findByTextHash(job.workspaceId, normalizedHash);
 
       if (duplicateContent) {
         throw new ValidationError(`Duplicate content detected. Hash match: ${normalizedHash}`);
@@ -112,6 +109,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         language: profile.language,
         branding: (profile.renderingConfiguration as any)?.branding || 'PUBLISHIQ',
         watermark: (profile.renderingConfiguration as any)?.watermark || '@publishiq',
+        templateVersionId: profile.templateVersionId,
       });
 
       await jobRepository.transitionJobStage(jobId, stage, {
@@ -133,28 +131,31 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       const mood = selectionRules.mood || 'Inspiring';
       const genre = selectionRules.genre || 'Acoustic';
 
-      // Load matching music assets from the database
-      const matchedAssets = await prisma.asset.findMany({
-        where: {
-          workspaceId: job.workspaceId,
-          type: 'Music',
-          status: 'Active',
-          licenseStatus: 'Confirmed',
-          metadata: {
-            path: ['mood'],
-            equals: mood,
-          },
-        },
+      // Load all active licensed music assets from the database via repository layer (ARCH-001)
+      const allMusic = await assetRepository.list(job.workspaceId, 'Music');
+
+      // Filter candidates using both mood and genre
+      const exactMatches = allMusic.filter((asset) => {
+        if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
+        const meta = asset.metadata as Record<string, any> || {};
+        return meta.mood === mood && meta.genre === genre;
       });
 
-      // Fallback to any active licensed track if no direct matches found to avoid pipeline block,
-      // but if we want strict enforcement, throw a validation error.
-      if (matchedAssets.length === 0) {
+      // Fallback: if no exact combination is found, fallback to matching by mood only
+      const candidates = exactMatches.length > 0
+        ? exactMatches
+        : allMusic.filter((asset) => {
+            if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
+            const meta = asset.metadata as Record<string, any> || {};
+            return meta.mood === mood;
+          });
+
+      if (candidates.length === 0) {
         throw new ValidationError(`No music track matches profile selection rules: ${JSON.stringify(selectionRules)}`);
       }
 
       // Pick the first matched asset
-      const selectedAsset = matchedAssets[0]!;
+      const selectedAsset = candidates[0]!;
       logger.info({ jobId, assetId: selectedAsset.id }, 'Music track selected successfully');
 
       // Store the selected music asset file path in configSnapshot (since no direct music column exists)
@@ -279,10 +280,15 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
   }
 
   try {
+    const completedStagesInThisRun = new Set<PipelineStage>();
+
     // 1. Run Generation & Media Rendering Phase
     if (job.pipelineStage !== PipelineStage.Publishing && job.pipelineStage !== PipelineStage.Completed) {
       for (let i = startIndex; i < generationStages.length; i++) {
         const stage = generationStages[i]!;
+        if (completedStagesInThisRun.has(stage)) {
+          continue;
+        }
 
         job = await jobRepository.transitionJobStage(job.id, stage, {}, {
           type: `${stage}Started`,
@@ -298,7 +304,8 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
             try {
               await processStage(job.id, PipelineStage.GeneratingContent);
               await processStage(job.id, PipelineStage.Validating);
-              i++; // skip validating stage execution in the next outer iteration
+              completedStagesInThisRun.add(PipelineStage.GeneratingContent);
+              completedStagesInThisRun.add(PipelineStage.Validating);
               break;
             } catch (err: any) {
               if (err instanceof ValidationError && err.message.includes('Duplicate content detected')) {
@@ -333,9 +340,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       const finalizedJob = await jobRepository.getById(job.id);
       if (!finalizedJob) throw new Error('Job not found after pipeline execution');
 
-      let genContent = await prisma.generatedContent.findFirst({
-        where: { jobId: finalizedJob.id }
-      });
+      let genContent = await generatedContentRepository.findByJobId(finalizedJob.id);
 
       if (!genContent) {
         genContent = await jobRepository.saveGeneratedContent({
@@ -356,10 +361,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
 
         // Save normalized hash for duplicate checks
         const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
-        await prisma.generatedContent.update({
-          where: { id: genContent.id },
-          data: { textHash: normalizedHash }
-        });
+        await generatedContentRepository.update(genContent.id, { textHash: normalizedHash });
       }
     }
 
@@ -367,9 +369,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
     const finalizedJob = await jobRepository.getById(job.id);
     if (!finalizedJob) throw new Error('Job not found');
 
-    const channel = finalizedJob.channelId ? await prisma.channel.findUnique({
-      where: { id: finalizedJob.channelId },
-    }) : null;
+    const channel = finalizedJob.channelId ? await channelRepository.getById(finalizedJob.channelId) : null;
 
     const automationMode = channel?.automationMode || 'Manual';
     const snapshot = finalizedJob.configSnapshot as Record<string, any> || {};

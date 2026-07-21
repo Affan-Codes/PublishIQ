@@ -1,6 +1,7 @@
 import { HealthStatus, JobType, PipelineStage } from '@prisma/client';
-import { prisma } from '../database/db.js';
 import { jobRepository } from '../repositories/job.repository.js';
+import { logRepository } from '../repositories/log.repository.js';
+import { platformConnectionRepository } from '../repositories/platformConnection.repository.js';
 import { runContentPipeline } from './content-pipeline.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -11,11 +12,7 @@ export async function runCleanup(): Promise<void> {
   const thresholdDate = new Date();
   thresholdDate.setDate(thresholdDate.getDate() - 30);
 
-  const { count } = await prisma.log.deleteMany({
-    where: {
-      createdAt: { lt: thresholdDate },
-    },
-  });
+  const { count } = await logRepository.deleteLogsOlderThan(thresholdDate);
 
   logger.info({ logsDeleted: count }, 'Cleanup completed successfully');
 }
@@ -52,11 +49,7 @@ export async function runTokenRefresh(): Promise<void> {
   const thresholdDate = new Date();
   thresholdDate.setHours(thresholdDate.getHours() + 2); // Refresh tokens expiring within 2 hours
 
-  const connections = await prisma.platformConnection.findMany({
-    where: {
-      expiresAt: { lt: thresholdDate },
-    },
-  });
+  const connections = await platformConnectionRepository.getExpiringConnections(thresholdDate);
 
   for (const conn of connections) {
     logger.info({ connectionId: conn.id, platform: conn.platform }, 'Refreshing access token');
@@ -64,12 +57,9 @@ export async function runTokenRefresh(): Promise<void> {
     const newExpiresAt = new Date();
     newExpiresAt.setHours(newExpiresAt.getHours() + 24); // Expiry in 24 hours
 
-    await prisma.platformConnection.update({
-      where: { id: conn.id },
-      data: {
-        expiresAt: newExpiresAt,
-        healthStatus: HealthStatus.Healthy,
-      },
+    await platformConnectionRepository.updateRaw(conn.id, {
+      expiresAt: newExpiresAt,
+      healthStatus: HealthStatus.Healthy,
     });
     logger.info({ connectionId: conn.id }, 'Access token refreshed successfully');
   }
@@ -77,7 +67,7 @@ export async function runTokenRefresh(): Promise<void> {
 
 export async function runHealthCheck(): Promise<void> {
   logger.info('Running platform connection health checks');
-  const connections = await prisma.platformConnection.findMany();
+  const connections = await platformConnectionRepository.listAll();
 
   for (const conn of connections) {
     let healthStatus: HealthStatus = HealthStatus.Healthy;
@@ -85,10 +75,7 @@ export async function runHealthCheck(): Promise<void> {
       healthStatus = HealthStatus.Expired;
     }
 
-    await prisma.platformConnection.update({
-      where: { id: conn.id },
-      data: { healthStatus },
-    });
+    await platformConnectionRepository.updateRaw(conn.id, { healthStatus });
   }
 }
 

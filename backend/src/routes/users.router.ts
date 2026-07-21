@@ -9,19 +9,19 @@ const router = Router();
 
 const userCreateSchema = z.object({
   email: z.string().email('Invalid email address format'),
-  password: z.string().min(4, 'Password must be at least 4 characters long'),
+  password: z.string().min(12, 'Password must be at least 12 characters long'),
   role: z.nativeEnum(Role),
 });
 
 const userUpdateSchema = z.object({
   email: z.string().email().optional(),
-  password: z.string().min(4).optional(),
+  password: z.string().min(12, 'Password must be at least 12 characters long').optional(),
   role: z.nativeEnum(Role).optional(),
 });
 
 const profileUpdateSchema = z.object({
   email: z.string().email().optional(),
-  password: z.string().min(4).optional(),
+  password: z.string().min(12, 'Password must be at least 12 characters long').optional(),
 });
 
 const idParamSchema = z.object({

@@ -3,16 +3,14 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: publishiq-postgres
+    container_name: publishiq-postgres-prod
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-publishiq}
-    ports:
-      - '5432:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_prod_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d publishiq"]
       interval: 5s
@@ -21,13 +19,11 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: publishiq-redis
+    container_name: publishiq-redis-prod
     restart: unless-stopped
     command: redis-server --appendonly yes
-    ports:
-      - '6379:6379'
     volumes:
-      - redis_data:/data
+      - redis_prod_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -38,27 +34,23 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: publishiq-api
+    container_name: publishiq-api-prod
     restart: unless-stopped
-    command: npm run dev
+    command: node dist/api.js
     volumes:
-      - ./backend:/usr/src/app
-      - /usr/src/app/node_modules
-      - media_data:/usr/src/app/media
-    ports:
-      - '4000:4000'
+      - media_prod_data:/usr/src/app/media
     environment:
-      - NODE_ENV=${NODE_ENV:-development}
-      - PORT=${PORT:-4000}
+      - NODE_ENV=production
+      - PORT=4000
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
-      - MEDIA_ROOT=${MEDIA_ROOT:-/usr/src/app/media}
-      - QUEUE_PREFIX=${QUEUE_PREFIX:-publishiq}
-      - OPERATOR_EMAIL=${OPERATOR_EMAIL:-admin@publishiq.com}
-      - OPERATOR_PASSWORD=${OPERATOR_PASSWORD:-admin1234_default_secret_passphrase}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MEDIA_ROOT=/usr/src/app/media
+      - QUEUE_PREFIX=publishiq-prod
+      - OPERATOR_EMAIL=${OPERATOR_EMAIL}
+      - OPERATOR_PASSWORD=${OPERATOR_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,22 +61,20 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: publishiq-worker
+    container_name: publishiq-worker-prod
     restart: unless-stopped
-    command: npx tsx watch src/worker.ts
+    command: node dist/worker.js
     volumes:
-      - ./backend:/usr/src/app
-      - /usr/src/app/node_modules
-      - media_data:/usr/src/app/media
+      - media_prod_data:/usr/src/app/media
     environment:
-      - NODE_ENV=${NODE_ENV:-development}
+      - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
-      - MEDIA_ROOT=${MEDIA_ROOT:-/usr/src/app/media}
-      - QUEUE_PREFIX=${QUEUE_PREFIX:-publishiq}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MEDIA_ROOT=/usr/src/app/media
+      - QUEUE_PREFIX=publishiq-prod
     depends_on:
       postgres:
         condition: service_healthy
@@ -95,23 +85,37 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: publishiq-frontend
+    container_name: publishiq-frontend-prod
     restart: unless-stopped
-    command: npm run dev -- --host 0.0.0.0
-    volumes:
-      - ./frontend:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - '5173:5173'
+    command: serve -s dist -l 5173
     environment:
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:4000/api/v1}
+      - VITE_API_BASE_URL=/api/v1
     depends_on:
       - api
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: publishiq-proxy-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
 volumes:
-  postgres_data:
+  postgres_prod_data:
     driver: local
-  redis_data:
+  redis_prod_data:
     driver: local
-  media_data:
+  media_prod_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
     driver: local

@@ -1,11 +1,30 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../database/db.js';
 import { getRedisInstance } from '../database/redis.js';
+import { requireAuth } from '../middlewares/auth.js';
 import os from 'os';
 
 const router = Router();
 
+/**
+ * Public, unauthenticated liveness check.
+ */
 router.get('/health', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  res.json({
+    success: true,
+    data: {
+      status: 'UP',
+    },
+    meta: {
+      timestamp: new Date().toISOString(),
+    },
+  });
+});
+
+/**
+ * Authenticated system diagnostics/metrics check.
+ */
+router.get('/health/diagnostics', requireAuth, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     // 1. Check PostgreSQL health and measure latency
     const dbStart = Date.now();

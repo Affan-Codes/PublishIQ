@@ -4,7 +4,6 @@ import { channelRepository } from '../repositories/channel.repository.js';
 import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
 import { ValidationError, NotFoundError, ConflictError } from '../errors/custom-errors.js';
 import { contentPipelineQueue } from '../jobs/index.js';
-import { prisma } from '../database/db.js';
 import { logger } from '../utils/logger.js';
 
 export interface JobListFilters {
@@ -46,19 +45,15 @@ export const jobService = {
       where.channelId = filters.channelId;
     }
 
-    const [items, total] = await Promise.all([
-      prisma.job.findMany({
-        where,
-        include: {
-          channel: true,
-          contentProfile: true,
-        },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      prisma.job.count({ where }),
-    ]);
+    const listFilters: any = {
+      page,
+      limit,
+    };
+    if (filters.jobType) listFilters.jobType = filters.jobType;
+    if (filters.pipelineStage) listFilters.pipelineStage = filters.pipelineStage;
+    if (filters.channelId) listFilters.channelId = filters.channelId;
+
+    const { items, total } = await jobRepository.list(workspaceId, listFilters);
 
     return { items, total };
   },

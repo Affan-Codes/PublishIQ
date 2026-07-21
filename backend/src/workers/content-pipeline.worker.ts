@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { getRedisInstance } from '../database/redis.js';
 import { logger } from '../utils/logger.js';
 import { runContentPipeline } from '../services/content-pipeline.service.js';
-import { prisma } from '../database/db.js';
+import { channelSchedulingService } from '../services/channel-scheduling.service.js';
 import { ValidationError, NotFoundError } from '../errors/custom-errors.js';
 
 const QUEUE_NAME = `${env.QUEUE_PREFIX}:content-pipeline`;
@@ -29,44 +29,11 @@ export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channe
   // Handle scheduled Repeatable execution
   if (!dbJobId && job.data.channelId) {
     const channelId = job.data.channelId;
-    const channel = await prisma.channel.findUnique({
-      where: { id: channelId },
-      include: { contentProfile: true },
-    });
-
-    if (!channel) {
-      logger.error({ channelId }, 'Channel not found during scheduled processor run');
+    const createdId = await channelSchedulingService.createScheduledJob(channelId);
+    if (!createdId) {
       return;
     }
-
-    if (channel.status === 'Disabled') {
-      logger.info({ channelId }, 'Channel is disabled. Skipping scheduled execution.');
-      return;
-    }
-
-    const profile = channel.contentProfile;
-    if (!profile) {
-      logger.error({ channelId }, 'Content Profile not found for channel during scheduled run');
-      return;
-    }
-
-    // Create a database Job record in Draft stage for this scheduled trigger
-    const newDbJob = await prisma.job.create({
-      data: {
-        workspaceId: channel.workspaceId,
-        jobType: 'ContentPipeline',
-        channelId: channel.id,
-        contentProfileId: profile.id,
-        pipelineStage: 'Draft',
-        configSnapshot: {
-          promptVersionId: profile.promptVersionId,
-          templateVersionId: profile.templateVersionId,
-        },
-      },
-    });
-
-    dbJobId = newDbJob.id;
-    logger.info({ channelId, jobId: dbJobId }, 'Created new database Job for scheduled execution');
+    dbJobId = createdId;
   }
 
   if (!dbJobId) {

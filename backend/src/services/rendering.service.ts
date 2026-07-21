@@ -1,22 +1,63 @@
-import { chromium } from 'playwright';
+import { chromium, Browser } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { templateRepository } from '../repositories/template.repository.js';
 
 export interface RenderOptions {
   language: 'English' | 'Hindi' | 'Urdu';
   branding?: string;
   watermark?: string;
   fontFamily?: string;
+  templateVersionId?: string;
 }
 
+let sharedBrowser: Browser | null = null;
+
 export const renderingService = {
+  /**
+   * Retrieves or initializes the shared browser instance.
+   */
+  async getBrowser(): Promise<Browser> {
+    if (!sharedBrowser) {
+      logger.info('Initializing shared headless Playwright Chromium browser');
+      sharedBrowser = await chromium.launch({
+        headless: true,
+      });
+    }
+    return sharedBrowser;
+  },
+
+  /**
+   * Gracefully closes the shared browser instance (for worker shutdown).
+   */
+  async closeBrowser(): Promise<void> {
+    if (sharedBrowser) {
+      logger.info('Closing shared headless Playwright Chromium browser');
+      await sharedBrowser.close();
+      sharedBrowser = null;
+    }
+  },
+
   /**
    * Renders the generated text onto a vertical image (1080x1920) and returns the file path.
    */
   async renderImage(jobId: string, text: string, options: RenderOptions): Promise<string> {
-    logger.info({ jobId, language: options.language }, 'Rendering image with Playwright');
+    // Retrieve TemplateVersion details from repository to bind to rendering logs
+    let templatePath = 'Default';
+    if (options.templateVersionId) {
+      try {
+        const tv = await templateRepository.getTemplateVersionById(options.templateVersionId);
+        if (tv) {
+          templatePath = tv.componentPath || 'Default';
+        }
+      } catch (err) {
+        logger.warn({ jobId, templateVersionId: options.templateVersionId, err }, 'Failed to load pinned TemplateVersion details');
+      }
+    }
+
+    logger.info({ jobId, language: options.language, templatePath }, 'Rendering image with Playwright');
 
     let langClass = '';
     if (options.language === 'Urdu') {
@@ -114,14 +155,10 @@ export const renderingService = {
 </html>
     `;
 
-    let browser;
+    let context;
     try {
-      // Launch headless Chromium via Playwright
-      browser = await chromium.launch({
-        headless: true,
-      });
-
-      const context = await browser.newContext({
+      const browser = await this.getBrowser();
+      context = await browser.newContext({
         viewport: { width: 1080, height: 1920 },
         deviceScaleFactor: 1,
       });
@@ -151,14 +188,13 @@ export const renderingService = {
       logger.info({ outputPath }, 'Image rendered and saved successfully');
       
       // Return absolute or relative URL path for static file serving.
-      // The media endpoint resolves `/media/*` to `env.MEDIA_ROOT`.
       return `/media/images/${jobId}_render.png`;
     } catch (err: any) {
       logger.error({ jobId, err }, 'Playwright image rendering failed');
       throw err;
     } finally {
-      if (browser) {
-        await browser.close();
+      if (context) {
+        await context.close();
       }
     }
   }

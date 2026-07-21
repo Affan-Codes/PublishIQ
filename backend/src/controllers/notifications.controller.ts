@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../database/db.js';
+import { notificationRepository } from '../repositories/notification.repository.js';
 import { NotFoundError } from '../errors/custom-errors.js';
 import notificationService from '../services/notification.service.js';
 
@@ -47,18 +47,8 @@ export const notificationsController = {
       const skip = (page - 1) * limit;
 
       const [items, total] = await Promise.all([
-        prisma.notification.findMany({
-          where: { workspaceId },
-          include: {
-            domainEvent: true,
-          },
-          orderBy: { createdAt: 'desc' },
-          skip,
-          take: limit,
-        }),
-        prisma.notification.count({
-          where: { workspaceId },
-        }),
+        notificationRepository.list(workspaceId, skip, limit),
+        notificationRepository.count(workspaceId),
       ]);
 
       res.json({
@@ -83,19 +73,14 @@ export const notificationsController = {
       const { id } = req.params;
       const workspaceId = req.workspaceId as string;
 
-      const existing = await prisma.notification.findUnique({
-        where: { id: id as string },
-      });
+      const existing = await notificationRepository.getById(id as string);
 
       if (!existing || existing.workspaceId !== workspaceId) {
         throw new NotFoundError('Notification not found');
       }
 
-      const notification = await prisma.notification.update({
-        where: { id: id as string },
-        data: {
-          readAt: new Date(),
-        },
+      const notification = await notificationRepository.update(id as string, {
+        readAt: new Date(),
       });
 
       res.json({
@@ -115,15 +100,7 @@ export const notificationsController = {
     try {
       const workspaceId = req.workspaceId as string;
 
-      await prisma.notification.updateMany({
-        where: {
-          workspaceId,
-          readAt: null,
-        },
-        data: {
-          readAt: new Date(),
-        },
-      });
+      await notificationRepository.markAllAsRead(workspaceId);
 
       res.json({
         success: true,

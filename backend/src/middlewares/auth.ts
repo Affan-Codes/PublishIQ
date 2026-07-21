@@ -25,7 +25,7 @@ export const requireAuth = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const token = req.cookies?.session;
+  const token = req.signedCookies?.session || req.cookies?.session;
 
   if (!token) {
     next(new UnauthorizedError('Authentication session token is missing'));
@@ -41,6 +41,7 @@ export const requireAuth = async (
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       expires: session.expiresAt,
+      signed: true,
     });
 
     let workspaceId = session.user.workspaceId;

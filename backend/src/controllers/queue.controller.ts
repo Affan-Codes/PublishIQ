@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../database/db.js';
+import { jobRepository } from '../repositories/job.repository.js';
 import { PipelineStage, JobType } from '@prisma/client';
 
 export const queueController = {
@@ -8,13 +8,7 @@ export const queueController = {
       const workspaceId = req.workspaceId!;
 
       // Group jobs by type and pipelineStage to compute statistics from the database
-      const groupings = await prisma.job.groupBy({
-        by: ['jobType', 'pipelineStage'],
-        where: { workspaceId },
-        _count: {
-          id: true,
-        },
-      });
+      const groupings = await jobRepository.getJobGroupingsByWorkspace(workspaceId);
 
       const stats = {
         total: 0,

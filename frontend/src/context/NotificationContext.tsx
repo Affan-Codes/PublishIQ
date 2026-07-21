@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from './AuthContext.js';
+import { connectSSE } from '../lib/sse-client.js';
 
 interface Toast {
   id: string;
@@ -20,6 +22,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
   const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -46,33 +49,13 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       return;
     }
 
-    // Connect to Server-Sent Events stream
-    const eventSourceUrl = `${import.meta.env.VITE_API_BASE_URL || '/api/v1'}/notifications/stream`;
-    const eventSource = new EventSource(eventSourceUrl, { withCredentials: true });
+    const disconnect = connectSSE(queryClient, (message) => {
+      setUnreadCount((c) => c + 1);
+      addToast(message, 'info');
+    });
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.status === 'connected') return;
-
-        // If it's a real notification payload
-        if (data.message) {
-          setUnreadCount((c) => c + 1);
-          addToast(data.message, 'info');
-        }
-      } catch (err) {
-        console.error('Failed to parse SSE notification message:', err);
-      }
-    };
-
-    eventSource.onerror = (err) => {
-      console.warn('SSE notification stream encountered connection error, retrying...', err);
-    };
-
-    return () => {
-      eventSource.close();
-    };
-  }, [isAuthenticated]);
+    return disconnect;
+  }, [isAuthenticated, queryClient]);
 
   return (
     <NotificationContext.Provider

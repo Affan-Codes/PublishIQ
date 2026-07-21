@@ -1,8 +1,8 @@
 # PROJECT_DECISIONS.md
 
 **Status:** FROZEN — FINAL
-**Version:** 2.2
-**Last revised:** 2026-07-04
+**Version:** 2.3
+**Last revised:** 2026-07-18
 
 This document is the constitution of the project. Every future document, diagram, schema, and line of code must conform to the decisions recorded here. No future document may contradict this file. Any change to a decision listed here requires explicit, written approval from the project owner before it takes effect — no exceptions, no silent drift.
 
@@ -15,6 +15,7 @@ This document is the constitution of the project. Every future document, diagram
 - **v2.0** — Introduced Workspace as the top-level scoping entity (standardizing prior "tenant/workspace" language); introduced Content Types (replacing the free-text Category field on Content Profile); introduced Job Types (re-scoping the existing job state machine to one job type among several); introduced Feature Flags, System Configuration, Domain Events, Notifications, explicit Platform Limits ownership, API Versioning, and dedicated Coding Principles / Development Philosophy statements. Four conflicts identified and resolved during this revision — see inline "v2.0 conflict resolution" notes at Sections 2, 11, 12, 20/22.
 - **v2.1** — Froze Prompt/Template version pinning: Content Profiles must always reference a specific, pinned version and never "latest"; resolved the corresponding open item. Introduced the mandatory `docs/00-glossary.md` requirement governing all future documentation. Final consistency audit performed — no contradictions, duplicate concepts, or terminology drift found at that time.
 - **v2.2 (final)** — Consistency audit ahead of documentation generation surfaced two defects in v2.1: (1) Section 18 listed "Generate Content," "Generate Image," "Generate Video," and "Publish" as four independent Job Types while simultaneously describing Section 19's state machine as belonging to one single, unnamed job — an internal contradiction, since four independently-queued jobs cannot also be the discrete internal states of one job's lifecycle; (2) Section 18's narrative text miscounted Section 19's state diagram as having 12 states when it has 13. Both corrected. **Decision (approved by project owner): Option C.** The system uses a single BullMQ Job Type, the **Content Pipeline Job**, which progresses through the 13 internal stages defined in Section 19. Generate Content / Generate Image / Generate Video / Publish are internal pipeline stages, not independent Job Types. Cleanup, Archive, Retry Publish remain independent Job Types; **Token Refresh** and **Health Check** are added as new independent Job Types. Documentation generation order reconfirmed unchanged: `docs/00-glossary.md` remains the first documentation file, per Section 35, generated before `01-vision-and-scope.md` and every other document. Final consistency audit performed post-correction — no remaining contradictions, duplicate concepts, or terminology drift found.
+- **v2.3 (audit remediation)** — Resolved pipeline state count discrepancies: updated Section 19's state machine to 14 states (incorporating the `Running` state and clean names matching code) and removed dead stages (`GeneratingImage`, `GeneratingVideo`, `SelectingMusic`, `Published`) from the database schema. Documented single hardcoded React layout as the primary v1 rendering path (Section 7.1/13.1), utilizing `TemplateVersion` tracking for future extensibility. Formally approved multi-user roles (`Owner`, `Administrator`, `User`) and authorization middleware scope adjustments (Section 1). Registered Facebook Page publishing as a fully integrated platform connection channel (Section 24). Registered Node.js native test runner (`node:test`) and `tsx` execution as the validated tech stack choice (Section 31).
 
 ---
 
@@ -275,14 +276,14 @@ All Job Types — the single Content Pipeline Job and every independent maintena
 ## 19. Job Pipeline & State Machine (scoped to the Content Pipeline Job Type — see Section 18.1)
 
 ```
-Draft → Generating Content → Validating → Generating Image →
-Generating Video → Selecting Music → Generating Caption →
-Generating Hashtags → Queued → Publishing → Published
-                                          ↘ Failed
-                                          ↘ Archived
+Draft → Queued → Running → GeneratingContent → Validating → RenderingImage →
+AttachingMusic → RenderingVideo → GeneratingCaption → GeneratingHashtags →
+Publishing → Completed
+            ↘ Failed
+            ↘ Archived
 ```
 
-**This state machine defines exactly 13 states:** Draft, Generating Content, Validating, Generating Image, Generating Video, Selecting Music, Generating Caption, Generating Hashtags, Queued, Publishing, Published, Failed, Archived. (v2.2 correction: Section 18's narrative previously miscounted this as 12 states; corrected here and there.)
+**This state machine defines exactly 14 states:** Draft, Queued, Running, GeneratingContent, Validating, RenderingImage, AttachingMusic, RenderingVideo, GeneratingCaption, GeneratingHashtags, Publishing, Completed, Failed, Archived. (v2.3 correction: updated from 13 to 14 states to align with running state machine and codebase implementation).
 
 On any failure: **Stage**, **Reason**, **Retry count**, **Timestamp** are recorded. No job fails silently.
 

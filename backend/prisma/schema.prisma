@@ -87,16 +87,12 @@ enum PipelineStage {
   Running
   GeneratingContent
   Validating
-  GeneratingImage
   RenderingImage
-  GeneratingVideo
-  RenderingVideo
-  SelectingMusic
   AttachingMusic
+  RenderingVideo
   GeneratingCaption
   GeneratingHashtags
   Publishing
-  Published
   Completed
   Failed
   Archived

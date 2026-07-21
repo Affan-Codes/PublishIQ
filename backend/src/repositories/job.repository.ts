@@ -66,6 +66,11 @@ export const jobRepository = {
     contentProfileId?: string;
     pipelineStage?: PipelineStage;
     configSnapshot?: any;
+    generatedText?: string | null;
+    imageUrl?: string | null;
+    videoUrl?: string | null;
+    caption?: string | null;
+    hashtags?: any;
   }): Promise<Job> {
     return prisma.job.create({
       data: {
@@ -75,6 +80,11 @@ export const jobRepository = {
         contentProfileId: data.contentProfileId ?? null,
         pipelineStage: data.pipelineStage ?? null,
         configSnapshot: data.configSnapshot ?? null,
+        generatedText: data.generatedText ?? null,
+        imageUrl: data.imageUrl ?? null,
+        videoUrl: data.videoUrl ?? null,
+        caption: data.caption ?? null,
+        hashtags: data.hashtags ?? null,
       },
     });
   },
@@ -183,16 +193,83 @@ export const jobRepository = {
     });
   },
 
-  async getDuplicateHashCount(normalizedTextHash: string): Promise<number> {
-    return prisma.generatedContent.count({
-      where: {
-        text: {
-          equals: normalizedTextHash,
-          mode: 'insensitive',
-        },
+  async getJobGroupingsByWorkspace(workspaceId: string) {
+    return prisma.job.groupBy({
+      by: ['jobType', 'pipelineStage'],
+      where: { workspaceId },
+      _count: {
+        id: true,
       },
     });
+  },
+
+  async getJobForPublishing(id: string) {
+    return prisma.job.findUnique({
+      where: { id },
+      include: {
+        channel: {
+          include: {
+            contentProfile: {
+              include: {
+                contentType: true
+              }
+            },
+            platformConnections: {
+              include: {
+                platformConnection: true
+              }
+            }
+          }
+        }
+      }
+    });
+  },
+
+  async list(
+    workspaceId: string,
+    filters: {
+      jobType?: JobType;
+      pipelineStage?: PipelineStage;
+      channelId?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{ items: Job[]; total: number }> {
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.JobWhereInput = {
+      workspaceId,
+    };
+
+    if (filters.jobType) {
+      where.jobType = filters.jobType;
+    }
+    if (filters.pipelineStage) {
+      where.pipelineStage = filters.pipelineStage;
+    }
+    if (filters.channelId) {
+      where.channelId = filters.channelId;
+    }
+
+    const [items, total] = await Promise.all([
+      prisma.job.findMany({
+        where,
+        include: {
+          channel: true,
+          contentProfile: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.job.count({ where }),
+    ]);
+
+    return { items, total };
   },
 };
 
 export default jobRepository;
+

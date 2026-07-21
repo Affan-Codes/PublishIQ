@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { prisma } from '../database/db.js';
+import { notificationRepository } from '../repositories/notification.repository.js';
 import { localEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 
@@ -92,20 +92,15 @@ export const notificationService = {
 
         if (shouldNotify && message) {
           // Check if notification already exists for this event to avoid duplicate inserts
-          const existing = await prisma.notification.findFirst({
-            where: { domainEventId: eventId },
+          const existing = await notificationRepository.findFirst({
+            domainEventId: eventId,
           });
 
           if (!existing) {
-            const notification = await prisma.notification.create({
-              data: {
-                workspaceId,
-                domainEventId: eventId,
-                message,
-              },
-              include: {
-                domainEvent: true,
-              },
+            const notification = await notificationRepository.create({
+              workspaceId,
+              domainEventId: eventId,
+              message,
             });
 
             logger.info({ notificationId: notification.id, type }, 'Created in-app notification');

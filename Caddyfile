@@ -1,0 +1,10 @@
+:80 {
+    # Reverse proxy API requests to backend
+    reverse_proxy /api/* api:4000
+    
+    # Reverse proxy media files to backend
+    reverse_proxy /media/* api:4000
+
+    # Reverse proxy frontend static server
+    reverse_proxy /* frontend:5173
+}

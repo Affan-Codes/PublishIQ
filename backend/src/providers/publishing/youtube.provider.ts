@@ -43,9 +43,9 @@ export const youtubeAdapter: PublishingAdapter = {
       return { success: false, errorMessage: 'Failed to decrypt access token: ' + err.message };
     }
 
-    // Check if it's a test token or dummy connection
-    if (accessToken === 'mock_token' || accessToken === '********' || accessToken.startsWith('ig_') || accessToken.startsWith('yt_')) {
-      logger.info('Simulating YouTube publishing success for test token');
+    // Check if it's a test environment for publishing simulation
+    if (process.env.NODE_ENV === 'test') {
+      logger.info('Simulating YouTube publishing success for test environment');
       const mockId = `yt_video_${Date.now()}`;
       return {
         success: true,

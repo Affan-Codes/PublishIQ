@@ -1,5 +1,5 @@
 import { contentPipelineQueue } from '../jobs/index.js';
-import { prisma } from '../database/db.js';
+import { channelRepository } from '../repositories/channel.repository.js';
 import { logger } from '../utils/logger.js';
 
 export const schedulerService = {
@@ -7,9 +7,7 @@ export const schedulerService = {
    * Synchronizes a channel's BullMQ repeatable/delayed schedules.
    */
   async syncChannelSchedule(channelId: string): Promise<void> {
-    const channel = await prisma.channel.findUnique({
-      where: { id: channelId },
-    });
+    const channel = await channelRepository.getById(channelId);
 
     if (!channel) {
       logger.warn({ channelId }, 'Channel not found during schedule sync');
@@ -113,9 +111,7 @@ export const schedulerService = {
     for (const r of repeatableJobs) {
       if (r.name.startsWith('channel-run:')) {
         const channelId = r.name.replace('channel-run:', '');
-        const channel = await prisma.channel.findUnique({
-          where: { id: channelId },
-        });
+        const channel = await channelRepository.getById(channelId);
 
         list.push({
           key: r.key,

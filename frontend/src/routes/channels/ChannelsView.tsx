@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import apiClient from '../../lib/api-client.js';
+import { useChannels } from '../../hooks/queries/useChannels.js';
 import { Plus, Trash2, Edit2, Copy, X, Calendar, Settings, RefreshCw, Layers } from 'lucide-react';
 
 const cronRegex = /^(\*|([0-5]?\d)(-[0-5]?\d)?(\/[0-5]?\d)?)( +(\*|([0-9]|1\d|2[0-3])(-([0-9]|1\d|2[0-3]))?(\/([0-9]|1\d|2[0-3]))?)){4}$/;
@@ -58,13 +59,7 @@ export const ChannelsView: React.FC = () => {
   const [errorText, setErrorText] = useState<string | null>(null);
 
   // Queries
-  const { data: channels = [], isLoading: isChannelsLoading } = useQuery<Channel[]>({
-    queryKey: ['channels'],
-    queryFn: async () => {
-      const res = await apiClient.get('/channels');
-      return res.data.data;
-    },
-  });
+  const { data: channels = [], isLoading: isChannelsLoading } = useChannels();
 
   const { data: contentProfiles = [] } = useQuery<ContentProfile[]>({
     queryKey: ['content-profiles'],

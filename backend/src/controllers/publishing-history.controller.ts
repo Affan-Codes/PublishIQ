@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { prisma } from '../database/db.js';
+import { publishingRecordRepository } from '../repositories/publishingRecord.repository.js';
 import publishingService from '../services/publishing.service.js';
 import { PublishRecordStatus } from '@prisma/client';
 
@@ -18,37 +18,18 @@ export const publishingHistoryController = {
       const channelId = req.query.channelId as string;
       const status = req.query.status as string;
       const contentTypeSnapshot = req.query.contentTypeSnapshot as string;
-
-      const whereClause: Record<string, any> = { workspaceId };
-      
-      if (platform) whereClause.platform = platform;
-      if (channelId) whereClause.channelId = channelId;
-      if (status) whereClause.status = status as PublishRecordStatus;
-      if (contentTypeSnapshot) whereClause.contentTypeSnapshot = contentTypeSnapshot;
-
-      // Handle search queries
       const search = req.query.search as string;
-      if (search) {
-        whereClause.OR = [
-          { errorDetails: { contains: search, mode: 'insensitive' } },
-          { platformPostId: { contains: search, mode: 'insensitive' } },
-          { publishedUrl: { contains: search, mode: 'insensitive' } },
-        ];
-      }
+
+      const filters: any = {};
+      if (platform) filters.platform = platform;
+      if (channelId) filters.channelId = channelId;
+      if (status) filters.status = status as PublishRecordStatus;
+      if (contentTypeSnapshot) filters.contentTypeSnapshot = contentTypeSnapshot;
+      if (search) filters.search = search;
 
       const [items, total] = await Promise.all([
-        prisma.publishingRecord.findMany({
-          where: whereClause,
-          include: {
-            channel: { select: { name: true } },
-            platformConnection: { select: { id: true, scopes: true, healthStatus: true } },
-            generatedContent: { select: { text: true, imageUrl: true, videoUrl: true, caption: true } }
-          },
-          orderBy: { publishedAt: 'desc' },
-          skip,
-          take: limit,
-        }),
-        prisma.publishingRecord.count({ where: whereClause }),
+        publishingRecordRepository.list(workspaceId, { ...filters, skip, take: limit }),
+        publishingRecordRepository.count(workspaceId, filters),
       ]);
 
       res.json({
@@ -71,15 +52,7 @@ export const publishingHistoryController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.workspaceId as string;
-      const record = await prisma.publishingRecord.findFirst({
-        where: { id: req.params.id as string, workspaceId },
-        include: {
-          channel: true,
-          platformConnection: { select: { id: true, scopes: true, healthStatus: true } },
-          generatedContent: true,
-          job: true,
-        }
-      });
+      const record = await publishingRecordRepository.getById(req.params.id as string, workspaceId);
 
       if (!record) {
         res.status(404).json({

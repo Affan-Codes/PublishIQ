@@ -24,6 +24,7 @@ router.post(
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         expires: session.expiresAt,
+        signed: true,
       });
 
       res.json({
@@ -41,7 +42,7 @@ router.post(
   '/auth/logout',
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const token = req.cookies?.session;
+      const token = req.signedCookies?.session || req.cookies?.session;
       if (token) {
         await authService.logout(token);
       }
