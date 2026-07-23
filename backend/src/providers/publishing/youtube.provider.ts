@@ -149,10 +149,16 @@ export const youtubeAdapter: PublishingAdapter = {
   },
 
   async refreshToken(refreshToken: string) {
+    const clientId = env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set to refresh Google tokens.');
+    }
+
     const res = await axios.post('https://oauth2.googleapis.com/token', null, {
       params: {
-        client_id: process.env.GOOGLE_CLIENT_ID || 'dummy_client_id',
-        client_secret: process.env.GOOGLE_CLIENT_SECRET || 'dummy_client_secret',
+        client_id: clientId,
+        client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }

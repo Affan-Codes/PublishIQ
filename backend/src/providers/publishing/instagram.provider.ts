@@ -52,9 +52,11 @@ export const instagramAdapter: PublishingAdapter = {
       };
     }
 
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+
     try {
       // 1. Resolve Connected Instagram Business Account ID
-      const accountsRes = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
+      const accountsRes = await axios.get(`https://graph.facebook.com/${apiVersion}/me/accounts`, {
         params: { access_token: accessToken }
       });
 
@@ -63,21 +65,24 @@ export const instagramAdapter: PublishingAdapter = {
         return { success: false, errorMessage: 'No Facebook Pages found linked to this access token.' };
       }
 
-      // Query connected IG account for the first page
-      const firstPage = pages[0];
-      const pageId = firstPage.id;
-      const pageAccessToken = firstPage.access_token;
+      // Check if connection has specific externalAccountId (which could be the IG account ID or page ID)
+      let instagramBusinessAccountId: string | undefined = connection.externalAccountId ?? undefined;
+      let pageAccessToken: string = pages[0].access_token;
 
-      const pageDetailsRes = await axios.get(`https://graph.facebook.com/v19.0/${pageId}`, {
-        params: {
-          fields: 'instagram_business_account',
-          access_token: pageAccessToken
-        }
-      });
-
-      const instagramBusinessAccountId = pageDetailsRes.data?.instagram_business_account?.id;
       if (!instagramBusinessAccountId) {
-        return { success: false, errorMessage: `No Instagram Business Account connected to Facebook Page: ${firstPage.name}` };
+        const firstPage = pages[0];
+        pageAccessToken = firstPage.access_token;
+        const pageDetailsRes = await axios.get(`https://graph.facebook.com/${apiVersion}/${firstPage.id}`, {
+          params: {
+            fields: 'instagram_business_account',
+            access_token: pageAccessToken
+          }
+        });
+        instagramBusinessAccountId = pageDetailsRes.data?.instagram_business_account?.id;
+      }
+
+      if (!instagramBusinessAccountId) {
+        return { success: false, errorMessage: `No Instagram Business Account connected to Facebook Page(s).` };
       }
 
       const caption = content.caption || '';
@@ -96,7 +101,7 @@ export const instagramAdapter: PublishingAdapter = {
       if (content.videoUrl) {
         // Video Reels Container
         const containerRes = await axios.post(
-          `https://graph.facebook.com/v19.0/${instagramBusinessAccountId}/media`,
+          `https://graph.facebook.com/${apiVersion}/${instagramBusinessAccountId}/media`,
           null,
           {
             params: {
@@ -120,7 +125,7 @@ export const instagramAdapter: PublishingAdapter = {
           await new Promise((resolve) => setTimeout(resolve, 5000));
           attempts++;
           
-          const statusRes = await axios.get(`https://graph.facebook.com/v19.0/${igContainerId}`, {
+          const statusRes = await axios.get(`https://graph.facebook.com/${apiVersion}/${igContainerId}`, {
             params: {
               fields: 'status_code,status,error_info',
               access_token: pageAccessToken
@@ -144,7 +149,7 @@ export const instagramAdapter: PublishingAdapter = {
       } else {
         // Image Container
         const containerRes = await axios.post(
-          `https://graph.facebook.com/v19.0/${instagramBusinessAccountId}/media`,
+          `https://graph.facebook.com/${apiVersion}/${instagramBusinessAccountId}/media`,
           null,
           {
             params: {
@@ -159,7 +164,7 @@ export const instagramAdapter: PublishingAdapter = {
 
       // 3. Publish Media Container
       const publishRes = await axios.post(
-        `https://graph.facebook.com/v19.0/${instagramBusinessAccountId}/media_publish`,
+        `https://graph.facebook.com/${apiVersion}/${instagramBusinessAccountId}/media_publish`,
         null,
         {
           params: {
@@ -187,18 +192,26 @@ export const instagramAdapter: PublishingAdapter = {
 
   async checkHealth(accessToken: string): Promise<boolean> {
     if (process.env.NODE_ENV === 'test') return true;
-    await axios.get('https://graph.facebook.com/v19.0/me', {
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+    await axios.get(`https://graph.facebook.com/${apiVersion}/me`, {
       params: { fields: 'id', access_token: accessToken }
     });
     return true;
   },
 
   async refreshToken(refreshToken: string) {
-    const res = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
+    const appId = env.FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID;
+    const appSecret = env.FACEBOOK_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+    if (!appId || !appSecret) {
+      throw new Error('FACEBOOK_APP_ID and FACEBOOK_APP_SECRET must be set to refresh Instagram tokens.');
+    }
+
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+    const res = await axios.get(`https://graph.facebook.com/${apiVersion}/oauth/access_token`, {
       params: {
         grant_type: 'fb_exchange_token',
-        client_id: process.env.FACEBOOK_APP_ID || 'dummy_app_id',
-        client_secret: process.env.FACEBOOK_APP_SECRET || 'dummy_app_secret',
+        client_id: appId,
+        client_secret: appSecret,
         fb_exchange_token: refreshToken,
       }
     });

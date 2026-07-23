@@ -4,9 +4,9 @@ import { PlatformConnection, Platform, HealthStatus, ConnectionStatus } from '@p
 import { logger } from '../utils/logger.js';
 
 export const platformConnectionService = {
-  async getConnectionById(id: string): Promise<PlatformConnection> {
-    logger.debug({ id }, 'Fetching platform connection by ID');
-    const connection = await platformConnectionRepository.getById(id);
+  async getConnectionById(id: string, workspaceId?: string): Promise<PlatformConnection> {
+    logger.debug({ id, workspaceId }, 'Fetching platform connection by ID');
+    const connection = await platformConnectionRepository.getById(id, workspaceId);
     if (!connection) {
       throw new NotFoundError(`Platform connection with ID ${id} not found`);
     }
@@ -21,6 +21,8 @@ export const platformConnectionService = {
   async createConnection(data: {
     workspaceId: string;
     platform: Platform;
+    externalAccountId?: string;
+    displayName?: string;
     accessTokenHex: string;
     refreshTokenHex: string;
     expiresAt: Date;
@@ -28,7 +30,7 @@ export const platformConnectionService = {
     healthStatus: HealthStatus;
     status: ConnectionStatus;
   }): Promise<PlatformConnection> {
-    logger.info({ platform: data.platform }, 'Creating new platform connection');
+    logger.info({ platform: data.platform, externalAccountId: data.externalAccountId }, 'Creating new platform connection');
     return platformConnectionRepository.create(data);
   },
 
@@ -36,23 +38,26 @@ export const platformConnectionService = {
     id: string,
     data: {
       platform?: Platform;
+      externalAccountId?: string;
+      displayName?: string;
       accessTokenHex?: string;
       refreshTokenHex?: string;
       expiresAt?: Date;
       scopes?: string[];
       healthStatus?: HealthStatus;
       status?: ConnectionStatus;
-    }
+    },
+    workspaceId?: string
   ): Promise<PlatformConnection> {
-    logger.info({ id, data }, 'Updating platform connection');
-    await this.getConnectionById(id); // Ensure exists
-    return platformConnectionRepository.update(id, data);
+    logger.info({ id, data, workspaceId }, 'Updating platform connection');
+    await this.getConnectionById(id, workspaceId); // Ensure exists & owned
+    return platformConnectionRepository.update(id, data, workspaceId);
   },
 
-  async deleteConnection(id: string): Promise<PlatformConnection> {
-    logger.warn({ id }, 'Deleting platform connection');
-    await this.getConnectionById(id); // Ensure exists
-    return platformConnectionRepository.delete(id);
+  async deleteConnection(id: string, workspaceId?: string): Promise<PlatformConnection> {
+    logger.warn({ id, workspaceId }, 'Deleting platform connection');
+    await this.getConnectionById(id, workspaceId); // Ensure exists & owned
+    return platformConnectionRepository.delete(id, workspaceId);
   },
 };
 

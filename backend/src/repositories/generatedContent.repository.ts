@@ -14,7 +14,19 @@ export interface GeneratedContentFilters {
 export const generatedContentRepository = {
   db: prisma,
 
-  async getById(id: string): Promise<GeneratedContent | null> {
+  async getById(id: string, workspaceId?: string): Promise<GeneratedContent | null> {
+    if (workspaceId) {
+      return prisma.generatedContent.findFirst({
+        where: { id, workspaceId },
+        include: {
+          contentProfile: {
+            include: {
+              contentType: true,
+            },
+          },
+        },
+      });
+    }
     return prisma.generatedContent.findUnique({
       where: { id },
       include: {

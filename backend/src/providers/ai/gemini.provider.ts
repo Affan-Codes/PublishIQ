@@ -5,8 +5,6 @@ import { logger } from '../../utils/logger.js';
 import { AIContentResponseSchema } from '../../schemas/ai-response.schema.js';
 import { systemConfigCache } from '../../config/system-config.cache.js';
 
-const apiKey = env.GEMINI_API_KEY;
-
 // JSON schema definition to send to Gemini API for structured JSON response format
 const geminiResponseSchema = {
   type: 'OBJECT',
@@ -53,12 +51,16 @@ export const geminiProvider: AIProviderAdapter = {
     variables: Record<string, unknown>,
     responseSchema?: any
   ): Promise<StructuredAIResponse> {
+    const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new ExternalProviderError(
         'Gemini',
         'Gemini API key is not configured. Set GEMINI_API_KEY in your environment.'
       );
     }
+
+    const sysModel = await systemConfigCache.get<string>('ai.gemini_model');
+    const modelName = sysModel || env.GEMINI_MODEL || 'gemini-2.5-flash';
 
     // Replace variables in the prompt body
     let finalPrompt = prompt.body;
@@ -67,9 +69,9 @@ export const geminiProvider: AIProviderAdapter = {
     }
 
     const executeCall = async (): Promise<StructuredAIResponse> => {
-      logger.debug({ versionNumber: prompt.versionNumber }, 'Sending request to Gemini API');
+      logger.debug({ versionNumber: prompt.versionNumber, model: modelName }, 'Sending request to Gemini API');
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       
       const contents = [
         {
@@ -130,7 +132,7 @@ export const geminiProvider: AIProviderAdapter = {
           language: result.language.trim(),
           contentType: result.contentType.trim(),
           generationMetadata: result.metadata,
-          model: 'gemini-1.5-flash',
+          model: modelName,
           promptVersion: prompt.versionNumber,
         },
       };

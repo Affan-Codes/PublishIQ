@@ -18,6 +18,12 @@ const envSchema = z.object({
   OPERATOR_EMAIL: z.string().email().default('admin@publishiq.com'),
   OPERATOR_PASSWORD: z.string().min(12, 'OPERATOR_PASSWORD must be at least 12 characters long').default('admin1234_default_secret_passphrase'),
   GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  FACEBOOK_APP_ID: z.string().optional(),
+  FACEBOOK_APP_SECRET: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  META_GRAPH_API_VERSION: z.string().default('v20.0'),
   APP_BASE_URL: z.string().url().default('http://localhost:4000'),
 }).refine(
   (data) => {
@@ -25,11 +31,14 @@ const envSchema = z.object({
       if (data.OPERATOR_PASSWORD === 'admin1234_default_secret_passphrase' || !process.env.OPERATOR_PASSWORD) return false;
       if (data.OPERATOR_EMAIL === 'admin@publishiq.com' || !process.env.OPERATOR_EMAIL) return false;
       if (data.ENCRYPTION_SALT === 'publishiq_secure_static_salt_v1' || !process.env.ENCRYPTION_SALT) return false;
+      if (!data.GEMINI_API_KEY) return false;
+      if (!data.FACEBOOK_APP_ID || !data.FACEBOOK_APP_SECRET) return false;
+      if (!data.GOOGLE_CLIENT_ID || !data.GOOGLE_CLIENT_SECRET) return false;
     }
     return true;
   },
   {
-    message: 'Custom OPERATOR_EMAIL, OPERATOR_PASSWORD, and ENCRYPTION_SALT must be explicitly provided in production NODE_ENV',
+    message: 'Required production environment variables (OPERATOR_EMAIL, OPERATOR_PASSWORD, ENCRYPTION_SALT, GEMINI_API_KEY, FACEBOOK_APP_ID/SECRET, GOOGLE_CLIENT_ID/SECRET) must be explicitly provided',
     path: ['ENCRYPTION_SALT'],
   }
 );

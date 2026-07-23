@@ -2,9 +2,13 @@ import { Channel, AutomationMode, ChannelStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const channelRepository = {
-  async getById(id: string) {
-    const channel = await prisma.channel.findUnique({
-      where: { id },
+  async getById(id: string, workspaceId?: string) {
+    const where: any = { id };
+    if (workspaceId) {
+      where.workspaceId = workspaceId;
+    }
+    const channel = await prisma.channel.findFirst({
+      where,
       include: {
         contentProfile: true,
         platformConnections: {

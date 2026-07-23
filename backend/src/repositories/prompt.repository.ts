@@ -2,7 +2,17 @@ import { Prompt, PromptVersion, PromptStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const promptRepository = {
-  async getById(id: string): Promise<(Prompt & { versions: PromptVersion[] }) | null> {
+  async getById(id: string, workspaceId?: string): Promise<(Prompt & { versions: PromptVersion[] }) | null> {
+    if (workspaceId) {
+      return prisma.prompt.findFirst({
+        where: { id, workspaceId },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+          },
+        },
+      });
+    }
     return prisma.prompt.findUnique({
       where: { id },
       include: {

@@ -2,7 +2,12 @@ import { Asset, AssetType, AssetStatus, LicenseStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const assetRepository = {
-  async getById(id: string): Promise<Asset | null> {
+  async getById(id: string, workspaceId?: string): Promise<Asset | null> {
+    if (workspaceId) {
+      return prisma.asset.findFirst({
+        where: { id, workspaceId },
+      });
+    }
     return prisma.asset.findUnique({
       where: { id },
     });

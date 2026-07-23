@@ -2,7 +2,12 @@ import { Notification, Prisma } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const notificationRepository = {
-  async getById(id: string): Promise<Notification | null> {
+  async getById(id: string, workspaceId?: string): Promise<Notification | null> {
+    if (workspaceId) {
+      return prisma.notification.findFirst({
+        where: { id, workspaceId },
+      });
+    }
     return prisma.notification.findUnique({
       where: { id },
     });

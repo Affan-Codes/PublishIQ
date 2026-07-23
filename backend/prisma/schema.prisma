@@ -282,21 +282,25 @@ enum ConnectionStatus {
 }
 
 model PlatformConnection {
-  id              String           @id @default(uuid()) @db.Uuid
-  workspaceId     String           @db.Uuid
-  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  platform        Platform
-  accessTokenEnc  Bytes
-  refreshTokenEnc Bytes
-  expiresAt       DateTime
-  scopes          String[]
-  healthStatus    HealthStatus
-  status          ConnectionStatus @default(Active)
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                String           @id @default(uuid()) @db.Uuid
+  workspaceId       String           @db.Uuid
+  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  platform          Platform
+  externalAccountId String?
+  displayName       String?
+  accessTokenEnc    Bytes
+  refreshTokenEnc   Bytes
+  expiresAt         DateTime
+  scopes            String[]
+  healthStatus      HealthStatus
+  status            ConnectionStatus @default(Active)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   channels        ChannelPlatformConnection[]
   publishingRecords PublishingRecord[]
+
+  @@unique([workspaceId, platform, externalAccountId])
 }
 
 model ChannelPlatformConnection {
@@ -414,7 +418,7 @@ model PublishingRecord {
   publishedAt          DateTime
 
   // Milestone 7 Additions
-  platform             Platform           @default(YouTube)
+  platform             Platform
   generatedContentId   String?            @db.Uuid
   generatedContent     GeneratedContent?  @relation(fields: [generatedContentId], references: [id], onDelete: SetNull)
   publishedUrl         String?
@@ -486,6 +490,7 @@ model Session {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String?  @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

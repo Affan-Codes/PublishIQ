@@ -9,6 +9,8 @@ const router = Router();
 
 const connectionCreateSchema = z.object({
   platform: z.nativeEnum(Platform),
+  externalAccountId: z.string().optional(),
+  displayName: z.string().optional(),
   accessTokenHex: z.string().min(1, 'Access token is required'),
   refreshTokenHex: z.string().min(1, 'Refresh token is required'),
   expiresAt: z.string().datetime(),
@@ -18,6 +20,8 @@ const connectionCreateSchema = z.object({
 });
 
 const connectionUpdateSchema = z.object({
+  externalAccountId: z.string().optional(),
+  displayName: z.string().optional(),
   accessTokenHex: z.string().min(1).optional(),
   refreshTokenHex: z.string().min(1).optional(),
   expiresAt: z.string().datetime().optional(),

@@ -55,9 +55,11 @@ export const facebookAdapter: PublishingAdapter = {
       };
     }
 
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+
     try {
       // 1. Get Facebook Page Accounts
-      const accountsRes = await axios.get(`https://graph.facebook.com/v19.0/me/accounts`, {
+      const accountsRes = await axios.get(`https://graph.facebook.com/${apiVersion}/me/accounts`, {
         params: { access_token: accessToken }
       });
 
@@ -66,8 +68,9 @@ export const facebookAdapter: PublishingAdapter = {
         return { success: false, errorMessage: 'No Facebook Pages found linked to this access token.' };
       }
 
-      // Pick the first page
-      const page = pages[0];
+      // Pick target page by externalAccountId if available, else first page
+      const targetPageId = connection.externalAccountId;
+      const page = targetPageId ? (pages.find((p: any) => p.id === targetPageId) || pages[0]) : pages[0];
       const pageId = page.id;
       const pageAccessToken = page.access_token;
 
@@ -85,7 +88,7 @@ export const facebookAdapter: PublishingAdapter = {
         form.append('source', fs.createReadStream(videoFilePath));
         form.append('description', caption);
 
-        const response = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/videos`, form, {
+        const response = await axios.post(`https://graph.facebook.com/${apiVersion}/${pageId}/videos`, form, {
           headers: {
             ...form.getHeaders(),
             Authorization: `Bearer ${pageAccessToken}`,
@@ -111,7 +114,7 @@ export const facebookAdapter: PublishingAdapter = {
         form.append('source', fs.createReadStream(imageFilePath));
         form.append('message', caption);
 
-        const response = await axios.post(`https://graph.facebook.com/v19.0/${pageId}/photos`, form, {
+        const response = await axios.post(`https://graph.facebook.com/${apiVersion}/${pageId}/photos`, form, {
           headers: {
             ...form.getHeaders(),
             Authorization: `Bearer ${pageAccessToken}`,
@@ -137,18 +140,26 @@ export const facebookAdapter: PublishingAdapter = {
 
   async checkHealth(accessToken: string): Promise<boolean> {
     if (process.env.NODE_ENV === 'test') return true;
-    await axios.get('https://graph.facebook.com/v19.0/me', {
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+    await axios.get(`https://graph.facebook.com/${apiVersion}/me`, {
       params: { fields: 'id', access_token: accessToken }
     });
     return true;
   },
 
   async refreshToken(refreshToken: string) {
-    const res = await axios.get('https://graph.facebook.com/v19.0/oauth/access_token', {
+    const appId = env.FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID;
+    const appSecret = env.FACEBOOK_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+    if (!appId || !appSecret) {
+      throw new Error('FACEBOOK_APP_ID and FACEBOOK_APP_SECRET must be set to refresh Facebook tokens.');
+    }
+
+    const apiVersion = env.META_GRAPH_API_VERSION || 'v20.0';
+    const res = await axios.get(`https://graph.facebook.com/${apiVersion}/oauth/access_token`, {
       params: {
         grant_type: 'fb_exchange_token',
-        client_id: process.env.FACEBOOK_APP_ID || 'dummy_app_id',
-        client_secret: process.env.FACEBOOK_APP_SECRET || 'dummy_app_secret',
+        client_id: appId,
+        client_secret: appSecret,
         fb_exchange_token: refreshToken,
       }
     });

@@ -2,7 +2,12 @@ import { ContentType, ContentTypeStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const contentTypeRepository = {
-  async getById(id: string): Promise<ContentType | null> {
+  async getById(id: string, workspaceId?: string): Promise<ContentType | null> {
+    if (workspaceId) {
+      return prisma.contentType.findFirst({
+        where: { id, workspaceId },
+      });
+    }
     return prisma.contentType.findUnique({
       where: { id },
     });

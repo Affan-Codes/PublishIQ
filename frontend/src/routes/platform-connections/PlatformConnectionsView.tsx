@@ -21,6 +21,8 @@ type ConnectionFormValues = z.infer<typeof connectionSchema>;
 interface PlatformConnection {
   id: string;
   platform: 'YouTube' | 'Instagram' | 'Facebook';
+  externalAccountId?: string;
+  displayName?: string;
   expiresAt: string;
   scopes: string[];
   healthStatus: 'Healthy' | 'Unhealthy' | 'Expired' | 'Unknown';
@@ -144,6 +146,17 @@ export const PlatformConnectionsView: React.FC = () => {
     setIsDialogOpen(true);
   };
 
+  const handleOAuthLogin = async (platformName: string) => {
+    try {
+      const res = await apiClient.get(`/oauth/${platformName.toLowerCase()}/authorize`);
+      if (res.data?.data?.url) {
+        window.location.href = res.data.data.url;
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error?.message || `Failed to initiate ${platformName} OAuth login`);
+    }
+  };
+
   const onSubmit = (values: ConnectionFormValues) => {
     setErrorText(null);
     if (editingConnection) {
@@ -161,13 +174,36 @@ export const PlatformConnectionsView: React.FC = () => {
           <h2 className="text-2xl font-bold tracking-tight text-white">Platform Connections</h2>
           <p className="text-sm text-[#9c9cb0]">Manage integrations and tokens for publishing destinations</p>
         </div>
-        <button
-          onClick={openCreateDialog}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
-        >
-          <Plus size={16} />
-          Connect Account
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleOAuthLogin('facebook')}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 cursor-pointer"
+          >
+            <Plus size={14} />
+            OAuth Facebook
+          </button>
+          <button
+            onClick={() => handleOAuthLogin('instagram')}
+            className="flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-pink-600 cursor-pointer"
+          >
+            <Plus size={14} />
+            OAuth Instagram
+          </button>
+          <button
+            onClick={() => handleOAuthLogin('youtube')}
+            className="flex items-center gap-1.5 rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-600 cursor-pointer"
+          >
+            <Plus size={14} />
+            OAuth YouTube
+          </button>
+          <button
+            onClick={openCreateDialog}
+            className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
+          >
+            <Plus size={16} />
+            Manual Token
+          </button>
+        </div>
       </div>
 
       {/* Loading state */}
@@ -183,12 +219,26 @@ export const PlatformConnectionsView: React.FC = () => {
           <p className="text-sm text-[#9c9cb0] max-w-sm mt-1">
             PublishIQ requires at least one active connection to push generated Reels or Shorts to platforms.
           </p>
-          <button
-            onClick={openCreateDialog}
-            className="mt-6 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
-          >
-            Connect Account
-          </button>
+          <div className="flex items-center gap-3 mt-6">
+            <button
+              onClick={() => handleOAuthLogin('youtube')}
+              className="rounded-lg bg-red-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-red-600 cursor-pointer"
+            >
+              Connect YouTube (OAuth)
+            </button>
+            <button
+              onClick={() => handleOAuthLogin('instagram')}
+              className="rounded-lg bg-pink-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-pink-600 cursor-pointer"
+            >
+              Connect Instagram (OAuth)
+            </button>
+            <button
+              onClick={() => handleOAuthLogin('facebook')}
+              className="rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 cursor-pointer"
+            >
+              Connect Facebook (OAuth)
+            </button>
+          </div>
         </div>
       ) : (
         /* Connection Grid */
@@ -204,7 +254,10 @@ export const PlatformConnectionsView: React.FC = () => {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-bold text-white">{conn.platform}</h3>
+                  <h3 className="text-lg font-bold text-white">{conn.displayName || conn.platform}</h3>
+                  <span className="rounded bg-[#1c1c28] border border-[#2b2b3c] px-2 py-0.5 text-[10px] font-semibold text-[#a0a0b8]">
+                    {conn.platform}
+                  </span>
                   {conn.status === 'Disabled' && (
                     <span className="rounded bg-red-950/40 border border-red-900/50 px-2 py-0.5 text-[10px] font-semibold text-red-400">
                       Disabled
@@ -232,6 +285,11 @@ export const PlatformConnectionsView: React.FC = () => {
               </div>
 
               <div className="space-y-1 text-xs">
+                {conn.externalAccountId && (
+                  <p className="text-[#9c9cb0]">
+                    Account ID: <span className="font-mono text-purple-300">{conn.externalAccountId}</span>
+                  </p>
+                )}
                 <p className="text-[#9c9cb0]">
                   Token Expiry:{' '}
                   <span className="font-semibold text-white">

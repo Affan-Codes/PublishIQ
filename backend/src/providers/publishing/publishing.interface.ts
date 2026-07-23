@@ -32,6 +32,8 @@ export interface PlatformConnectionData {
   accessTokenEnc: Uint8Array;
   refreshTokenEnc: Uint8Array;
   expiresAt: Date;
+  externalAccountId?: string | null;
+  displayName?: string | null;
 }
 
 export interface PublishingAdapter {

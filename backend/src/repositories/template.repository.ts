@@ -2,7 +2,17 @@ import { Template, TemplateVersion, PromptStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const templateRepository = {
-  async getById(id: string): Promise<(Template & { versions: TemplateVersion[] }) | null> {
+  async getById(id: string, workspaceId?: string): Promise<(Template & { versions: TemplateVersion[] }) | null> {
+    if (workspaceId) {
+      return prisma.template.findFirst({
+        where: { id, workspaceId },
+        include: {
+          versions: {
+            orderBy: { versionNumber: 'desc' },
+          },
+        },
+      });
+    }
     return prisma.template.findUnique({
       where: { id },
       include: {

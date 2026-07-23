@@ -30,10 +30,8 @@ test('Pipeline Stage Transition and Resume Unit Tests', async (t) => {
     PipelineStage.GeneratingContent,
     PipelineStage.Validating,
     PipelineStage.RenderingImage,
-    PipelineStage.GeneratingVideo,
-    PipelineStage.RenderingVideo,
-    PipelineStage.SelectingMusic,
     PipelineStage.AttachingMusic,
+    PipelineStage.RenderingVideo,
     PipelineStage.GeneratingCaption,
     PipelineStage.GeneratingHashtags,
   ];

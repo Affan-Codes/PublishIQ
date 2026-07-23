@@ -1,4 +1,4 @@
-import { Prisma, Job, JobType, PipelineStage, GeneratedContent, PublishStatus, DomainEvent, Notification, PublishingRecord, PublishRecordStatus } from '@prisma/client';
+import { Prisma, Job, JobType, PipelineStage, GeneratedContent, PublishStatus, DomainEvent, Notification, PublishingRecord, PublishRecordStatus, Platform } from '@prisma/client';
 import { prisma } from '../database/db.js';
 import { eventBus } from '../events/event-bus.js';
 
@@ -12,7 +12,16 @@ export type JobWithRelations = Prisma.JobGetPayload<{
 export const jobRepository = {
   db: prisma,
 
-  async getById(id: string): Promise<JobWithRelations | null> {
+  async getById(id: string, workspaceId?: string): Promise<JobWithRelations | null> {
+    if (workspaceId) {
+      return prisma.job.findFirst({
+        where: { id, workspaceId },
+        include: {
+          channel: true,
+          contentProfile: true,
+        },
+      });
+    }
     return prisma.job.findUnique({
       where: { id },
       include: {
@@ -42,6 +51,7 @@ export const jobRepository = {
     platformConnectionId: string;
     contentTypeSnapshot: string;
     status: PublishRecordStatus;
+    platform: Platform;
     platformResponse?: any;
     publishedAt: Date;
   }): Promise<PublishingRecord> {
@@ -53,6 +63,7 @@ export const jobRepository = {
         platformConnectionId: data.platformConnectionId,
         contentTypeSnapshot: data.contentTypeSnapshot,
         status: data.status,
+        platform: data.platform,
         platformResponse: data.platformResponse || undefined,
         publishedAt: data.publishedAt,
       },

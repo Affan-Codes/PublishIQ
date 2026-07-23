@@ -5,6 +5,8 @@ const mapConnectionResponse = (conn: any) => ({
   id: conn.id,
   workspaceId: conn.workspaceId,
   platform: conn.platform,
+  externalAccountId: conn.externalAccountId || null,
+  displayName: conn.displayName || null,
   expiresAt: conn.expiresAt,
   scopes: conn.scopes,
   healthStatus: conn.healthStatus,
@@ -18,7 +20,7 @@ const mapConnectionResponse = (conn: any) => ({
 export const platformConnectionController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const connection = await platformConnectionService.getConnectionById(req.params.id as string);
+      const connection = await platformConnectionService.getConnectionById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: mapConnectionResponse(connection),
@@ -62,7 +64,8 @@ export const platformConnectionController = {
     try {
       const connection = await platformConnectionService.updateConnection(
         req.params.id as string,
-        req.body
+        req.body,
+        req.workspaceId!
       );
       res.json({
         success: true,
@@ -76,7 +79,7 @@ export const platformConnectionController = {
 
   async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      await platformConnectionService.deleteConnection(req.params.id as string);
+      await platformConnectionService.deleteConnection(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: {},

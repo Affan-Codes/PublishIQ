@@ -2,7 +2,21 @@ import { ContentProfile, ContentProfileStatus, Language } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const contentProfileRepository = {
-  async getById(id: string) {
+  async getById(id: string, workspaceId?: string) {
+    if (workspaceId) {
+      return prisma.contentProfile.findFirst({
+        where: { id, workspaceId },
+        include: {
+          contentType: true,
+          promptVersion: {
+            include: { prompt: true },
+          },
+          templateVersion: {
+            include: { template: true },
+          },
+        },
+      });
+    }
     return prisma.contentProfile.findUnique({
       where: { id },
       include: {

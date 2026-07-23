@@ -294,7 +294,9 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
     ? job.failureStage
     : job.pipelineStage;
 
-  if (resumeStageStr) {
+  const isPublishingResume = resumeStageStr === PipelineStage.Publishing || resumeStageStr === 'Publishing';
+
+  if (resumeStageStr && !isPublishingResume) {
     const stageIndex = generationStages.indexOf(resumeStageStr as PipelineStage);
     if (stageIndex !== -1) {
       startIndex = stageIndex;
@@ -305,8 +307,8 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
   try {
     const completedStagesInThisRun = new Set<PipelineStage>();
 
-    // 1. Run Generation & Media Rendering Phase
-    if (job.pipelineStage !== PipelineStage.Publishing && job.pipelineStage !== PipelineStage.Completed) {
+    // 1. Run Generation & Media Rendering Phase (skipped if resuming from Publishing or Completed)
+    if (!isPublishingResume && job.pipelineStage !== PipelineStage.Publishing && job.pipelineStage !== PipelineStage.Completed) {
       for (let i = startIndex; i < generationStages.length; i++) {
         const stage = generationStages[i]!;
         if (completedStagesInThisRun.has(stage)) {
@@ -364,6 +366,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       if (!finalizedJob) throw new Error('Job not found after pipeline execution');
 
       let genContent = await generatedContentRepository.findByJobId(finalizedJob.id);
+      const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
 
       if (!genContent) {
         genContent = await jobRepository.saveGeneratedContent({
@@ -383,8 +386,17 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
         });
 
         // Save normalized hash for duplicate checks
-        const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
         await generatedContentRepository.update(genContent.id, { textHash: normalizedHash });
+      } else {
+        // Synchronize existing GeneratedContent with updated job fields
+        await generatedContentRepository.update(genContent.id, {
+          text: finalizedJob.generatedText || '',
+          imageUrl: finalizedJob.imageUrl,
+          videoUrl: finalizedJob.videoUrl,
+          caption: finalizedJob.caption,
+          hashtags: (finalizedJob.hashtags as any) ?? undefined,
+          textHash: normalizedHash,
+        });
       }
     }
 
