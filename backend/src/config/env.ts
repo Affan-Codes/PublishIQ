@@ -7,7 +7,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string(),
-  REDIS_URL: z.string(),
+  VALKEY_URL: z.string(),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long'),
   ENCRYPTION_KEY: z.string().min(32, 'ENCRYPTION_KEY must be at least 32 characters long'),
   ENCRYPTION_SALT: z.string().min(16, 'ENCRYPTION_SALT must be at least 16 characters long').default('publishiq_secure_static_salt_v1'),

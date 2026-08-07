@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import dashboardService from '../services/dashboard.service.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { requireAuth } from '../middlewares/auth.js';
 import os from 'os';
 
@@ -32,12 +32,12 @@ router.get('/health/diagnostics', requireAuth, async (req: Request, res: Respons
     const dbLatencyMs = Date.now() - dbStart;
     const dbStatus = 'healthy';
 
-    // 2. Check Redis health
-    const redis = getRedisInstance();
-    const redisStart = Date.now();
-    const pingResult = await redis.ping();
-    const redisLatencyMs = Date.now() - redisStart;
-    const redisStatus = pingResult === 'PONG' ? 'healthy' : 'unhealthy';
+    // 2. Check Valkey health
+    const valkey = getValkeyInstance();
+    const valkeyStart = Date.now();
+    const pingResult = await valkey.ping();
+    const valkeyLatencyMs = Date.now() - valkeyStart;
+    const valkeyStatus = pingResult === 'PONG' ? 'healthy' : 'unhealthy';
 
     // 3. Collect OS/Process metrics
     const memoryUsage = process.memoryUsage();
@@ -54,9 +54,9 @@ router.get('/health/diagnostics', requireAuth, async (req: Request, res: Respons
           status: dbStatus,
           latencyMs: dbLatencyMs,
         },
-        redis: {
-          status: redisStatus,
-          latencyMs: redisLatencyMs,
+        valkey: {
+          status: valkeyStatus,
+          latencyMs: valkeyLatencyMs,
         },
         system: {
           uptimeSeconds: systemUptime,

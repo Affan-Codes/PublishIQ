@@ -1,5 +1,5 @@
 import { dashboardRepository } from '../repositories/dashboard.repository.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { contentPipelineQueue } from '../jobs/index.js';
 
 export const dashboardService = {

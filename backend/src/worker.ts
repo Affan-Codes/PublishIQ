@@ -1,5 +1,5 @@
 import { prisma } from './database/db.js';
-import { getRedisInstance } from './database/redis.js';
+import { getValkeyInstance } from './database/valkey.js';
 import { eventBus } from './events/event-bus.js';
 import { logger } from './utils/logger.js';
 import { bootstrapWorkers, shutdownWorkers } from './workers/index.js';
@@ -11,10 +11,10 @@ async function main() {
   await prisma.$connect();
   logger.info('Database connection established');
 
-  // 2. Connect to Redis
-  const redis = getRedisInstance();
-  await redis.ping();
-  logger.info('Redis connection verified');
+  // 2. Connect to Valkey
+  const valkey = getValkeyInstance();
+  await valkey.ping();
+  logger.info('Valkey connection verified');
 
   // 3. Initialize EventBus (only as publisher, no need to subscribe to events in worker)
   await eventBus.init(false);
@@ -35,9 +35,9 @@ async function main() {
       await eventBus.close();
       logger.info('EventBus connection closed');
       
-      const redisInstance = getRedisInstance();
-      await redisInstance.quit();
-      logger.info('Redis connection closed');
+      const valkeyInstance = getValkeyInstance();
+      await valkeyInstance.quit();
+      logger.info('Valkey connection closed');
       
       logger.info('Worker engine shutdown complete');
       process.exit(0);

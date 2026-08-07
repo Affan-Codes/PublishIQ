@@ -28,7 +28,7 @@ flowchart TB
 
     subgraph Data
         PG["PostgreSQL"]
-        REDIS["Redis (BullMQ)"]
+        VALKEY["Valkey (Redis protocol compatible, BullMQ)"]
     end
 
     subgraph External
@@ -39,19 +39,19 @@ flowchart TB
 
     Dashboard <-->|REST + SSE| API
     API --> PG
-    API --> REDIS
-    WPipeline --> REDIS
+    API --> VALKEY
+    WPipeline --> VALKEY
     WPipeline --> PG
     WPipeline --> GEMINI
     WPipeline --> PLATFORMS
     WPipeline --> DISK
-    WMaint --> REDIS
+    WMaint --> VALKEY
     WMaint --> PG
     WMaint --> PLATFORMS
     API -->|domain events| SSE
 ```
 
-Two Node.js processes share one codebase and one `dist/` build: **`api`** (Express, serves the Dashboard's REST calls and the Notification SSE stream) and **`worker`** (BullMQ workers; no HTTP surface at all). This is a monolith split into two processes only where it must be — a worker needs to run continuously and independently of HTTP traffic — not a microservices decomposition. Both processes talk to the same Postgres and Redis instances.
+Two Node.js processes share one codebase and one `dist/` build: **`api`** (Express, serves the Dashboard's REST calls and the Notification SSE stream) and **`worker`** (BullMQ workers; no HTTP surface at all). This is a monolith split into two processes only where it must be — a worker needs to run continuously and independently of HTTP traffic — not a microservices decomposition. Both processes talk to the same Postgres and Valkey (Redis protocol compatible) instances.
 
 ---
 
@@ -120,7 +120,7 @@ sequenceDiagram
 
 - A Domain Event is **always** written in the same DB transaction as the state change it represents (`03-technical-requirements.md` Section 3.2) — this is the single source of truth `PROJECT_DECISIONS.md` Section 23 requires.
 - The in-process EventBus (a plain Node `EventEmitter`, one per process) is a **delivery mechanism**, not a second detection mechanism — it only ever fires after a Domain Event has already been durably committed. If the `worker` process crashes between commit and emit, the Notification is missed for that instant, but the Domain Event itself is not lost (it's in Postgres); a lightweight periodic reconciliation job (part of Health Check) sweeps for Domain Events with no corresponding Notification and backfills — this closes the only gap an in-process emitter has, without needing a message broker.
-- The `api` process holds the SSE connections; since the EventBus is in-process, the `worker` process publishes Domain Events into Redis Pub/Sub (a channel BullMQ's Redis instance already provides, no new infrastructure) and the `api` process subscribes and re-emits to its local EventBus → SSE clients. This is the one place the two processes talk to each other outside the shared database.
+- The `api` process holds the SSE connections; since the EventBus is in-process, the `worker` process publishes Domain Events into Valkey Pub/Sub (a channel BullMQ's Valkey (Redis protocol compatible) instance already provides, no new infrastructure) and the `api` process subscribes and re-emits to its local EventBus → SSE clients. This is the one place the two processes talk to each other outside the shared database.
 
 ---
 
@@ -150,19 +150,19 @@ flowchart LR
         api[api]
         worker[worker]
         pg[(postgres)]
-        redis[(redis)]
+        valkey[(valkey)]
         vol1[/media volume/]
     end
     Dashboard -.->|HTTPS| api
     api --> pg
-    api --> redis
+    api --> valkey
     worker --> pg
-    worker --> redis
+    worker --> valkey
     worker --> vol1
     api --> vol1
 ```
 
-- `docker-compose.yml` defines five services: `api`, `worker`, `postgres`, `redis`, and (production only) a thin reverse proxy (e.g., Caddy or nginx) for TLS termination — the proxy is the only new piece production adds over development.
+- `docker-compose.yml` defines five services: `api`, `worker`, `postgres`, `valkey`, and (production only) a thin reverse proxy (e.g., Caddy or nginx) for TLS termination — the proxy is the only new piece production adds over development.
 - `api` and `worker` are built from the same Dockerfile/image; the only difference is the container command (`node dist/api.js` vs `node dist/worker.js`) — one build, two run modes, per `PROJECT_DECISIONS.md` Section 28's "same containers, VPS host" principle.
 - Media (rendered PNGs/videos) live on a named Docker volume mounted into both `api` (to serve/preview) and `worker` (to write) — this is the concrete shape of the `LocalDiskStorageProvider`.
 - No orchestration platform, no service mesh, no auto-scaling group — explicitly excluded (`PROJECT_DECISIONS.md` Section 28).
@@ -173,7 +173,7 @@ flowchart LR
 
 - A crash in `worker` never takes down `api` (separate containers, `restart: unless-stopped`) — the Dashboard stays reachable even mid-incident, which is exactly what Goal G5 (failure visibility) needs most.
 - A stuck/slow Gemini call in one Content Pipeline Job cannot block another job on the same queue beyond the configured concurrency limit — BullMQ isolates job execution per worker slot.
-- Redis is a single point of failure for both queueing and Pub/Sub notification delivery; at v1's scale (single VPS, single operator) an external managed Redis is not justified (Section 2 cost ordering) — Redis persistence (AOF) is enabled so a container restart doesn't silently drop in-flight repeatable-job schedules.
+- Valkey (Redis protocol compatible) is a single point of failure for both queueing and Pub/Sub notification delivery; at v1's scale (single VPS, single operator) an external managed Valkey is not justified (Section 2 cost ordering) — Valkey persistence (AOF) is enabled so a container restart doesn't silently drop in-flight repeatable-job schedules.
 
 ---
 

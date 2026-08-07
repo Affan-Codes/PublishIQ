@@ -24,7 +24,7 @@ This document also has a second job the PRD explicitly deferred to it: **resolvi
 | Web framework | **Express** | Not Fastify, not NestJS. Express is the most widely documented, lowest-ceremony option; NestJS's DI/decorator machinery is exactly the "unnecessary abstraction" Section 25/31 warns against for a system this size. |
 | ORM / DB access | **Prisma** | Type-safe queries, first-class migrations, and it enforces the Repository boundary (Section 25) naturally — Prisma Client is only ever imported inside Repository files. |
 | Database | **PostgreSQL** | Relational integrity matters here (Channels→Profiles→Prompts/Templates reference graph, Section 26 of `PROJECT_DECISIONS.md`); JSONB columns cover the few genuinely semi-structured fields (stage history, hashtags) without going full-NoSQL. |
-| Queue / scheduling | **BullMQ on Redis** | Frozen, `PROJECT_DECISIONS.md` Section 17. Not re-decided here. |
+| Queue / scheduling | **BullMQ on Valkey (Redis protocol compatible)** | Frozen, `PROJECT_DECISIONS.md` Section 17. Not re-decided here. |
 | Rendering | **Playwright (headless Chromium) → PNG → FFmpeg → video** | Frozen, `PROJECT_DECISIONS.md` Section 7.1. Not re-decided here. |
 | Frontend | **React + TypeScript, Vite** | React is already mandatory for the rendering Templates (Section 7.1); reusing it for the Dashboard avoids a second frontend paradigm. Vite over CRA/webpack for build speed and near-zero config, consistent with DX priority. |
 | Validation | **Zod** | Runtime schema validation at every controller boundary and for AI Provider structured-JSON responses (Section 5.1 of `PROJECT_DECISIONS.md`) — one library for both jobs, no duplicated validation logic. |
@@ -52,10 +52,10 @@ This document also has a second job the PRD explicitly deferred to it: **resolvi
 ### 3.2 Reliability
 - Every BullMQ queue is configured with exponential backoff and a bounded max-attempts value sourced from System Configuration (Retry Limits, `PROJECT_DECISIONS.md` Section 21) — never an unbounded retry loop.
 - Domain Events (`PROJECT_DECISIONS.md` Section 23) are written inside the same database transaction as the state change that produced them, so an event is never lost to a mid-write crash and never fires for a state change that didn't actually commit.
-- Docker Compose services restart on failure (`restart: unless-stopped`); Postgres and Redis data are on named volumes so a container recreate never loses state.
+- Docker Compose services restart on failure (`restart: unless-stopped`); Postgres and Valkey (Redis protocol compatible) data are on named volumes so a container recreate never loses state.
 
 ### 3.3 Security
-- Secrets (DB credentials, Redis URL, AI Provider API key, OAuth client secrets for Publishing Adapters) live in environment variables injected via Docker Compose `.env`, never committed, never returned by any API response.
+- Secrets (DB credentials, Valkey URL, AI Provider API key, OAuth client secrets for Publishing Adapters) live in environment variables injected via Docker Compose `.env`, never committed, never returned by any API response.
 - Platform Connection Access/Refresh Tokens (`PROJECT_DECISIONS.md` Section 15) are encrypted at rest (application-level AES-GCM, key from environment, not the DB) — the Health-Status/expiry fields the dashboard shows (FR-CHN-03) are plaintext metadata, the tokens themselves never are.
 - All inbound HTTP traffic goes through `helmet` (standard header hardening) and CORS restricted to the Dashboard's own origin — no public open CORS policy, since this is a single-operator system with no legitimate third-party browser client.
 - Rate limiting on the API (basic IP-based) is a cheap, standard safeguard against credential-stuffing on the single login endpoint — not a scalability feature.

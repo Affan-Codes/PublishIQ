@@ -17,15 +17,15 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: publishiq-redis-prod
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: publishiq-valkey-prod
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
     volumes:
-      - redis_prod_data:/data
+      - valkey_prod_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -58,7 +58,7 @@ services:
       - NODE_ENV=production
       - PORT=4000
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - VALKEY_URL=${VALKEY_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENCRYPTION_SALT=${ENCRYPTION_SALT}
@@ -79,7 +79,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -96,7 +96,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - VALKEY_URL=${VALKEY_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENCRYPTION_SALT=${ENCRYPTION_SALT}
@@ -117,7 +117,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -152,7 +152,7 @@ services:
 volumes:
   postgres_prod_data:
     driver: local
-  redis_prod_data:
+  valkey_prod_data:
     driver: local
   media_prod_data:
     driver: local

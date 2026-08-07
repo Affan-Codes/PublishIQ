@@ -238,7 +238,7 @@ Mode is a per-channel setting. **Distinction from Feature Flags (Section 20):** 
 
 - **BullMQ only.** node-cron is explicitly rejected.
 - Handles scheduling, delayed jobs, retries, backoff, repeatable jobs.
-- Schedule state lives in Redis, surviving process restarts.
+- Schedule state lives in Valkey (Redis protocol compatible), surviving process restarts.
 
 ---
 

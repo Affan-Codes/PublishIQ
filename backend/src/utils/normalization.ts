@@ -7,8 +7,8 @@ import crypto from 'crypto';
 export function normalizeText(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’]/g, '') // strip punctuation
-    .replace(/\s+/g, ' ')                           // collapse whitespace
+    .replace(/\p{P}/gu, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 

@@ -1,10 +1,10 @@
 import { Worker, Job } from 'bullmq';
 import { env } from '../config/env.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 import { maintenanceService } from '../services/maintenance.service.js';
 
-const connection = getRedisInstance();
+const connection = getValkeyInstance();
 const getQueueName = (name: string) => `${env.QUEUE_PREFIX}:${name}`;
 
 export const cleanupProcessor = async (job: Job) => {

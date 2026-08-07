@@ -2,17 +2,17 @@ import { EventEmitter } from 'events';
 import { Redis } from 'ioredis';
 import { workspaceRepository } from '../repositories/workspace.repository.js';
 import { logRepository } from '../repositories/log.repository.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
 export const localEventBus = new EventEmitter();
 
-const REDIS_EVENT_CHANNEL = 'publishiq:domain-events';
-let redisSubscriber: Redis | null = null;
+const VALKEY_EVENT_CHANNEL = 'publishiq:domain-events';
+let valkeySubscriber: Redis | null = null;
 
 /**
- * Persists a DomainEvent in the database and broadcasts it system-wide using Redis Pub/Sub.
+ * Persists a DomainEvent in the database and broadcasts it system-wide using Valkey Pub/Sub.
  * Supports both:
  * - 4-arg format: emitDomainEvent(workspaceId, type, payload, jobId)
  * - 2-arg format: emitDomainEvent(type, payload) (for backwards compatibility)
@@ -56,9 +56,9 @@ export async function emitDomainEvent(
     jobId: jobId || null,
   });
 
-  // 2. Publish to Redis Pub/Sub channel
+  // 2. Publish to Valkey Pub/Sub channel
   try {
-    const redis = getRedisInstance();
+    const valkey = getValkeyInstance();
     const eventMsg = JSON.stringify({
       id: domainEvent.id,
       workspaceId: domainEvent.workspaceId,
@@ -68,9 +68,9 @@ export async function emitDomainEvent(
       createdAt: domainEvent.createdAt,
     });
     
-    await redis.publish(REDIS_EVENT_CHANNEL, eventMsg);
+    await valkey.publish(VALKEY_EVENT_CHANNEL, eventMsg);
   } catch (err: any) {
-    logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Redis Pub/Sub');
+    logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Valkey Pub/Sub');
   }
 
   // 3. Emit on the local process event bus
@@ -83,29 +83,29 @@ export async function emitDomainEvent(
 
 export const eventBus = {
   /**
-   * Initializes the Redis Pub/Sub connection bridge for subscription.
+   * Initializes the Valkey Pub/Sub connection bridge for subscription.
    */
   async init(isSubscriber: boolean = false): Promise<void> {
     if (isSubscriber) {
-      if (redisSubscriber) return;
+      if (valkeySubscriber) return;
 
       try {
-        redisSubscriber = new Redis(env.REDIS_URL, {
+        valkeySubscriber = new Redis(env.VALKEY_URL, {
           maxRetriesPerRequest: null,
         });
 
-        redisSubscriber.on('connect', () => {
-          logger.info('Redis event bridge subscriber connected');
+        valkeySubscriber.on('connect', () => {
+          logger.info('Valkey event bridge subscriber connected');
         });
 
-        redisSubscriber.on('error', (err) => {
-          logger.error({ err }, 'Redis event bridge subscriber error');
+        valkeySubscriber.on('error', (err) => {
+          logger.error({ err }, 'Valkey event bridge subscriber error');
         });
 
-        await redisSubscriber.subscribe(REDIS_EVENT_CHANNEL);
+        await valkeySubscriber.subscribe(VALKEY_EVENT_CHANNEL);
 
-        redisSubscriber.on('message', (channel: string, message: string) => {
-          if (channel === REDIS_EVENT_CHANNEL) {
+        valkeySubscriber.on('message', (channel: string, message: string) => {
+          if (channel === VALKEY_EVENT_CHANNEL) {
             try {
               const domainEvent = JSON.parse(message);
               
@@ -113,25 +113,25 @@ export const eventBus = {
               localEventBus.emit(domainEvent.type, domainEvent);
               localEventBus.emit('*', domainEvent);
             } catch (err: any) {
-              logger.error({ err }, 'Failed to parse Redis Pub/Sub message');
+              logger.error({ err }, 'Failed to parse Valkey Pub/Sub message');
             }
           }
         });
       } catch (err: any) {
-        logger.error({ err }, 'Failed to initialize Redis Event Bridge');
+        logger.error({ err }, 'Failed to initialize Valkey Event Bridge');
         throw err;
       }
     }
   },
 
   /**
-   * Closes the Redis Pub/Sub subscriber connection.
+   * Closes the Valkey Pub/Sub subscriber connection.
    */
   async close(): Promise<void> {
-    if (redisSubscriber) {
-      await redisSubscriber.quit();
-      redisSubscriber = null;
-      logger.info('Redis event bridge subscriber closed');
+    if (valkeySubscriber) {
+      await valkeySubscriber.quit();
+      valkeySubscriber = null;
+      logger.info('Valkey event bridge subscriber closed');
     }
   },
 

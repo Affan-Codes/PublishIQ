@@ -1,13 +1,13 @@
 import { Worker, Job } from 'bullmq';
 import { env } from '../config/env.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 import { runContentPipeline } from '../services/content-pipeline.service.js';
 import { channelSchedulingService } from '../services/channel-scheduling.service.js';
 import { ValidationError, NotFoundError } from '../errors/custom-errors.js';
 
 const QUEUE_NAME = `${env.QUEUE_PREFIX}:content-pipeline`;
-const connection = getRedisInstance();
+const connection = getValkeyInstance();
 
 /**
  * Classifies whether an error is retryable (network/DB glitches) or non-retryable (validation failures).
@@ -41,7 +41,7 @@ export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channe
   }
 
   logger.info({ jobId: dbJobId, bullJobId: job.id }, 'Processing Content Pipeline Job');
-  
+
   try {
     await runContentPipeline(dbJobId, {
       onStageComplete: async (stage) => {
@@ -64,7 +64,7 @@ export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channe
 
 export function startContentPipelineWorker(concurrency: number = 2): Worker {
   logger.info({ QUEUE_NAME, concurrency }, 'Starting Content Pipeline Worker');
-  
+
   const worker = new Worker(QUEUE_NAME, contentPipelineProcessor, {
     connection: connection as any,
     concurrency,

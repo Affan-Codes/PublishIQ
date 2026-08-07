@@ -32,6 +32,12 @@ interface PlatformConnection {
   createdAt: string;
 }
 
+const OAUTH_PLATFORMS = [
+  { id: 'facebook', label: 'Facebook', bg: 'bg-blue-700 hover:bg-blue-600' },
+  { id: 'instagram', label: 'Instagram', bg: 'bg-pink-700 hover:bg-pink-600' },
+  { id: 'youtube', label: 'YouTube', bg: 'bg-red-700 hover:bg-red-600' },
+] as const;
+
 export const PlatformConnectionsView: React.FC = () => {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -175,27 +181,16 @@ export const PlatformConnectionsView: React.FC = () => {
           <p className="text-sm text-[#9c9cb0]">Manage integrations and tokens for publishing destinations</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOAuthLogin('facebook')}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 cursor-pointer"
-          >
-            <Plus size={14} />
-            OAuth Facebook
-          </button>
-          <button
-            onClick={() => handleOAuthLogin('instagram')}
-            className="flex items-center gap-1.5 rounded-lg bg-pink-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-pink-600 cursor-pointer"
-          >
-            <Plus size={14} />
-            OAuth Instagram
-          </button>
-          <button
-            onClick={() => handleOAuthLogin('youtube')}
-            className="flex items-center gap-1.5 rounded-lg bg-red-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-600 cursor-pointer"
-          >
-            <Plus size={14} />
-            OAuth YouTube
-          </button>
+          {OAUTH_PLATFORMS.map(({ id, label, bg }) => (
+            <button
+              key={id}
+              onClick={() => handleOAuthLogin(id)}
+              className={`flex items-center gap-1.5 rounded-lg ${bg} px-3 py-2 text-xs font-semibold text-white transition cursor-pointer`}
+            >
+              <Plus size={14} />
+              OAuth {label}
+            </button>
+          ))}
           <button
             onClick={openCreateDialog}
             className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
@@ -220,24 +215,15 @@ export const PlatformConnectionsView: React.FC = () => {
             PublishIQ requires at least one active connection to push generated Reels or Shorts to platforms.
           </p>
           <div className="flex items-center gap-3 mt-6">
-            <button
-              onClick={() => handleOAuthLogin('youtube')}
-              className="rounded-lg bg-red-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-red-600 cursor-pointer"
-            >
-              Connect YouTube (OAuth)
-            </button>
-            <button
-              onClick={() => handleOAuthLogin('instagram')}
-              className="rounded-lg bg-pink-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-pink-600 cursor-pointer"
-            >
-              Connect Instagram (OAuth)
-            </button>
-            <button
-              onClick={() => handleOAuthLogin('facebook')}
-              className="rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-blue-600 cursor-pointer"
-            >
-              Connect Facebook (OAuth)
-            </button>
+            {OAUTH_PLATFORMS.map(({ id, label, bg }) => (
+              <button
+                key={id}
+                onClick={() => handleOAuthLogin(id)}
+                className={`rounded-lg ${bg} px-3.5 py-2 text-xs font-semibold text-white transition cursor-pointer`}
+              >
+                Connect {label} (OAuth)
+              </button>
+            ))}
           </div>
         </div>
       ) : (

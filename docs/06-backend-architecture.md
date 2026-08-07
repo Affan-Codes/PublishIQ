@@ -23,7 +23,7 @@ src/
   templates/           # React rendering templates (versioned per Template/TemplateVersion, 05-database-design.md 3.4)
   utils/               # Pure functions only — normalization, hashing, date math. No DB, no network, no state.
   middleware/           # auth, error handler, rate limiter, request validation (Zod)
-  events/               # EventBus (in-process) + Redis Pub/Sub bridge (04-system-architecture.md, Section 3)
+  events/               # EventBus (in-process) + Valkey (Redis protocol compatible) Pub/Sub bridge (04-system-architecture.md, Section 3)
   config/               # env loading, SystemConfiguration cache, FeatureFlag cache
   jobs/                 # BullMQ queue definitions (one per Job Type) — distinct from workers/: this is "how to enqueue," workers/ is "how to process"
   api.ts                # Express app entrypoint (api container)
@@ -62,7 +62,7 @@ export const contentPipelineProcessor = async (job: Job<ContentPipelineJobData>)
 };
 ```
 
-The **worker file itself contains no business logic** — it is a thin adapter between BullMQ's `Job` object and a Service method, exactly matching Section 25's "Workers: queue/job processing only." `ContentPipelineService.run()` is the actual 13-stage sequential function described in `04-system-architecture.md` Section 2.1, and it is unit-testable without BullMQ or Redis at all — the Worker layer's only job is wiring, which is precisely why Section 32's unit-test coverage target ("state-machine transitions") is achievable without spinning up Redis in CI.
+The **worker file itself contains no business logic** — it is a thin adapter between BullMQ's `Job` object and a Service method, exactly matching Section 25's "Workers: queue/job processing only." `ContentPipelineService.run()` is the actual 13-stage sequential function described in `04-system-architecture.md` Section 2.1, and it is unit-testable without BullMQ or Valkey (Redis protocol compatible) at all — the Worker layer's only job is wiring, which is precisely why Section 32's unit-test coverage target ("state-machine transitions") is achievable without spinning up Valkey in CI.
 
 **Dependency injection is manual, not a DI framework.** Services are constructed with plain constructor parameters (`new ContentPipelineService(jobRepo, generatedContentRepo, aiProvider, ...)`), wired once at process startup in `api.ts`/`worker.ts`. A DI container (InversifyJS, NestJS's own) is explicitly rejected — for a codebase this size, a container adds indirection (magic decorators, runtime reflection) without adding a real capability plain constructors don't already give it. This is Section 31's "avoid unnecessary abstractions" applied concretely.
 

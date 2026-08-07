@@ -1,9 +1,9 @@
 import { Queue, ConnectionOptions } from 'bullmq';
 import { env } from '../config/env.js';
-import { getRedisInstance } from '../database/redis.js';
+import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 
-const connection = getRedisInstance();
+const connection = getValkeyInstance();
 
 // Helper to construct queue names with the prefix
 const getQueueName = (name: string) => `${env.QUEUE_PREFIX}:${name}`;

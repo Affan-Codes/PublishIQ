@@ -55,7 +55,8 @@ interface DashboardStats {
   }>;
   health: {
     database: string;
-    redis: string;
+    valkey?: string;
+    redis?: string;
   };
 }
 
@@ -253,8 +254,8 @@ export const DashboardOverview: React.FC = () => {
                 )}
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-[#9c9cb0]">Redis Cluster Service</span>
-                {stats.health.redis === 'Healthy' ? (
+                <span className="text-sm text-[#9c9cb0]">Valkey Service (Redis protocol compatible)</span>
+                {(stats.health.valkey || stats.health.redis) === 'Healthy' ? (
                   <span className="flex items-center gap-1.5 text-xs text-emerald-400">
                     <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" /> Healthy
                   </span>

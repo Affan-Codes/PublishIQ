@@ -17,7 +17,7 @@ docker-compose.prod.yml # Production orchestration setup
 ### Backend
 - **Framework**: Express.js with TypeScript.
 - **ORM**: Prisma connecting to PostgreSQL database.
-- **Job Engine**: BullMQ backed by a Redis instance.
+- **Job Engine**: BullMQ backed by a Valkey (Redis protocol compatible) instance.
 - **Image/Video Rendering**: Playwright headless browser screenshots and FFmpeg transcoding pipelines.
 
 ### Frontend
@@ -42,7 +42,7 @@ docker-compose.prod.yml # Production orchestration setup
   docker compose -f docker-compose.prod.yml --env-file .env up --build -d
   ```
 - **Caddy** serves as the thin reverse proxy, automatically terminating SSL and proxying requests internally to the frontend client and the REST API.
-- Ports for PostgreSQL and Redis are bound internally only.
+- Ports for PostgreSQL and Valkey (Redis protocol compatible) are bound internally only.
 - Every service features a `restart: unless-stopped` recovery policy.
 
 ## Health Check and Diagnostics (SEC-005)

@@ -19,17 +19,17 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: publishiq-redis
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: publishiq-valkey
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: valkey-server --appendonly yes
     ports:
       - '6379:6379'
     volumes:
-      - redis_data:/data
+      - valkey_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -51,7 +51,7 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - PORT=${PORT:-4000}
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - VALKEY_URL=${VALKEY_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
@@ -62,7 +62,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
 
   worker:
@@ -79,7 +79,7 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
+      - VALKEY_URL=${VALKEY_URL}
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-debug}
@@ -88,7 +88,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
 
   frontend:
@@ -111,7 +111,7 @@ services:
 volumes:
   postgres_data:
     driver: local
-  redis_data:
+  valkey_data:
     driver: local
   media_data:
     driver: local
