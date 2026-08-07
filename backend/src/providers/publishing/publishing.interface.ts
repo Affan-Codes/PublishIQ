@@ -12,6 +12,7 @@ export interface PublishResult {
   externalId?: string;
   platformResponse?: Record<string, any>;
   errorMessage?: string;
+  errorCode?: string | number;
 }
 
 export interface RefreshTokenResult {
@@ -26,6 +27,7 @@ export interface GeneratedContentData {
   videoUrl?: string | null;
   caption?: string | null;
   hashtags?: any;
+  privacyStatus?: string;
 }
 
 export interface PlatformConnectionData {
@@ -39,7 +41,7 @@ export interface PlatformConnectionData {
 export interface PublishingAdapter {
   readonly platform: Platform;
   validate(content: GeneratedContentData): PlatformLimitViolation[];
-  publish(content: GeneratedContentData, connection: PlatformConnectionData): Promise<PublishResult>;
+  publish(content: GeneratedContentData, connection: PlatformConnectionData, options?: { privacyStatus?: string }): Promise<PublishResult>;
   checkHealth?(accessToken: string): Promise<boolean>;
   refreshToken?(refreshToken: string): Promise<RefreshTokenResult>;
 }

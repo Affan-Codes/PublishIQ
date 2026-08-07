@@ -121,6 +121,7 @@ export const platformConnectionRepository = {
           scopes: data.scopes,
           healthStatus: HealthStatus.Healthy,
           status: ConnectionStatus.Active,
+          lastValidatedAt: new Date(),
         },
       });
     }
@@ -137,6 +138,7 @@ export const platformConnectionRepository = {
         scopes: data.scopes,
         healthStatus: HealthStatus.Healthy,
         status: ConnectionStatus.Active,
+        lastValidatedAt: new Date(),
       },
     });
   },

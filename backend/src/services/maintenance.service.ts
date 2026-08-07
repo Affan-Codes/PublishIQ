@@ -1,8 +1,10 @@
-import { HealthStatus, JobType, PipelineStage } from '@prisma/client';
+import { HealthStatus, PipelineStage } from '@prisma/client';
 import { jobRepository } from '../repositories/job.repository.js';
 import { logRepository } from '../repositories/log.repository.js';
 import { platformConnectionRepository } from '../repositories/platformConnection.repository.js';
 import { runContentPipeline } from './content-pipeline.service.js';
+import { publishingService } from './publishing.service.js';
+import eventBus from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 
 export async function runCleanup(): Promise<void> {
@@ -52,16 +54,22 @@ export async function runTokenRefresh(): Promise<void> {
   const connections = await platformConnectionRepository.getExpiringConnections(thresholdDate);
 
   for (const conn of connections) {
-    logger.info({ connectionId: conn.id, platform: conn.platform }, 'Refreshing access token');
+    logger.info({ connectionId: conn.id, platform: conn.platform }, 'Proactively refreshing access token');
     
-    const newExpiresAt = new Date();
-    newExpiresAt.setHours(newExpiresAt.getHours() + 24); // Expiry in 24 hours
-
-    await platformConnectionRepository.updateRaw(conn.id, {
-      expiresAt: newExpiresAt,
-      healthStatus: HealthStatus.Healthy,
-    });
-    logger.info({ connectionId: conn.id }, 'Access token refreshed successfully');
+    try {
+      await publishingService.refreshConnectionTokens(conn.id);
+      logger.info({ connectionId: conn.id }, 'Access token proactively refreshed successfully');
+    } catch (err: any) {
+      logger.error({ connectionId: conn.id, err: err.message }, 'Scheduled token refresh failed');
+      await platformConnectionRepository.updateRaw(conn.id, {
+        healthStatus: HealthStatus.Unhealthy,
+      });
+      await eventBus.emitDomainEvent(
+        conn.workspaceId,
+        'TokenRefreshFailed',
+        { connectionId: conn.id, platform: conn.platform, error: err.message }
+      );
+    }
   }
 }
 
@@ -70,12 +78,11 @@ export async function runHealthCheck(): Promise<void> {
   const connections = await platformConnectionRepository.listAll();
 
   for (const conn of connections) {
-    let healthStatus: HealthStatus = HealthStatus.Healthy;
-    if (conn.expiresAt < new Date()) {
-      healthStatus = HealthStatus.Expired;
+    try {
+      await publishingService.ensureConnectionHealth(conn);
+    } catch (err: any) {
+      logger.warn({ connectionId: conn.id, err: err.message }, 'Platform connection health check failed');
     }
-
-    await platformConnectionRepository.updateRaw(conn.id, { healthStatus });
   }
 }
 

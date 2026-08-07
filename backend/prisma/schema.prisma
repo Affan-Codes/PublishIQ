@@ -294,6 +294,7 @@ model PlatformConnection {
   scopes            String[]
   healthStatus      HealthStatus
   status            ConnectionStatus @default(Active)
+  lastValidatedAt   DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 

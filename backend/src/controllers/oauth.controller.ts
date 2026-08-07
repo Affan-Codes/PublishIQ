@@ -43,17 +43,9 @@ export const oauthController = {
         throw new ValidationError('Authorization code is missing from OAuth callback parameters');
       }
 
-      let workspaceId = req.workspaceId;
-      if (!workspaceId && stateRaw) {
-        try {
-          const decodedState = JSON.parse(Buffer.from(stateRaw, 'base64url').toString('utf8'));
-          workspaceId = decodedState.workspaceId;
-        } catch {}
-      }
-
-      if (!workspaceId) {
-        throw new ValidationError('Workspace context could not be identified from OAuth state parameter');
-      }
+      // Verify HMAC signed state and timestamp expiry (YT-002 fix)
+      const statePayload = oauthService.verifySignedState(stateRaw);
+      const workspaceId = statePayload.workspaceId;
 
       const connections = await oauthService.handleOAuthCallback(platform, code, workspaceId);
 

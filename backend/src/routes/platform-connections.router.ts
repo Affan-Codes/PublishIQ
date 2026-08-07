@@ -1,23 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middlewares/auth.js';
+import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { validateRequest } from '../middlewares/request-validator.js';
 import platformConnectionController from '../controllers/platformConnection.controller.js';
-import { Platform, HealthStatus, ConnectionStatus } from '@prisma/client';
+import { HealthStatus, ConnectionStatus, Role } from '@prisma/client';
+import { ValidationError } from '../errors/custom-errors.js';
 
 const router = Router();
-
-const connectionCreateSchema = z.object({
-  platform: z.nativeEnum(Platform),
-  externalAccountId: z.string().optional(),
-  displayName: z.string().optional(),
-  accessTokenHex: z.string().min(1, 'Access token is required'),
-  refreshTokenHex: z.string().min(1, 'Refresh token is required'),
-  expiresAt: z.string().datetime(),
-  scopes: z.array(z.string()).default([]),
-  healthStatus: z.nativeEnum(HealthStatus).default(HealthStatus.Healthy),
-  status: z.nativeEnum(ConnectionStatus).default(ConnectionStatus.Active),
-});
 
 const connectionUpdateSchema = z.object({
   externalAccountId: z.string().optional(),
@@ -43,20 +32,26 @@ router.get(
   platformConnectionController.getById
 );
 
+// YT-004 fix: Reject raw unverified manual token creation endpoint in production. Connections must be created via OAuth.
 router.post(
   '/platform-connections',
-  validateRequest({ body: connectionCreateSchema }),
-  platformConnectionController.create
+  requireRole([Role.Owner, Role.Administrator]),
+  (req, res, next) => {
+    next(new ValidationError('Manual unverified raw token entry is disabled. Platform connections must be created via verified OAuth.'));
+  }
 );
 
+// YT-005 fix: Require Owner or Administrator role for mutation endpoints
 router.put(
   '/platform-connections/:id',
+  requireRole([Role.Owner, Role.Administrator]),
   validateRequest({ params: idParamSchema, body: connectionUpdateSchema }),
   platformConnectionController.update
 );
 
 router.delete(
   '/platform-connections/:id',
+  requireRole([Role.Owner, Role.Administrator]),
   validateRequest({ params: idParamSchema }),
   platformConnectionController.delete
 );

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import { Platform } from '@prisma/client';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
@@ -6,8 +7,47 @@ import platformConnectionRepository from '../repositories/platformConnection.rep
 import { ValidationError, ExternalProviderError } from '../errors/custom-errors.js';
 
 export const oauthService = {
+  generateSignedState(platform: Platform, workspaceId: string): string {
+    const payloadStr = JSON.stringify({ workspaceId, platform, ts: Date.now() });
+    const sig = crypto.createHmac('sha256', env.SESSION_SECRET).update(payloadStr).digest('hex');
+    return Buffer.from(JSON.stringify({ p: payloadStr, sig })).toString('base64url');
+  },
+
+  verifySignedState(stateRaw: string): { workspaceId: string; platform: Platform; ts: number } {
+    if (!stateRaw) {
+      throw new ValidationError('OAuth state parameter is missing');
+    }
+    let parsed: any;
+    try {
+      parsed = JSON.parse(Buffer.from(stateRaw, 'base64url').toString('utf8'));
+    } catch {
+      throw new ValidationError('OAuth state parameter is malformed');
+    }
+
+    const { p: payloadStr, sig } = parsed || {};
+    if (!payloadStr || !sig) {
+      throw new ValidationError('OAuth state parameter format is invalid');
+    }
+
+    const expectedSig = crypto.createHmac('sha256', env.SESSION_SECRET).update(payloadStr).digest('hex');
+    const sigBuffer = Buffer.from(sig);
+    const expectedSigBuffer = Buffer.from(expectedSig);
+
+    if (sigBuffer.length !== expectedSigBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedSigBuffer)) {
+      throw new ValidationError('OAuth state signature verification failed (possible CSRF attack)');
+    }
+
+    const payload = JSON.parse(payloadStr);
+    const TEN_MINUTES_MS = 10 * 60 * 1000;
+    if (Date.now() - payload.ts > TEN_MINUTES_MS) {
+      throw new ValidationError('OAuth state has expired. Please initiate authorization again');
+    }
+
+    return payload;
+  },
+
   getAuthorizationUrl(platform: Platform, workspaceId: string): string {
-    const state = Buffer.from(JSON.stringify({ workspaceId, platform, ts: Date.now() })).toString('base64url');
+    const state = this.generateSignedState(platform, workspaceId);
     const redirectUri = `${env.APP_BASE_URL}/api/v1/oauth/${platform.toLowerCase()}/callback`;
 
     if (platform === Platform.Facebook || platform === Platform.Instagram) {
@@ -156,7 +196,16 @@ export const oauthService = {
       });
 
       const accessToken = tokenRes.data.access_token;
-      const refreshToken = tokenRes.data.refresh_token || accessToken;
+      const refreshToken = tokenRes.data.refresh_token;
+
+      // YT-006 fix: Throw explicit error if Google didn't issue a refresh token (do NOT substitute access_token)
+      if (!refreshToken) {
+        throw new ExternalProviderError(
+          'YouTube',
+          'Google OAuth did not return a refresh_token. Please revoke app access in your Google Account security settings and re-authorize to grant offline access.'
+        );
+      }
+
       const expiresIn = tokenRes.data.expires_in || 3600;
       const expiresAt = new Date(Date.now() + expiresIn * 1000);
 

@@ -44,6 +44,8 @@ export const publishingService = {
     }
 
     const contentTypeSnapshot = (channel as any).contentProfile?.contentType?.name || 'Unknown';
+    const pubConfig = (channel.publishingConfiguration as any) || {};
+    const privacyStatus = pubConfig.privacyStatus || pubConfig.youtubePrivacyStatus || 'public';
 
     let anyFailure = false;
 
@@ -60,6 +62,7 @@ export const publishingService = {
         videoUrl: generatedContent.videoUrl,
         caption: generatedContent.caption,
         hashtags: generatedContent.hashtags,
+        privacyStatus,
       });
 
       if (violations.length > 0) {
@@ -71,7 +74,7 @@ export const publishingService = {
           jobId: job.id,
           channelId: channel.id,
           platformConnectionId: connection.id,
-          contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+          contentTypeSnapshot,
           status: PublishRecordStatus.Failure,
           publishedAt: new Date(),
           platform: platform,
@@ -96,7 +99,7 @@ export const publishingService = {
           jobId: job.id,
           channelId: channel.id,
           platformConnectionId: connection.id,
-          contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+          contentTypeSnapshot,
           status: PublishRecordStatus.Failure,
           publishedAt: new Date(),
           platform: platform,
@@ -119,6 +122,7 @@ export const publishingService = {
       let externalId: string | undefined;
       let platformResponse: any;
       let lastErrorMessage = '';
+      let lastErrorCode: string | number | undefined;
 
       const maxPublishRetries = 3;
 
@@ -131,12 +135,14 @@ export const publishingService = {
               videoUrl: generatedContent.videoUrl,
               caption: generatedContent.caption,
               hashtags: generatedContent.hashtags,
+              privacyStatus,
             },
             {
               accessTokenEnc: freshConnection.accessTokenEnc,
               refreshTokenEnc: freshConnection.refreshTokenEnc,
               expiresAt: freshConnection.expiresAt,
-            }
+            },
+            { privacyStatus }
           );
 
           if (res.success) {
@@ -145,12 +151,13 @@ export const publishingService = {
             platformResponse = res.platformResponse;
           } else {
             lastErrorMessage = res.errorMessage || 'Publish failed without details';
+            lastErrorCode = res.errorCode;
             platformResponse = res.platformResponse;
             
-            // Check if transient error
-            if (this.isTransientError(lastErrorMessage)) {
+            // Check if transient error using structured errorCode
+            if (this.isTransientError(lastErrorMessage, lastErrorCode)) {
               publishRetries++;
-              logger.warn({ jobId, platform, lastErrorMessage, attempt: publishRetries }, 'Transient publishing error, retrying...');
+              logger.warn({ jobId, platform, lastErrorMessage, lastErrorCode, attempt: publishRetries }, 'Transient publishing error, retrying...');
               await new Promise(resolve => setTimeout(resolve, 2000 * publishRetries));
             } else {
               break; // Permanent failure
@@ -158,9 +165,10 @@ export const publishingService = {
           }
         } catch (err: any) {
           lastErrorMessage = err.message || 'Unknown error occurred during publish call';
-          if (this.isTransientError(lastErrorMessage)) {
+          lastErrorCode = err.response?.status || err.code;
+          if (this.isTransientError(lastErrorMessage, lastErrorCode)) {
             publishRetries++;
-            logger.warn({ jobId, platform, lastErrorMessage, attempt: publishRetries }, 'Transient exception, retrying...');
+            logger.warn({ jobId, platform, lastErrorMessage, lastErrorCode, attempt: publishRetries }, 'Transient exception, retrying...');
             await new Promise(resolve => setTimeout(resolve, 2000 * publishRetries));
           } else {
             break;
@@ -176,7 +184,7 @@ export const publishingService = {
         jobId: job.id,
         channelId: channel.id,
         platformConnectionId: connection.id,
-        contentTypeSnapshot, // snapshot Content Type name (fixes DB-001)
+        contentTypeSnapshot,
         status: success ? PublishRecordStatus.Success : PublishRecordStatus.Failure,
         publishedAt: new Date(),
         platform: platform,
@@ -195,7 +203,7 @@ export const publishingService = {
         await eventBus.emitDomainEvent(
           job.workspaceId,
           'PublishFailed',
-          { jobId: job.id, platform, error: lastErrorMessage },
+          { jobId: job.id, platform, error: lastErrorMessage, errorCode: lastErrorCode },
           job.id
         );
       } else {
@@ -286,10 +294,6 @@ export const publishingService = {
   async retryPublishRecord(publishRecordId: string, workspaceId: string): Promise<void> {
     const record = await publishingRecordRepository.getById(publishRecordId);
     if (!record || record.workspaceId !== workspaceId) {
-      throw new NotFoundError('Publishing record not found');
-    }
-
-    if (!record) {
       throw new NotFoundError('Publishing record not found');
     }
 
@@ -416,6 +420,10 @@ export const publishingService = {
         if (adapter.checkHealth) {
           await adapter.checkHealth(decryptedToken);
         }
+        await platformConnectionRepository.updateRaw(connection.id, {
+          healthStatus: 'Healthy',
+          lastValidatedAt: new Date(),
+        });
       } catch (err: any) {
         logger.warn({ connectionId: connection.id, err: err.message }, 'Health check ping failed. Attempting refresh...');
         try {
@@ -454,6 +462,7 @@ export const publishingService = {
         accessTokenEnc: encrypt(refreshed.accessToken) as any,
         expiresAt: newExpiresAt,
         healthStatus: 'Healthy',
+        lastValidatedAt: new Date(),
       };
 
       if (refreshed.refreshToken) {
@@ -504,10 +513,50 @@ export const publishingService = {
   },
 
   /**
-   * Helper: Determine if error is a transient network/rate-limiting issue.
+   * Helper: Determine if error is a transient network/rate-limiting issue (YT-007 fix).
    */
-  isTransientError(message: string): boolean {
-    const lowercase = message.toLowerCase();
+  isTransientError(message: string, errorCode?: string | number): boolean {
+    if (errorCode) {
+      const codeStr = String(errorCode).toLowerCase();
+      // Permanent failure codes/reasons
+      if (
+        codeStr === 'quotaexceeded' ||
+        codeStr === 'uploadlimitexceeded' ||
+        codeStr === 'invalid_grant' ||
+        codeStr === 'file_not_found' ||
+        codeStr === 'decryption_error' ||
+        codeStr === 'missing_upload_location' ||
+        codeStr === '401' ||
+        codeStr === '403'
+      ) {
+        return false;
+      }
+
+      // Transient failure codes/reasons
+      if (
+        codeStr === '429' ||
+        codeStr === '500' ||
+        codeStr === '502' ||
+        codeStr === '503' ||
+        codeStr === '504' ||
+        codeStr === 'ratelimitexceeded' ||
+        codeStr === 'backenderror'
+      ) {
+        return true;
+      }
+    }
+
+    const lowercase = (message || '').toLowerCase();
+    // Non-transient keyword fallback
+    if (
+      lowercase.includes('quotaexceeded') ||
+      lowercase.includes('uploadlimitexceeded') ||
+      lowercase.includes('invalid_grant') ||
+      lowercase.includes('file not found')
+    ) {
+      return false;
+    }
+
     return (
       lowercase.includes('rate limit') ||
       lowercase.includes('429') ||
@@ -517,7 +566,10 @@ export const publishingService = {
       lowercase.includes('econnreset') ||
       lowercase.includes('temporary') ||
       lowercase.includes('service unavailable') ||
-      lowercase.includes('503')
+      lowercase.includes('503') ||
+      lowercase.includes('500') ||
+      lowercase.includes('502') ||
+      lowercase.includes('504')
     );
   }
 };

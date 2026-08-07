@@ -31,6 +31,8 @@ const envSchema = z.object({
       if (data.OPERATOR_PASSWORD === 'admin1234_default_secret_passphrase' || !process.env.OPERATOR_PASSWORD) return false;
       if (data.OPERATOR_EMAIL === 'admin@publishiq.com' || !process.env.OPERATOR_EMAIL) return false;
       if (data.ENCRYPTION_SALT === 'publishiq_secure_static_salt_v1' || !process.env.ENCRYPTION_SALT) return false;
+      if (data.ENCRYPTION_KEY === 'dev-encryption-key-with-32-characters!!' || !process.env.ENCRYPTION_KEY) return false;
+      if (data.SESSION_SECRET === 'dev-session-secret-with-32-characters!!' || !process.env.SESSION_SECRET) return false;
       if (!data.GEMINI_API_KEY) return false;
       if (!data.FACEBOOK_APP_ID || !data.FACEBOOK_APP_SECRET) return false;
       if (!data.GOOGLE_CLIENT_ID || !data.GOOGLE_CLIENT_SECRET) return false;
@@ -38,8 +40,8 @@ const envSchema = z.object({
     return true;
   },
   {
-    message: 'Required production environment variables (OPERATOR_EMAIL, OPERATOR_PASSWORD, ENCRYPTION_SALT, GEMINI_API_KEY, FACEBOOK_APP_ID/SECRET, GOOGLE_CLIENT_ID/SECRET) must be explicitly provided',
-    path: ['ENCRYPTION_SALT'],
+    message: 'Required production environment variables (OPERATOR_EMAIL, OPERATOR_PASSWORD, ENCRYPTION_KEY, ENCRYPTION_SALT, SESSION_SECRET, GEMINI_API_KEY, FACEBOOK_APP_ID/SECRET, GOOGLE_CLIENT_ID/SECRET) must be explicitly provided with non-default production values',
+    path: ['ENCRYPTION_KEY'],
   }
 );
 
