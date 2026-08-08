@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import { toast } from 'sonner';
 import { useAuth } from './AuthContext.js';
 import { connectSSE } from '../lib/sse-client.js';
 
-interface Toast {
+interface ToastItem {
   id: string;
   message: string;
   type: 'info' | 'error' | 'success';
@@ -12,10 +13,10 @@ interface Toast {
 
 interface NotificationContextType {
   unreadCount: number;
-  toasts: Toast[];
+  toasts: ToastItem[];
   clearToasts: () => void;
   removeToast: (id: string) => void;
-  addToast: (message: string, type?: Toast['type']) => void;
+  addToast: (message: string, type?: ToastItem['type']) => void;
   resetUnreadCount: () => void;
   refetchUnreadCount: () => void;
 }
@@ -25,7 +26,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   // React Query unread count fetcher
   const { data: unreadData, refetch: refetchUnreadCount } = useQuery<{ data: { unreadCount: number } }>({
@@ -40,13 +41,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const unreadCount = unreadData?.data?.unreadCount || 0;
 
-  const addToast = (message: string, type: Toast['type'] = 'info') => {
+  const addToast = (message: string, type: ToastItem['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
-    
-    setTimeout(() => {
-      removeToast(id);
-    }, 5000);
+
+    if (type === 'success') {
+      toast.success(message);
+    } else if (type === 'error') {
+      toast.error(message);
+    } else {
+      toast.info(message);
+    }
   };
 
   const removeToast = (id: string) => {
@@ -70,7 +75,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const current = typeof old === 'number' ? old : (old?.data?.unreadCount || 0);
         return current + 1;
       });
-      addToast(message, 'info');
+      toast.info(message);
     });
 
     return disconnect;

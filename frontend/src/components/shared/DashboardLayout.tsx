@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import { NotificationDropdown } from '../notifications/NotificationDropdown.js';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import apiClient from '../../lib/api-client.js';
 import {
   LayoutDashboard,
@@ -80,6 +81,7 @@ export const DashboardLayout: React.FC = () => {
 
   const handleLogout = async () => {
     await logout();
+    toast.success('Successfully signed out');
     navigate('/login');
   };
 

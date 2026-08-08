@@ -79,4 +79,28 @@ export const SkeletonList: React.FC<{ count?: number }> = ({ count = 4 }) => (
   </div>
 );
 
+export const PageSkeleton: React.FC = () => (
+  <div className="space-y-8 animate-in fade-in duration-200">
+    {/* Page Header Shimmer */}
+    <div className="flex items-center justify-between">
+      <div className="space-y-2">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-4 w-80" />
+      </div>
+      <Skeleton className="h-9 w-28 rounded-lg" />
+    </div>
+
+    {/* Stat Cards Shimmer Grid */}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <SkeletonStatCard />
+      <SkeletonStatCard />
+      <SkeletonStatCard />
+      <SkeletonStatCard />
+    </div>
+
+    {/* Main Content Table Shimmer */}
+    <SkeletonTable rows={5} columns={5} />
+  </div>
+);
+
 export default Skeleton;

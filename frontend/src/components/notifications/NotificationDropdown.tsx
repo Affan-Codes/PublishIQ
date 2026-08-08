@@ -6,7 +6,9 @@ import { Bell, CheckCheck, RefreshCw, ExternalLink, Trash2, Check, AlertTriangle
 import { useNotifications } from '../../context/NotificationContext.js';
 import { SkeletonList } from '../ui/Skeleton.js';
 import { ErrorState } from '../ui/ErrorState.js';
-import { NotificationDetailsModal, type NotificationItem } from './NotificationDetailsModal.js';
+import type { NotificationItem } from './NotificationDetailsModal.js';
+
+const NotificationDetailsModal = React.lazy(() => import('./NotificationDetailsModal.js'));
 
 function formatRelativeTime(dateString: string): string {
   const now = new Date();
@@ -267,14 +269,16 @@ export const NotificationDropdown: React.FC = () => {
 
       {/* Item Details Inspector Modal */}
       {selectedNotification && (
-        <NotificationDetailsModal
-          notification={selectedNotification}
-          onClose={() => setSelectedNotification(null)}
-          onMarkRead={(id) => markReadMutation.mutate(id)}
-          onDelete={(id) => deleteMutation.mutate(id)}
-          isMarkingRead={markReadMutation.isPending}
-          isDeleting={deleteMutation.isPending}
-        />
+        <React.Suspense fallback={null}>
+          <NotificationDetailsModal
+            notification={selectedNotification}
+            onClose={() => setSelectedNotification(null)}
+            onMarkRead={(id) => markReadMutation.mutate(id)}
+            onDelete={(id) => deleteMutation.mutate(id)}
+            isMarkingRead={markReadMutation.isPending}
+            isDeleting={deleteMutation.isPending}
+          />
+        </React.Suspense>
       )}
     </div>
   );

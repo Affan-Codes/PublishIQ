@@ -21,7 +21,9 @@ import { SkeletonTable } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
-import { NotificationDetailsModal, type NotificationItem } from '../../components/notifications/NotificationDetailsModal.js';
+import type { NotificationItem } from '../../components/notifications/NotificationDetailsModal.js';
+
+const NotificationDetailsModal = React.lazy(() => import('../../components/notifications/NotificationDetailsModal.js'));
 
 interface NotificationsResponse {
   success: boolean;
@@ -477,14 +479,16 @@ export const NotificationsView: React.FC = () => {
 
       {/* Details Modal */}
       {selectedNotification && (
-        <NotificationDetailsModal
-          notification={selectedNotification}
-          onClose={() => setSelectedNotification(null)}
-          onMarkRead={(id) => markReadMutation.mutate(id)}
-          onDelete={(id) => deleteMutation.mutate(id)}
-          isMarkingRead={markReadMutation.isPending && actionId === selectedNotification.id}
-          isDeleting={deleteMutation.isPending && actionId === selectedNotification.id}
-        />
+        <React.Suspense fallback={null}>
+          <NotificationDetailsModal
+            notification={selectedNotification}
+            onClose={() => setSelectedNotification(null)}
+            onMarkRead={(id) => markReadMutation.mutate(id)}
+            onDelete={(id) => deleteMutation.mutate(id)}
+            isMarkingRead={markReadMutation.isPending && actionId === selectedNotification.id}
+            isDeleting={deleteMutation.isPending && actionId === selectedNotification.id}
+          />
+        </React.Suspense>
       )}
     </div>
   );
