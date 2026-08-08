@@ -3,3 +3,13 @@ node_modules/
 dist/
 coverage/
 logs/
+
+# Generated Media (Images and Videos)
+media/images/
+media/videos/
+media/temp/
+*.mp4
+*.webm
+*.png
+*.jpg
+*.jpeg

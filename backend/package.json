@@ -8,7 +8,9 @@
     "lint": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/api.js",
     "dev": "tsx watch src/api.ts",
-    "test": "npx tsx --test src/tests/**/*.test.ts"
+    "test": "npx tsx --test src/tests/**/*.test.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:generate": "prisma generate"
   },
   "keywords": [],
   "author": "",

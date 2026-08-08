@@ -5,7 +5,6 @@ import { logger } from '../utils/logger.js';
 import { maintenanceService } from '../services/maintenance.service.js';
 
 const connection = getValkeyInstance();
-const getQueueName = (name: string) => `${env.QUEUE_PREFIX}:${name}`;
 
 export const cleanupProcessor = async (job: Job) => {
   logger.info({ job: job.id }, 'Running cleanup job');
@@ -35,12 +34,17 @@ export const healthCheckProcessor = async (job: Job) => {
 export function startMaintenanceWorkers(): Worker[] {
   logger.info('Starting Maintenance Workers');
 
+  const baseWorkerOpts = {
+    connection: connection as any,
+    prefix: env.QUEUE_PREFIX,
+  };
+
   const workers = [
-    new Worker(getQueueName('cleanup'), cleanupProcessor, { connection: connection as any, concurrency: 1 }),
-    new Worker(getQueueName('archive'), archiveProcessor, { connection: connection as any, concurrency: 1 }),
-    new Worker(getQueueName('retry-publish'), retryPublishProcessor, { connection: connection as any, concurrency: 2 }),
-    new Worker(getQueueName('token-refresh'), tokenRefreshProcessor, { connection: connection as any, concurrency: 1 }),
-    new Worker(getQueueName('health-check'), healthCheckProcessor, { connection: connection as any, concurrency: 1 }),
+    new Worker('cleanup', cleanupProcessor, { ...baseWorkerOpts, concurrency: 1 }),
+    new Worker('archive', archiveProcessor, { ...baseWorkerOpts, concurrency: 1 }),
+    new Worker('retry-publish', retryPublishProcessor, { ...baseWorkerOpts, concurrency: 2 }),
+    new Worker('token-refresh', tokenRefreshProcessor, { ...baseWorkerOpts, concurrency: 1 }),
+    new Worker('health-check', healthCheckProcessor, { ...baseWorkerOpts, concurrency: 1 }),
   ];
 
   for (const worker of workers) {

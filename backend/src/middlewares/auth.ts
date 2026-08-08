@@ -25,7 +25,7 @@ export const requireAuth = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  const token = req.signedCookies?.session;
+  const token = req.signedCookies?.session || req.cookies?.session;
 
   if (!token) {
     next(new UnauthorizedError('Authentication session token is missing'));
@@ -62,6 +62,13 @@ export const requireAuth = async (
 
     next();
   } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      res.clearCookie('session', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+      });
+    }
     next(error);
   }
 };

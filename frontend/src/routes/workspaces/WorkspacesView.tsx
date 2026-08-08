@@ -4,7 +4,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { apiClient } from '../../lib/api-client.js';
-import { Plus, Edit2, Trash2, X, AlertCircle } from 'lucide-react';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonCard } from '../../components/ui/Skeleton.js';
+import { EmptyState } from '../../components/ui/EmptyState.js';
+import { Button } from '../../components/ui/Button.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
+import { Plus, Edit2, Trash2, X, AlertCircle, Building2 } from 'lucide-react';
 
 const workspaceSchema = z.object({
   name: z.string().min(1, 'Workspace name is required').max(100),
@@ -20,13 +26,14 @@ interface Workspace {
 
 export const WorkspacesView: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   // Queries
-  const { data: workspaces = [], isLoading, isError, error } = useQuery<Workspace[]>({
+  const { data: workspaces = [], isLoading, isFetching, isError, error, refetch } = useQuery<Workspace[]>({
     queryKey: ['workspaces'],
     queryFn: async () => {
       const res = await apiClient.get('/workspaces');
@@ -38,6 +45,13 @@ export const WorkspacesView: React.FC = () => {
     resolver: zodResolver(workspaceSchema),
   });
 
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    setEditingWorkspace(null);
+    setErrorText(null);
+    reset();
+  };
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: async (values: WorkspaceFormValues) => {
@@ -46,10 +60,11 @@ export const WorkspacesView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      addToast('Workspace created successfully', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      setErrorText(err.message || 'Failed to create workspace');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to create workspace');
     },
   });
 
@@ -60,10 +75,11 @@ export const WorkspacesView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      addToast('Workspace updated successfully', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      setErrorText(err.message || 'Failed to update workspace');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to update workspace');
     },
   });
 
@@ -74,11 +90,11 @@ export const WorkspacesView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      addToast('Workspace deleted successfully', 'success');
       setDeletingWorkspaceId(null);
     },
     onError: (err: any) => {
-      alert(err.message || 'Failed to delete workspace. Some resources might still depend on it.');
-      setDeletingWorkspaceId(null);
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to delete workspace', 'error');
     },
   });
 
@@ -105,12 +121,25 @@ export const WorkspacesView: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const closeDialog = () => {
-    setIsDialogOpen(false);
-    setEditingWorkspace(null);
-    setErrorText(null);
-    reset();
-  };
+  if (isError) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Workspaces</h2>
+            <p className="text-sm text-[#9c9cb0]">Manage team workspaces and resource isolation contexts</p>
+          </div>
+          <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
+        </div>
+        <ErrorState
+          title="Failed to load workspaces"
+          message={(error as any)?.message || 'An error occurred while fetching workspaces.'}
+          onRetry={() => refetch()}
+          onRefresh={() => refetch()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -118,163 +147,158 @@ export const WorkspacesView: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Workspaces</h2>
-          <p className="text-sm text-[#9c9cb0]">Manage scoping boundaries for profiles, assets, and connections</p>
+          <p className="text-sm text-[#9c9cb0]">Manage team workspaces and resource isolation contexts</p>
         </div>
-        <button
-          onClick={openCreateDialog}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
-        >
-          <Plus className="h-4 w-4" /> Add Workspace
-        </button>
+
+        <div className="flex items-center gap-3">
+          <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} title="Refresh workspaces" />
+          <Button icon={Plus} onClick={openCreateDialog}>
+            Create Workspace
+          </Button>
+        </div>
       </div>
 
-      {/* Loading state */}
-      {isLoading && (
-        <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
+      {/* Grid of Workspaces */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
-      )}
-
-      {/* Error state */}
-      {isError && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6 flex items-start gap-4 text-red-200">
-          <AlertCircle className="h-6 w-6 shrink-0 text-red-400" />
-          <div>
-            <h3 className="font-semibold text-white">Error loading workspaces</h3>
-            <p className="text-sm mt-1">{(error as any)?.message || 'Please check your connection and try again.'}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Data table */}
-      {!isLoading && !isError && (
-        <>
-          {workspaces.length === 0 ? (
-            <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-12 text-center text-[#6e6e80]">
-              <p className="text-sm">No workspaces initialized. Click "Add Workspace" to create one.</p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] overflow-hidden">
-              <table className="w-full text-left text-sm text-[#e0e0e6]">
-                <thead className="bg-[#161620] text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                  <tr>
-                    <th className="px-6 py-4">Workspace Name</th>
-                    <th className="px-6 py-4">ID</th>
-                    <th className="px-6 py-4">Created At</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#1a1a24]">
-                  {workspaces.map((ws) => (
-                    <tr key={ws.id} className="hover:bg-[#161620]/30 transition">
-                      <td className="px-6 py-4 font-semibold text-white">{ws.name}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-[#9c9cb0]">{ws.id}</td>
-                      <td className="px-6 py-4 text-xs text-[#9c9cb0]">{new Date(ws.createdAt).toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-3">
-                          <button
-                            onClick={() => openEditDialog(ws)}
-                            className="text-purple-400 hover:text-purple-300"
-                            title="Edit"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeletingWorkspaceId(ws.id)}
-                            className="text-red-400 hover:text-red-300"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Create / Edit Dialog */}
-      {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-[#222230] bg-[#0e0e12] p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4 mb-6">
-              <h3 className="text-lg font-bold text-white">
-                {editingWorkspace ? 'Edit Workspace' : 'Add Workspace'}
-              </h3>
-              <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Workspace Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Daily Quotes Workspace"
-                  {...register('name')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500"
-                />
-                {errors.name && (
-                  <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>
-                )}
-              </div>
-
-              {errorText && (
-                <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-200">
-                  {errorText}
+      ) : workspaces.length === 0 ? (
+        <EmptyState
+          icon={Building2}
+          title="No workspaces configured"
+          description="Workspaces isolate channels, content profiles, and platform connections for your team."
+          actionLabel="Create Workspace"
+          onAction={openCreateDialog}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {workspaces.map((ws) => (
+            <div
+              key={ws.id}
+              className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 flex flex-col justify-between hover:border-[#2b2b3a] transition"
+            >
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-white">{ws.name}</h3>
+                  <span className="text-[10px] text-[#6e6e80] font-mono">
+                    ID: {ws.id.slice(0, 8)}
+                  </span>
                 </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-[#1a1a24]/50">
-                <button
-                  type="button"
-                  onClick={closeDialog}
-                  className="rounded-lg border border-[#1a1a24] px-4 py-2 text-sm font-semibold text-[#9c9cb0] hover:bg-[#161620] hover:text-white transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:opacity-50"
-                >
-                  {editingWorkspace ? 'Save Changes' : 'Create'}
-                </button>
+                <p className="text-xs text-[#9c9cb0]">
+                  Created: {new Date(ws.createdAt).toLocaleDateString()}
+                </p>
               </div>
-            </form>
-          </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-[#1a1a24]/50 pt-4">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Edit2}
+                  onClick={() => openEditDialog(ws)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Trash2}
+                  onClick={() => setDeletingWorkspaceId(ws.id)}
+                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Modal */}
       {deletingWorkspaceId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-xl border border-red-500/20 bg-[#0e0e12] p-6 shadow-2xl space-y-6">
-            <div>
-              <h3 className="text-lg font-bold text-white">Delete Workspace?</h3>
-              <p className="text-sm text-[#9c9cb0] mt-2">
-                This action cannot be undone. All channels, profiles, and media generated within this workspace will be inaccessible.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
+            <h3 className="text-lg font-bold text-white">Delete Workspace</h3>
+            <p className="text-sm text-[#9c9cb0]">
+              Are you sure you want to delete this workspace? Resources tied to it must be unlinked first.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setDeletingWorkspaceId(null)}
-                className="rounded-lg border border-[#1a1a24] px-4 py-2 text-sm font-semibold text-[#9c9cb0] hover:bg-[#161620] transition"
+                disabled={deleteMutation.isPending}
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={deleteMutation.isPending}
+                loadingText="Deleting..."
                 onClick={() => deleteMutation.mutate(deletingWorkspaceId)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500"
               >
-                Confirm Delete
+                Delete Workspace
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Dialog Modal */}
+      {isDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">
+                {editingWorkspace ? 'Edit Workspace' : 'Create Workspace'}
+              </h3>
+              <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
               </button>
             </div>
+
+            {errorText && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300 flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{errorText}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Workspace Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Production Operations Team"
+                  {...register('name')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                />
+                {errors.name && <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={closeDialog}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  isLoading={createMutation.isPending || updateMutation.isPending}
+                  loadingText="Saving..."
+                >
+                  {editingWorkspace ? 'Save Changes' : 'Create Workspace'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

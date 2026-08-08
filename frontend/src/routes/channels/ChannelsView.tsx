@@ -5,7 +5,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import apiClient from '../../lib/api-client.js';
 import { useChannels } from '../../hooks/queries/useChannels.js';
-import { Plus, Trash2, Edit2, Copy, X, Calendar, Settings, RefreshCw, Layers } from 'lucide-react';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonCard } from '../../components/ui/Skeleton.js';
+import { EmptyState } from '../../components/ui/EmptyState.js';
+import { Button } from '../../components/ui/Button.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
+import { Plus, Trash2, Edit2, Copy, X, Calendar, Layers } from 'lucide-react';
 
 const cronRegex = /^(\*|([0-5]?\d)(-[0-5]?\d)?(\/[0-5]?\d)?)( +(\*|([0-9]|1\d|2[0-3])(-([0-9]|1\d|2[0-3]))?(\/([0-9]|1\d|2[0-3]))?)){4}$/;
 
@@ -52,14 +58,17 @@ interface Channel {
 
 export const ChannelsView: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
   const [deletingChannelId, setDeletingChannelId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
 
   // Queries
-  const { data: channels = [], isLoading: isChannelsLoading } = useChannels();
+  const { data: channels = [], isLoading: isChannelsLoading, isFetching, isError, error, refetch } = useChannels();
 
   const { data: contentProfiles = [] } = useQuery<ContentProfile[]>({
     queryKey: ['content-profiles'],
@@ -92,6 +101,13 @@ export const ChannelsView: React.FC = () => {
 
   const watchedConnections = watch('platformConnectionIds') || [];
 
+  // Manual refresh all queries
+  const handleRefreshAll = () => {
+    refetch();
+    queryClient.invalidateQueries({ queryKey: ['content-profiles'] });
+    queryClient.invalidateQueries({ queryKey: ['platform-connections'] });
+  };
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: async (values: ChannelFormValues) => {
@@ -111,6 +127,7 @@ export const ChannelsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+      addToast('Channel created successfully', 'success');
       setIsDialogOpen(false);
       reset();
     },
@@ -137,6 +154,7 @@ export const ChannelsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+      addToast('Channel updated successfully', 'success');
       setIsDialogOpen(false);
       setEditingChannel(null);
       reset();
@@ -152,25 +170,31 @@ export const ChannelsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+      addToast('Channel deleted successfully', 'success');
       setDeletingChannelId(null);
       if (selectedChannel?.id === deletingChannelId) {
         setSelectedChannel(null);
       }
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to delete channel');
+      addToast(err.response?.data?.error?.message || 'Failed to delete channel', 'error');
     },
   });
 
   const duplicateMutation = useMutation({
     mutationFn: async (id: string) => {
+      setDuplicatingId(id);
       await apiClient.post(`/channels/${id}/duplicate`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+      addToast('Channel duplicated successfully', 'success');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to duplicate channel');
+      addToast(err.response?.data?.error?.message || 'Failed to duplicate channel', 'error');
+    },
+    onSettled: () => {
+      setDuplicatingId(null);
     },
   });
 
@@ -228,6 +252,26 @@ export const ChannelsView: React.FC = () => {
     }
   };
 
+  if (isError) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Channels</h2>
+            <p className="text-sm text-[#9c9cb0]">Manage video configurations, linked platforms, and cron schedules</p>
+          </div>
+          <RefreshButton onRefresh={handleRefreshAll} isRefreshing={isFetching} />
+        </div>
+        <ErrorState
+          title="Failed to load publishing channels"
+          message={(error as any)?.message || 'An error occurred while fetching channels.'}
+          onRetry={handleRefreshAll}
+          onRefresh={handleRefreshAll}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -236,34 +280,29 @@ export const ChannelsView: React.FC = () => {
           <h2 className="text-2xl font-bold tracking-tight text-white">Channels</h2>
           <p className="text-sm text-[#9c9cb0]">Manage video configurations, linked platforms, and cron schedules</p>
         </div>
-        <button
-          onClick={openCreateDialog}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
-        >
-          <Plus size={16} />
-          Create Channel
-        </button>
+        <div className="flex items-center gap-3">
+          <RefreshButton onRefresh={handleRefreshAll} isRefreshing={isFetching} title="Refresh channels" />
+          <Button icon={Plus} onClick={openCreateDialog}>
+            Create Channel
+          </Button>
+        </div>
       </div>
 
       {/* Grid of channels */}
       {isChannelsLoading ? (
-        <div className="flex h-64 items-center justify-center">
-          <RefreshCw className="animate-spin text-purple-500" size={32} />
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
       ) : channels.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-[#1a1a24] bg-[#0e0e12] py-16 text-center">
-          <Layers size={48} className="text-[#6e6e80] mb-4" />
-          <h3 className="text-lg font-bold text-white">No publishing channels configured</h3>
-          <p className="text-sm text-[#9c9cb0] max-w-sm mt-1">
-            Channels specify your publication targets, linking content templates to platform connections.
-          </p>
-          <button
-            onClick={openCreateDialog}
-            className="mt-6 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer"
-          >
-            Create Channel
-          </button>
-        </div>
+        <EmptyState
+          icon={Layers}
+          title="No publishing channels configured"
+          description="Channels specify your publication targets, linking content templates to platform connections and execution schedules."
+          actionLabel="Create Channel"
+          onAction={openCreateDialog}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {channels.map((channel) => (
@@ -323,10 +362,11 @@ export const ChannelsView: React.FC = () => {
                       e.stopPropagation();
                       duplicateMutation.mutate(channel.id);
                     }}
+                    disabled={duplicateMutation.isPending && duplicatingId === channel.id}
                     title="Duplicate Channel"
-                    className="text-[#6e6e80] hover:text-purple-400 cursor-pointer"
+                    className="text-[#6e6e80] hover:text-purple-400 cursor-pointer disabled:opacity-50"
                   >
-                    <Copy size={14} />
+                    <Copy size={14} className={duplicateMutation.isPending && duplicatingId === channel.id ? 'animate-spin' : ''} />
                   </button>
                   <button
                     onClick={(e) => openEditDialog(channel, e)}
@@ -350,175 +390,208 @@ export const ChannelsView: React.FC = () => {
         </div>
       )}
 
-      {/* Slideover / Detail Modal */}
+      {/* Details View Drawer/Modal */}
       {selectedChannel && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedChannel(null)} />
-          <div className="relative z-10 w-full max-w-md border-l border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl overflow-y-auto">
-            <button
-              onClick={() => setSelectedChannel(null)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <h3 className="text-xl font-bold text-white mb-6">Channel Details</h3>
-
-            <div className="space-y-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Name</h4>
-                <p className="mt-1 text-lg font-bold text-white">{selectedChannel.name}</p>
+                <h3 className="text-xl font-bold text-white">{selectedChannel.name}</h3>
+                <p className="text-xs text-[#9c9cb0]">Channel Configuration Inspector</p>
               </div>
+              <button
+                onClick={() => setSelectedChannel(null)}
+                className="text-[#6e6e80] hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Status</h4>
-                <span
-                  className={`inline-block mt-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    selectedChannel.status === 'Active'
-                      ? 'bg-emerald-500/10 text-emerald-400'
-                      : 'bg-red-500/10 text-red-400'
-                  }`}
-                >
-                  {selectedChannel.status}
-                </span>
-              </div>
-
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Linked Content Profile</h4>
-                <p className="mt-1 text-sm font-medium text-white">
-                  {selectedChannel.contentProfile?.name || 'None'}
-                </p>
-              </div>
-
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Automation Settings</h4>
-                <div className="mt-2 rounded-lg border border-[#1a1a24] bg-[#161620]/50 p-4 space-y-2 text-xs">
-                  <p className="text-[#9c9cb0]">
-                    Automation Mode:{' '}
-                    <span className="font-semibold text-white">{selectedChannel.automationMode}</span>
-                  </p>
-                  <p className="text-[#9c9cb0]">
-                    Cron Frequency:{' '}
-                    <span className="font-semibold text-white font-mono">{selectedChannel.scheduleCron}</span>
-                  </p>
+            <div className="space-y-4 text-sm">
+              <div className="grid grid-cols-2 gap-4 bg-[#14141e] p-4 rounded-lg">
+                <div>
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Status</span>
+                  <p className="text-white font-medium mt-1">{selectedChannel.status}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Mode</span>
+                  <p className="text-white font-medium mt-1">{selectedChannel.automationMode}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Content Profile</span>
+                  <p className="text-white font-medium mt-1">{selectedChannel.contentProfile?.name || 'None'}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Cron Schedule</span>
+                  <p className="text-white font-medium mt-1 font-mono">{selectedChannel.scheduleCron}</p>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Publishing Configurations</h4>
-                <div className="mt-2 rounded-lg border border-[#1a1a24] bg-[#161620]/50 p-4 space-y-2 text-xs">
-                  <p className="text-[#9c9cb0]">
-                    Max Video Duration:{' '}
-                    <span className="font-semibold text-white">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
+                  Publishing Settings
+                </h4>
+                <div className="bg-[#14141e] p-4 rounded-lg space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#9c9cb0]">Max Video Duration:</span>
+                    <span className="text-white font-mono">
                       {selectedChannel.publishingConfiguration?.maxDurationSeconds ?? 60} seconds
                     </span>
-                  </p>
-                  <p className="text-[#9c9cb0]">
-                    Auto tags enablement:{' '}
-                    <span className="font-semibold text-white">
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#9c9cb0]">Auto Hashtags:</span>
+                    <span className="text-white font-mono">
                       {selectedChannel.publishingConfiguration?.autoTagEnabled ? 'Enabled' : 'Disabled'}
                     </span>
-                  </p>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">Connected Platforms</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
+                  Connected Platforms
+                </h4>
                 <div className="space-y-2">
-                  {selectedChannel.platformConnections.map((pc) => (
-                    <div key={pc.id} className="flex items-center justify-between rounded-lg border border-[#1a1a24] p-3 text-xs bg-[#161620]/25">
-                      <span className="font-medium text-white">{pc.platform}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] ${
-                        pc.status === 'Active' && pc.healthStatus === 'Healthy'
-                          ? 'bg-emerald-500/10 text-emerald-400'
-                          : 'bg-amber-500/10 text-amber-400'
-                      }`}>
-                        {pc.status === 'Disabled' ? 'Disabled' : pc.healthStatus}
-                      </span>
-                    </div>
-                  ))}
+                  {selectedChannel.platformConnections.length === 0 ? (
+                    <p className="text-xs text-[#6e6e80] italic">No platforms linked</p>
+                  ) : (
+                    selectedChannel.platformConnections.map((pc) => (
+                      <div
+                        key={pc.id}
+                        className="flex items-center justify-between bg-[#14141e] px-3 py-2 rounded-lg text-xs"
+                      >
+                        <span className="font-semibold text-white">{pc.platform}</span>
+                        <div className="flex gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              pc.healthStatus === 'Healthy'
+                                ? 'bg-emerald-500/10 text-emerald-400'
+                                : 'bg-rose-500/10 text-rose-400'
+                            }`}
+                          >
+                            {pc.healthStatus}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              pc.status === 'Active'
+                                ? 'bg-purple-500/10 text-purple-400'
+                                : 'bg-gray-500/10 text-gray-400'
+                            }`}
+                          >
+                            {pc.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
+            </div>
 
-              <div className="flex gap-4 pt-6 border-t border-[#1a1a24] justify-end">
-                <button
-                  onClick={(e) => {
-                    openEditDialog(selectedChannel, e);
-                    setSelectedChannel(null);
-                  }}
-                  className="flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 cursor-pointer"
-                >
-                  <Edit2 size={12} />
-                  Edit Channel
-                </button>
-                <button
-                  onClick={() => setDeletingChannelId(selectedChannel.id)}
-                  className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 cursor-pointer"
-                >
-                  <Trash2 size={12} />
-                  Delete Channel
-                </button>
-              </div>
+            <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setSelectedChannel(null)}
+              >
+                Close
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Edit2}
+                onClick={(e) => {
+                  setSelectedChannel(null);
+                  openEditDialog(selectedChannel, e);
+                }}
+              >
+                Edit Configuration
+              </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Create / Edit Dialog */}
-      {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 overflow-y-auto">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsDialogOpen(false)} />
-          <div className="relative z-10 w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl my-8">
-            <button
-              onClick={() => setIsDialogOpen(false)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
+      {/* Delete Confirmation Modal */}
+      {deletingChannelId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
+            <h3 className="text-lg font-bold text-white">Delete Channel</h3>
+            <p className="text-sm text-[#9c9cb0]">
+              Are you sure you want to delete this channel? Active automated schedules will be permanently stopped.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setDeletingChannelId(null)}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={deleteMutation.isPending}
+                loadingText="Deleting..."
+                onClick={() => deleteMutation.mutate(deletingChannelId)}
+              >
+                Delete Channel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            <h3 className="text-xl font-bold text-white mb-6">
-              {editingChannel ? 'Edit Channel' : 'Create Channel'}
-            </h3>
+      {/* Create / Edit Dialog Modal */}
+      {isDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">
+                {editingChannel ? 'Edit Channel Configuration' : 'Create New Channel'}
+              </h3>
+              <button
+                onClick={() => setIsDialogOpen(false)}
+                className="text-[#6e6e80] hover:text-white cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
             {errorText && (
-              <div className="mb-4 rounded-lg bg-red-950/40 border border-red-900/50 p-4 text-sm text-red-400">
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300">
                 {errorText}
               </div>
             )}
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                    Channel Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Shayari Shorts Channel"
-                    {...register('name')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
-                  />
-                  {errors.name && (
-                    <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>
-                  )}
-                </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Channel Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Daily Shayari Shorts"
+                  {...register('name')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white placeholder-[#6e6e80] outline-none focus:border-purple-500"
+                />
+                {errors.name && <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>}
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
                     Content Profile
                   </label>
                   <select
                     {...register('contentProfileId')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                   >
-                    <option value="">-- Select Content Profile --</option>
-                    {contentProfiles.map((profile) => (
-                      <option
-                        key={profile.id}
-                        value={profile.id}
-                        disabled={profile.status !== 'Active'}
-                      >
-                        {profile.name} {profile.status === 'Disabled' ? '(Disabled)' : ''}
+                    <option value="">Select a Content Profile</option>
+                    {contentProfiles.map((cp) => (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.name}
                       </option>
                     ))}
                   </select>
@@ -526,32 +599,33 @@ export const ChannelsView: React.FC = () => {
                     <p className="mt-1 text-xs text-red-400">{errors.contentProfileId.message}</p>
                   )}
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
                     Automation Mode
                   </label>
                   <select
                     {...register('automationMode')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                   >
+                    <option value="Hybrid">Hybrid (Requires Approval)</option>
+                    <option value="Automatic">Automatic (Instant Pipeline)</option>
                     <option value="Manual">Manual</option>
-                    <option value="Automatic">Automatic</option>
-                    <option value="Hybrid">Hybrid</option>
+                    <option value="FullyAutomated">Fully Automated</option>
                   </select>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                    Cron Frequency
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Schedule Cron Expression
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. 0 9 * * *"
+                    placeholder="0 9 * * *"
                     {...register('scheduleCron')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none font-mono"
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono outline-none focus:border-purple-500"
                   />
                   {errors.scheduleCron && (
                     <p className="mt-1 text-xs text-red-400">{errors.scheduleCron.message}</p>
@@ -559,12 +633,12 @@ export const ChannelsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
                     Status
                   </label>
                   <select
                     {...register('status')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                   >
                     <option value="Active">Active</option>
                     <option value="Disabled">Disabled</option>
@@ -572,80 +646,42 @@ export const ChannelsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* publishingConfiguration controls */}
-              <div className="rounded-lg border border-[#1a1a24] p-4 bg-[#161620]/25 space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-[#9c9cb0] flex items-center gap-1">
-                  <Settings size={14} />
-                  Publishing Configurations
-                </h4>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#6e6e80]">
-                      Max Video Duration (seconds)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="60"
-                      {...register('maxDurationSeconds', { valueAsNumber: true })}
-                      className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm text-white focus:border-purple-500 outline-none"
-                    />
-                    {errors.maxDurationSeconds && (
-                      <p className="mt-1 text-xs text-red-400">{errors.maxDurationSeconds.message}</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center h-full pt-6">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[#9c9cb0] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        {...register('autoTagEnabled')}
-                        className="rounded border-[#1a1a24] bg-[#161620] text-purple-600 focus:ring-purple-500 focus:ring-offset-[#0e0e12]"
-                      />
-                      Enable Auto-hashtag Strategy on publications
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              {/* Platform connection checkbox matrix */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
-                  Select Platform Connections
+                  Target Platform Connections
                 </label>
                 {platformConnections.length === 0 ? (
-                  <p className="text-xs text-red-400">
-                    No Platform Connections found. Please configure a Platform Connection first.
+                  <p className="text-xs text-[#6e6e80] italic">
+                    No platform connections available. Please connect a YouTube account under Platform Connections.
                   </p>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto rounded-lg border border-[#1a1a24] p-4 bg-[#161620]/25">
+                  <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto bg-[#14141e] p-3 rounded-lg border border-[#1a1a24]">
                     {platformConnections.map((pc) => {
-                      const isLinked = watchedConnections.includes(pc.id);
-                      const isDisabled = pc.status === 'Disabled';
+                      const checked = watchedConnections.includes(pc.id);
                       return (
-                        <div
+                        <label
                           key={pc.id}
-                          onClick={() => !isDisabled && onConnectionToggle(pc.id)}
-                          className={`flex items-center justify-between rounded p-2 text-xs border cursor-pointer transition ${
-                            isDisabled
-                              ? 'border-[#22171a] opacity-50 cursor-not-allowed'
-                              : isLinked
-                              ? 'border-purple-500/50 bg-purple-500/5 text-white'
-                              : 'border-[#1a1a24] hover:bg-[#161620]/50 text-[#9c9cb0]'
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-xs transition ${
+                            checked
+                              ? 'bg-purple-950/40 border-purple-500/50 text-white'
+                              : 'bg-[#181824] border-[#222234] text-[#9c9cb0] hover:text-white'
                           }`}
                         >
-                          <div>
-                            <span className="font-semibold text-white">{pc.platform}</span>
-                            <span className="block text-[10px] text-[#6e6e80] mt-0.5 font-mono">
-                              Health: {pc.healthStatus}
-                            </span>
-                          </div>
-                          {isDisabled && (
-                            <span className="rounded bg-red-950/40 border border-red-900/50 px-1.5 py-0.5 text-[9px] font-semibold text-red-400">
-                              Disabled
-                            </span>
-                          )}
-                        </div>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => onConnectionToggle(pc.id)}
+                            className="hidden"
+                          />
+                          <span className="font-semibold">{pc.platform}</span>
+                          <span
+                            className={`ml-auto text-[10px] ${
+                              pc.healthStatus === 'Healthy' ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {pc.healthStatus}
+                          </span>
+                        </label>
                       );
                     })}
                   </div>
@@ -655,50 +691,50 @@ export const ChannelsView: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-[#1a1a24]">
-                <button
+              <div className="border-t border-[#1a1a24] pt-4">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-3">
+                  Publishing Settings
+                </h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-[#9c9cb0] mb-1">Max Duration (Seconds)</label>
+                    <input
+                      type="number"
+                      {...register('maxDurationSeconds', { valueAsNumber: true })}
+                      className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-white">
+                      <input
+                        type="checkbox"
+                        {...register('autoTagEnabled')}
+                        className="rounded border-[#1a1a24] bg-[#161620] text-purple-600 focus:ring-purple-500"
+                      />
+                      <span>Auto-Generate Tag Metadata</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={() => setIsDialogOpen(false)}
-                  className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
+                  disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 cursor-pointer"
+                  isLoading={createMutation.isPending || updateMutation.isPending}
+                  loadingText="Saving..."
                 >
                   {editingChannel ? 'Save Changes' : 'Create Channel'}
-                </button>
+                </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingChannelId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeletingChannelId(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-4">Delete Channel</h3>
-            <p className="text-sm text-[#9c9cb0] mb-6">
-              Are you sure you want to delete this channel? This action cannot be undone and will purge its publishing histories.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeletingChannelId(null)}
-                className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteMutation.mutate(deletingChannelId)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 cursor-pointer"
-              >
-                Delete
-              </button>
-            </div>
           </div>
         </div>
       )}

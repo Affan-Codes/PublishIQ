@@ -1,12 +1,9 @@
-import { Queue, ConnectionOptions } from 'bullmq';
+import { Queue } from 'bullmq';
 import { env } from '../config/env.js';
 import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 
 const connection = getValkeyInstance();
-
-// Helper to construct queue names with the prefix
-const getQueueName = (name: string) => `${env.QUEUE_PREFIX}:${name}`;
 
 const defaultJobOptions = {
   attempts: 3,
@@ -16,35 +13,18 @@ const defaultJobOptions = {
   },
 };
 
-export const contentPipelineQueue = new Queue(getQueueName('content-pipeline'), {
+const queueOpts = {
   connection: connection as any,
+  prefix: env.QUEUE_PREFIX,
   defaultJobOptions,
-});
+};
 
-export const cleanupQueue = new Queue(getQueueName('cleanup'), {
-  connection: connection as any,
-  defaultJobOptions,
-});
-
-export const archiveQueue = new Queue(getQueueName('archive'), {
-  connection: connection as any,
-  defaultJobOptions,
-});
-
-export const retryPublishQueue = new Queue(getQueueName('retry-publish'), {
-  connection: connection as any,
-  defaultJobOptions,
-});
-
-export const tokenRefreshQueue = new Queue(getQueueName('token-refresh'), {
-  connection: connection as any,
-  defaultJobOptions,
-});
-
-export const healthCheckQueue = new Queue(getQueueName('health-check'), {
-  connection: connection as any,
-  defaultJobOptions,
-});
+export const contentPipelineQueue = new Queue('content-pipeline', queueOpts);
+export const cleanupQueue = new Queue('cleanup', queueOpts);
+export const archiveQueue = new Queue('archive', queueOpts);
+export const retryPublishQueue = new Queue('retry-publish', queueOpts);
+export const tokenRefreshQueue = new Queue('token-refresh', queueOpts);
+export const healthCheckQueue = new Queue('health-check', queueOpts);
 
 const queues = [
   contentPipelineQueue,

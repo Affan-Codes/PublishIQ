@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../../context/AuthContext.js';
 import { useNotifications } from '../../context/NotificationContext.js';
+import { Button } from '../../components/ui/Button.js';
+import { LogIn } from 'lucide-react';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address format'),
@@ -14,7 +16,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export const LoginView: React.FC = () => {
-  const { login } = useAuth();
+  const { isAuthenticated, login } = useAuth();
   const { addToast } = useNotifications();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
@@ -23,12 +25,16 @@ export const LoginView: React.FC = () => {
     resolver: zodResolver(loginSchema),
   });
 
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
   const onSubmit = async (data: LoginFormValues) => {
     setIsSubmitting(true);
     try {
       await login(data.email, data.password);
       addToast('Successfully signed in', 'success');
-      navigate('/');
+      navigate('/', { replace: true });
     } catch (err: any) {
       addToast(err.message || 'Login failed. Please verify credentials.', 'error');
     } finally {
@@ -75,13 +81,15 @@ export const LoginView: React.FC = () => {
             )}
           </div>
 
-          <button
+          <Button
             type="submit"
-            disabled={isSubmitting}
-            className="flex w-full items-center justify-center rounded-lg bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:bg-purple-600/50 cursor-pointer"
+            icon={LogIn}
+            isLoading={isSubmitting}
+            loadingText="Signing In as Operator..."
+            className="w-full py-3 text-base"
           >
-            {isSubmitting ? 'Verifying...' : 'Sign In as Operator'}
-          </button>
+            Sign In as Operator
+          </Button>
         </form>
 
         <div className="mt-8 border-t border-[#1a1a24] pt-6 text-center">

@@ -17,37 +17,71 @@ export const dashboardService = {
     const totalPublishes = successRecordCount + failureRecordCount;
     const successRate = totalPublishes > 0 ? ((successRecordCount / totalPublishes) * 100).toFixed(1) : '100.0';
 
-    const jobCounts = await contentPipelineQueue.getJobCounts();
+    let activeQueue = 0;
+    let waitingQueue = 0;
+    let delayedQueue = 0;
+    let failedQueue = 0;
+    let completedQueue = 0;
+
+    try {
+      const jobCounts = await contentPipelineQueue.getJobCounts('active', 'waiting', 'delayed', 'failed', 'completed');
+      activeQueue = jobCounts.active || 0;
+      waitingQueue = jobCounts.waiting || 0;
+      delayedQueue = jobCounts.delayed || 0;
+      failedQueue = jobCounts.failed || 0;
+      completedQueue = jobCounts.completed || 0;
+    } catch {
+      // Valkey queue count fallback
+    }
+
+    let valkeyStatus = 'Healthy';
+    try {
+      const valkey = getValkeyInstance();
+      await valkey.ping();
+    } catch {
+      valkeyStatus = 'Offline';
+    }
 
     return {
-      overview: {
+      counters: {
         totalChannels: channelCount,
-        totalContentGenerated: contentCount,
-        publishedCount: successRecordCount,
-        failedPublishCount: failureRecordCount,
-        successRatePercentage: parseFloat(successRate),
+        totalGenerations: contentCount,
+        totalPublishSuccess: successRecordCount,
+        totalPublishFailure: failureRecordCount,
+        successRate: parseFloat(successRate),
       },
-      queueCounts: jobCounts,
-      platformConnections: platformConnections.map((conn) => ({
+      queues: {
+        active: activeQueue,
+        waiting: waitingQueue,
+        delayed: delayedQueue,
+        failed: failedQueue,
+        completed: completedQueue,
+      },
+      connections: platformConnections.map((conn) => ({
         platform: conn.platform,
         healthStatus: conn.healthStatus,
         status: conn.status,
       })),
       failedJobs: failedJobs.map((job) => ({
         id: job.id,
-        channelName: job.channel?.name || 'Unknown Channel',
-        failedAt: job.failedAt,
+        failedAt: job.failedAt ? job.failedAt.toISOString() : new Date().toISOString(),
         failureReason: job.failureReason,
         failureStage: job.failureStage,
+        retryCount: job.retryCount,
+        channel: job.channel ? { name: job.channel.name } : undefined,
       })),
-      recentPublishes: recentPublishes.map((record) => ({
+      recentPublications: recentPublishes.map((record) => ({
         id: record.id,
-        channelName: record.channel?.name || 'Unknown Channel',
-        contentText: record.generatedContent?.text || '',
         platform: record.platform,
-        publishedAt: record.publishedAt,
-        publishedUrl: record.publishedUrl,
+        status: record.status,
+        publishedAt: record.publishedAt.toISOString(),
+        channel: record.channel ? { name: record.channel.name } : undefined,
+        generatedContent: record.generatedContent ? { text: record.generatedContent.text } : undefined,
       })),
+      health: {
+        database: 'Healthy',
+        valkey: valkeyStatus,
+      },
     };
   },
 

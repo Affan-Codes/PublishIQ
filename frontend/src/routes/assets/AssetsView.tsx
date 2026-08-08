@@ -4,7 +4,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { apiClient } from '../../lib/api-client.js';
-import { Plus, Edit2, Trash2, X, AlertCircle } from 'lucide-react';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonCard } from '../../components/ui/Skeleton.js';
+import { EmptyState } from '../../components/ui/EmptyState.js';
+import { Button } from '../../components/ui/Button.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
+import { Plus, Edit2, Trash2, X, AlertCircle, Music } from 'lucide-react';
 
 const assetSchema = z.object({
   name: z.string().min(1, 'Asset name is required').max(100),
@@ -29,6 +35,7 @@ interface Asset {
 
 export const AssetsView: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
@@ -36,7 +43,7 @@ export const AssetsView: React.FC = () => {
   const [selectedFilterType, setSelectedFilterType] = useState<string>('ALL');
 
   // Queries
-  const { data: assets = [], isLoading, isError, error } = useQuery<Asset[]>({
+  const { data: assets = [], isLoading, isFetching, isError, error, refetch } = useQuery<Asset[]>({
     queryKey: ['assets', selectedFilterType],
     queryFn: async () => {
       const url = selectedFilterType === 'ALL' ? '/assets' : `/assets?type=${selectedFilterType}`;
@@ -49,6 +56,12 @@ export const AssetsView: React.FC = () => {
     resolver: zodResolver(assetSchema),
   });
 
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    setEditingAsset(null);
+    setErrorText(null);
+  };
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: async (values: AssetFormValues) => {
@@ -57,10 +70,11 @@ export const AssetsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
+      addToast('Asset registered successfully', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      setErrorText(err.message || 'Failed to create asset');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to create asset');
     },
   });
 
@@ -71,10 +85,11 @@ export const AssetsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
+      addToast('Asset updated successfully', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      setErrorText(err.message || 'Failed to update asset');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to update asset');
     },
   });
 
@@ -85,11 +100,11 @@ export const AssetsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
+      addToast('Asset deleted successfully', 'success');
       setDeletingAssetId(null);
     },
     onError: (err: any) => {
-      alert(err.message || 'Failed to delete asset. Make sure no active profiles reference it.');
-      setDeletingAssetId(null);
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to delete asset', 'error');
     },
   });
 
@@ -122,256 +137,283 @@ export const AssetsView: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const closeDialog = () => {
-    setIsDialogOpen(false);
-    setEditingAsset(null);
-    setErrorText(null);
-    reset();
-  };
+  if (isError) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
+            <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets</p>
+          </div>
+          <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
+        </div>
+        <ErrorState
+          title="Failed to load media assets"
+          message={(error as any)?.message || 'An error occurred while fetching assets.'}
+          onRetry={() => refetch()}
+          onRefresh={() => refetch()}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Asset Library</h2>
-          <p className="text-sm text-[#9c9cb0]">Manage backgrounds, audio files, fonts, and watermarks</p>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
+          <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets</p>
         </div>
-        <button
-          onClick={openCreateDialog}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
-        >
-          <Plus className="h-4 w-4" /> Add Asset
-        </button>
+
+        <div className="flex items-center gap-3">
+          <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} title="Refresh assets" />
+          <Button icon={Plus} onClick={openCreateDialog}>
+            Register Asset
+          </Button>
+        </div>
       </div>
 
-      {/* Tabs / Filters */}
-      <div className="flex border-b border-[#1a1a24] gap-6 text-sm overflow-x-auto pb-1">
-        {['ALL', 'Music', 'Font', 'Background', 'Watermark', 'Logo', 'Animation', 'Icon'].map((type) => (
+      {/* Filter Toolbar */}
+      <div className="flex gap-2 border-b border-[#1a1a24] pb-4 overflow-x-auto text-xs">
+        {['ALL', 'Music', 'Background', 'Font', 'Logo', 'Watermark', 'Animation', 'Icon'].map((type) => (
           <button
             key={type}
             onClick={() => setSelectedFilterType(type)}
-            className={`pb-4 font-semibold transition whitespace-nowrap ${
-              selectedFilterType === type ? 'border-b-2 border-purple-500 text-purple-400' : 'text-[#6e6e80] hover:text-[#9c9cb0]'
+            className={`px-3 py-1.5 rounded-lg font-semibold transition cursor-pointer ${
+              selectedFilterType === type
+                ? 'bg-purple-600 text-white'
+                : 'bg-[#161622] text-[#9c9cb0] hover:text-white hover:bg-[#1d1d2e]'
             }`}
           >
-            {type === 'ALL' ? 'All Assets' : `${type}s`}
+            {type}
           </button>
         ))}
       </div>
 
-      {/* Loading state */}
-      {isLoading && (
-        <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
+      {/* Assets Grid */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+      ) : assets.length === 0 ? (
+        <EmptyState
+          icon={Music}
+          title="No media assets registered"
+          description="Register background music tracks, fonts, or logos to customize automated video renders."
+          actionLabel="Register Asset"
+          onAction={openCreateDialog}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {assets.map((asset) => (
+            <div
+              key={asset.id}
+              className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 flex flex-col justify-between hover:border-[#2b2b3a] transition"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full bg-purple-500/10 text-purple-400 px-2 py-0.5 text-xs font-semibold">
+                    {asset.type}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      asset.status === 'Active'
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-red-500/10 text-red-400'
+                    }`}
+                  >
+                    {asset.status}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold text-white">{asset.name}</h3>
+                  <p className="text-xs text-[#9c9cb0] font-mono mt-1 truncate">
+                    {asset.filePath}
+                  </p>
+                </div>
+
+                <div className="bg-[#14141e] p-3 rounded-lg flex justify-between items-center text-xs">
+                  <span className="text-[#6e6e80]">License Status:</span>
+                  <span
+                    className={`font-semibold ${
+                      asset.licenseStatus === 'Confirmed' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}
+                  >
+                    {asset.licenseStatus}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-[#1a1a24]/50 pt-4">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Edit2}
+                  onClick={() => openEditDialog(asset)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={Trash2}
+                  onClick={() => setDeletingAssetId(asset.id)}
+                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Error state */}
-      {isError && (
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6 flex items-start gap-4 text-red-200">
-          <AlertCircle className="h-6 w-6 shrink-0 text-red-400" />
-          <div>
-            <h3 className="font-semibold text-white">Error loading assets</h3>
-            <p className="text-sm mt-1">{(error as any)?.message || 'Please check your connection and try again.'}</p>
+      {/* Delete Confirmation Modal */}
+      {deletingAssetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
+            <h3 className="text-lg font-bold text-white">Delete Media Asset</h3>
+            <p className="text-sm text-[#9c9cb0]">
+              Are you sure you want to delete this media asset? Render pipelines relying on it will fail validation.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setDeletingAssetId(null)}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={deleteMutation.isPending}
+                loadingText="Deleting..."
+                onClick={() => deleteMutation.mutate(deletingAssetId)}
+              >
+                Delete Asset
+              </Button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Assets Grid */}
-      {!isLoading && !isError && (
-        <>
-          {assets.length === 0 ? (
-            <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-12 text-center text-[#6e6e80]">
-              <p className="text-sm">No assets found in this filter category.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {assets.map((asset) => (
-                <div key={asset.id} className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 hover:border-purple-500/30 transition">
-                  <div className="flex items-center justify-between">
-                    <span className="rounded bg-[#161620] px-2 py-0.5 font-mono text-[10px] text-purple-400 border border-[#222230]">
-                      {asset.type}
-                    </span>
-                    <div className="flex gap-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        asset.status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-gray-500/10 text-gray-500'
-                      }`}>
-                        {asset.status}
-                      </span>
-                      {asset.licenseStatus && (
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          asset.licenseStatus === 'Confirmed' ? 'bg-purple-500/10 text-purple-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          {asset.licenseStatus}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-bold text-white line-clamp-1">{asset.name}</h3>
-                    <p className="text-xs text-[#9c9cb0] font-mono mt-1 break-all bg-[#0a0a0c] p-2 rounded border border-[#1a1a24]">{asset.filePath}</p>
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-4 border-t border-[#1a1a24]/50">
-                    <button
-                      onClick={() => openEditDialog(asset)}
-                      className="text-purple-400 hover:text-purple-300"
-                      title="Edit"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeletingAssetId(asset.id)}
-                      className="text-red-400 hover:text-red-300"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Create / Edit Dialog */}
+      {/* Create / Edit Dialog Modal */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-xl border border-[#222230] bg-[#0e0e12] p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4 mb-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <h3 className="text-lg font-bold text-white">
-                {editingAsset ? 'Edit Asset' : 'Add Asset'}
+                {editingAsset ? 'Edit Media Asset' : 'Register New Media Asset'}
               </h3>
-              <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white">
-                <X className="h-5 w-5" />
+              <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+            {errorText && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300 flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{errorText}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 text-sm">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Asset Name</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Asset Name
+                </label>
                 <input
                   type="text"
-                  placeholder="e.g. Chill Lofi Strings"
+                  placeholder="e.g. Inspiring Acoustic Track"
                   {...register('name')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500"
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                 />
-                {errors.name && (
-                  <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Asset Type</label>
-                <select
-                  disabled={!!editingAsset}
-                  {...register('type')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 disabled:opacity-50"
-                >
-                  <option value="Music">Music</option>
-                  <option value="Font">Font</option>
-                  <option value="Background">Background</option>
-                  <option value="Watermark">Watermark</option>
-                  <option value="Logo">Logo</option>
-                  <option value="Animation">Animation</option>
-                  <option value="Icon">Icon</option>
-                </select>
-                {errors.type && (
-                  <p className="mt-1 text-xs text-red-400">{errors.type.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">File Path</label>
-                <input
-                  type="text"
-                  placeholder="e.g. music/lofi_strings_01.mp3"
-                  {...register('filePath')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500 font-mono"
-                />
-                {errors.filePath && (
-                  <p className="mt-1 text-xs text-red-400">{errors.filePath.message}</p>
-                )}
+                {errors.name && <p className="mt-1 text-xs text-red-400">{errors.name.message}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Status</label>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Asset Type
+                  </label>
+                  <select
+                    {...register('type')}
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                  >
+                    <option value="Music">Music</option>
+                    <option value="Background">Background</option>
+                    <option value="Font">Font</option>
+                    <option value="Logo">Logo</option>
+                    <option value="Watermark">Watermark</option>
+                    <option value="Animation">Animation</option>
+                    <option value="Icon">Icon</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Status
+                  </label>
                   <select
                     {...register('status')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500"
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                   >
                     <option value="Active">Active</option>
                     <option value="Disabled">Disabled</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">License</label>
-                  <select
-                    {...register('licenseStatus')}
-                    className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white outline-none focus:border-purple-500"
-                  >
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="Unconfirmed">Unconfirmed</option>
-                  </select>
-                </div>
               </div>
 
-              {errorText && (
-                <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-200">
-                  {errorText}
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  File Path
+                </label>
+                <input
+                  type="text"
+                  placeholder="music/inspiring_acoustic.mp3"
+                  {...register('filePath')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono outline-none focus:border-purple-500"
+                />
+                {errors.filePath && <p className="mt-1 text-xs text-red-400">{errors.filePath.message}</p>}
+              </div>
 
-              <div className="flex justify-end gap-3 pt-2 border-t border-[#1a1a24]/50">
-                <button
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  License Status
+                </label>
+                <select
+                  {...register('licenseStatus')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                >
+                  <option value="Confirmed">Confirmed (Licensed)</option>
+                  <option value="Unconfirmed">Unconfirmed</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button
+                  variant="secondary"
                   type="button"
                   onClick={closeDialog}
-                  className="rounded-lg border border-[#1a1a24] px-4 py-2 text-sm font-semibold text-[#9c9cb0] hover:bg-[#161620] hover:text-white transition"
+                  disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:opacity-50"
+                  isLoading={createMutation.isPending || updateMutation.isPending}
+                  loadingText="Saving..."
                 >
-                  {editingAsset ? 'Save Changes' : 'Create'}
-                </button>
+                  {editingAsset ? 'Save Changes' : 'Register Asset'}
+                </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Dialog */}
-      {deletingAssetId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-xl border border-red-500/20 bg-[#0e0e12] p-6 shadow-2xl space-y-6">
-            <div>
-              <h3 className="text-lg font-bold text-white">Delete Asset?</h3>
-              <p className="text-sm text-[#9c9cb0] mt-2">
-                This action cannot be undone. Verify that no Content Profiles are currently referencing this asset.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeletingAssetId(null)}
-                className="rounded-lg border border-[#1a1a24] px-4 py-2 text-sm font-semibold text-[#9c9cb0] hover:bg-[#161620] transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteMutation.mutate(deletingAssetId)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500"
-              >
-                Confirm Delete
-              </button>
-            </div>
           </div>
         </div>
       )}

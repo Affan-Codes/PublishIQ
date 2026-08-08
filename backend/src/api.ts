@@ -7,6 +7,7 @@ import { logger } from './utils/logger.js';
 import { systemConfigCache } from './config/system-config.cache.js';
 import { featureFlagCache } from './config/feature-flag.cache.js';
 import notificationService from './services/notification.service.js';
+import { bootstrapWorkers, shutdownWorkers } from './workers/index.js';
 
 async function main() {
   logger.info('Starting PublishIQ API Server...');
@@ -28,7 +29,11 @@ async function main() {
   await systemConfigCache.reload();
   await featureFlagCache.reload();
 
-  // 5. Start listening
+  // 5. Bootstrap BullMQ background workers
+  await bootstrapWorkers();
+  logger.info('Background workers initialized');
+
+  // 6. Start listening
   const server = app.listen(env.PORT, () => {
     logger.info(`🚀 API Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
   });
@@ -41,6 +46,9 @@ async function main() {
       logger.info('HTTP server closed');
       
       try {
+        await shutdownWorkers();
+        logger.info('Workers shut down');
+
         await prisma.$disconnect();
         logger.info('Database connection closed');
         

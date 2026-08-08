@@ -6,7 +6,6 @@ import { runContentPipeline } from '../services/content-pipeline.service.js';
 import { channelSchedulingService } from '../services/channel-scheduling.service.js';
 import { ValidationError, NotFoundError } from '../errors/custom-errors.js';
 
-const QUEUE_NAME = `${env.QUEUE_PREFIX}:content-pipeline`;
 const connection = getValkeyInstance();
 
 /**
@@ -63,10 +62,11 @@ export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channe
 };
 
 export function startContentPipelineWorker(concurrency: number = 2): Worker {
-  logger.info({ QUEUE_NAME, concurrency }, 'Starting Content Pipeline Worker');
+  logger.info({ queueName: 'content-pipeline', prefix: env.QUEUE_PREFIX, concurrency }, 'Starting Content Pipeline Worker');
 
-  const worker = new Worker(QUEUE_NAME, contentPipelineProcessor, {
+  const worker = new Worker('content-pipeline', contentPipelineProcessor, {
     connection: connection as any,
+    prefix: env.QUEUE_PREFIX,
     concurrency,
   });
 

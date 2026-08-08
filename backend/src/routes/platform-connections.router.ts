@@ -3,19 +3,15 @@ import { z } from 'zod';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
 import { validateRequest } from '../middlewares/request-validator.js';
 import platformConnectionController from '../controllers/platformConnection.controller.js';
-import { HealthStatus, ConnectionStatus, Role } from '@prisma/client';
+import { ConnectionStatus, Role } from '@prisma/client';
 import { ValidationError } from '../errors/custom-errors.js';
 
 const router = Router();
 
+// YT-014 fix: Drop raw accessTokenHex/refreshTokenHex from update schema entirely.
+// All token additions and credentials changes MUST go through verified OAuth.
 const connectionUpdateSchema = z.object({
-  externalAccountId: z.string().optional(),
   displayName: z.string().optional(),
-  accessTokenHex: z.string().min(1).optional(),
-  refreshTokenHex: z.string().min(1).optional(),
-  expiresAt: z.string().datetime().optional(),
-  scopes: z.array(z.string()).optional(),
-  healthStatus: z.nativeEnum(HealthStatus).optional(),
   status: z.nativeEnum(ConnectionStatus).optional(),
 });
 
@@ -41,7 +37,7 @@ router.post(
   }
 );
 
-// YT-005 fix: Require Owner or Administrator role for mutation endpoints
+// YT-005 & YT-014 fix: Require Owner/Admin role and enforce safe connection status/name updates only
 router.put(
   '/platform-connections/:id',
   requireRole([Role.Owner, Role.Administrator]),

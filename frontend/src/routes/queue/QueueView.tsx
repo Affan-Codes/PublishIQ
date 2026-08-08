@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import axios from 'axios';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonTable } from '../../components/ui/Skeleton.js';
+import { EmptyState } from '../../components/ui/EmptyState.js';
+import { Button } from '../../components/ui/Button.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
 import {
   ListTodo,
   XCircle,
   RefreshCcw,
-  AlertTriangle,
   Clock,
   Eye,
   Check,
   X,
-  Activity,
-  FileText
+  Activity
 } from 'lucide-react';
 
 interface Job {
@@ -69,23 +73,24 @@ interface ScheduledRunsResponse {
 
 export const QueueView: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
   const [page, setPage] = useState(1);
   const [stageFilter, setStageFilter] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [selectedJobForReview, setSelectedJobForReview] = useState<Job | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionJobId, setActionJobId] = useState<string | null>(null);
 
   // Queries
-  const { data: statsData } = useQuery<StatsResponse>({
+  const { data: statsData, isFetching: isStatsFetching, refetch: refetchStats } = useQuery<StatsResponse>({
     queryKey: ['queue-stats'],
     queryFn: async () => {
       const res = await axios.get('/api/v1/queue/stats', { withCredentials: true });
       return res.data;
     },
-    refetchInterval: 5000, // Poll statistics every 5 seconds
+    refetchInterval: 5000,
   });
 
-  const { data: scheduledData } = useQuery<ScheduledRunsResponse>({
+  const { data: scheduledData, refetch: refetchScheduled } = useQuery<ScheduledRunsResponse>({
     queryKey: ['scheduled-upcoming'],
     queryFn: async () => {
       const res = await axios.get('/api/v1/scheduler/upcoming', { withCredentials: true });
@@ -93,7 +98,7 @@ export const QueueView: React.FC = () => {
     },
   });
 
-  const { data: jobsData, isLoading: isJobsLoading } = useQuery<JobsResponse>({
+  const { data: jobsData, isLoading: isJobsLoading, isFetching: isJobsFetching, isError, error, refetch: refetchJobs } = useQuery<JobsResponse>({
     queryKey: ['queue-jobs', page, stageFilter, typeFilter],
     queryFn: async () => {
       const params: any = { page, limit: 10 };
@@ -103,414 +108,437 @@ export const QueueView: React.FC = () => {
       const res = await axios.get('/api/v1/jobs', { params, withCredentials: true });
       return res.data;
     },
-    refetchInterval: 3000, // Refresh running job lists frequently
+    placeholderData: keepPreviousData,
+    refetchInterval: 3000,
   });
+
+  const handleRefreshAll = () => {
+    refetchStats();
+    refetchScheduled();
+    refetchJobs();
+  };
 
   // Mutations
   const cancelMutation = useMutation({
     mutationFn: async (id: string) => {
+      setActionJobId(id);
       await axios.post(`/api/v1/jobs/${id}/cancel`, {}, { withCredentials: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue-jobs'] });
       queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+      addToast('Job cancelled successfully', 'info');
     },
     onError: (err: any) => {
-      setErrorMessage(err.response?.data?.error?.message || 'Failed to cancel job');
-    }
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to cancel job', 'error');
+    },
+    onSettled: () => setActionJobId(null),
   });
 
   const retryMutation = useMutation({
     mutationFn: async (id: string) => {
+      setActionJobId(id);
       await axios.post(`/api/v1/jobs/${id}/retry`, {}, { withCredentials: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue-jobs'] });
       queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+      addToast('Job retry enqueued', 'success');
     },
     onError: (err: any) => {
-      setErrorMessage(err.response?.data?.error?.message || 'Failed to retry job');
-    }
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to retry job', 'error');
+    },
+    onSettled: () => setActionJobId(null),
   });
 
   const approveMutation = useMutation({
     mutationFn: async (id: string) => {
+      setActionJobId(id);
       await axios.post(`/api/v1/jobs/${id}/approve`, {}, { withCredentials: true });
     },
     onSuccess: () => {
-      setSelectedJobForReview(null);
       queryClient.invalidateQueries({ queryKey: ['queue-jobs'] });
       queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+      addToast('Content job approved for publication', 'success');
+      setSelectedJobForReview(null);
     },
     onError: (err: any) => {
-      setErrorMessage(err.response?.data?.error?.message || 'Failed to approve job');
-    }
+      addToast(err.response?.data?.error?.message || err.message || 'Approval failed', 'error');
+    },
+    onSettled: () => setActionJobId(null),
   });
 
   const rejectMutation = useMutation({
     mutationFn: async (id: string) => {
-      await axios.post(`/api/v1/jobs/${id}/reject`, {}, { withCredentials: true });
+      setActionJobId(id);
+      await axios.post(`/api/v1/jobs/${id}/reject`, { reason: 'User rejected in Queue Review' }, { withCredentials: true });
     },
     onSuccess: () => {
-      setSelectedJobForReview(null);
       queryClient.invalidateQueries({ queryKey: ['queue-jobs'] });
       queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+      addToast('Content job rejected', 'info');
+      setSelectedJobForReview(null);
     },
     onError: (err: any) => {
-      setErrorMessage(err.response?.data?.error?.message || 'Failed to reject job');
-    }
+      addToast(err.response?.data?.error?.message || err.message || 'Rejection failed', 'error');
+    },
+    onSettled: () => setActionJobId(null),
   });
 
   const stats = statsData?.data || { total: 0, waiting: 0, active: 0, delayed: 0, failed: 0, archived: 0 };
-  const jobs = jobsData?.data || [];
-  const scheduled = scheduledData?.data || [];
-  const totalPages = Math.ceil((jobsData?.meta?.total || 0) / 10);
+  const jobsList = jobsData?.data || [];
+  const scheduledRuns = scheduledData?.data || [];
+  const meta = jobsData?.meta || { total: 0, page: 1, limit: 10 };
+  const totalPages = Math.ceil(meta.total / meta.limit);
+
+  const formatMediaUrl = (urlPath: string | null) => {
+    if (!urlPath) return '';
+    if (urlPath.startsWith('http')) return urlPath;
+    return `http://localhost:4000${urlPath}`;
+  };
+
+  if (isError) {
+    return (
+      <div className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+              <Activity className="text-purple-400" />
+              Queue Management & Review
+            </h2>
+            <p className="text-sm text-[#9c9cb0]">Inspect active BullMQ background workers and hybrid approval gates</p>
+          </div>
+          <RefreshButton onRefresh={handleRefreshAll} isRefreshing={isJobsFetching} />
+        </div>
+        <ErrorState
+          title="Failed to load queue status"
+          message={(error as any)?.message || 'An error occurred while communicating with BullMQ background services.'}
+          onRetry={handleRefreshAll}
+          onRefresh={handleRefreshAll}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-          <ListTodo className="h-6 w-6 text-purple-400" /> Queue Monitoring
-        </h2>
-        <p className="text-sm text-[#9c9cb0]">Monitor active background execution pipelines, retry errors, and manage Hybrid approvals</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+            <Activity className="text-purple-400" />
+            Queue Management & Review
+          </h2>
+          <p className="text-sm text-[#9c9cb0]">Inspect active BullMQ background workers and hybrid approval gates</p>
+        </div>
+        <RefreshButton onRefresh={handleRefreshAll} isRefreshing={isJobsFetching || isStatsFetching} title="Refresh queue metrics" />
       </div>
 
-      {errorMessage && (
-        <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-200 flex justify-between items-center">
-          <span>{errorMessage}</span>
-          <button onClick={() => setErrorMessage(null)} className="font-bold opacity-70 hover:opacity-100">✕</button>
+      {/* Metrics Cards Grid */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Total Items</span>
+          <div className="text-2xl font-bold text-white mt-1">{stats.total}</div>
+        </div>
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Active</span>
+          <div className="text-2xl font-bold text-purple-400 mt-1">{stats.active}</div>
+        </div>
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Waiting</span>
+          <div className="text-2xl font-bold text-amber-400 mt-1">{stats.waiting}</div>
+        </div>
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Delayed</span>
+          <div className="text-2xl font-bold text-blue-400 mt-1">{stats.delayed}</div>
+        </div>
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Failed</span>
+          <div className="text-2xl font-bold text-rose-400 mt-1">{stats.failed}</div>
+        </div>
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-center">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6e6e80]">Archived</span>
+          <div className="text-2xl font-bold text-gray-400 mt-1">{stats.archived}</div>
+        </div>
+      </div>
+
+      {/* Upcoming Cron Runs Bar */}
+      {scheduledRuns.length > 0 && (
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 space-y-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] flex items-center gap-1.5">
+            <Clock size={14} className="text-purple-400" />
+            Upcoming Automated Channel Schedules
+          </h3>
+          <div className="flex gap-3 overflow-x-auto pb-1 text-xs">
+            {scheduledRuns.map((run) => (
+              <div key={run.key} className="bg-[#14141e] border border-[#1a1a24] p-3 rounded-lg flex-shrink-0 space-y-1 min-w-[200px]">
+                <div className="font-semibold text-white">{run.channelName}</div>
+                <div className="text-[10px] text-[#6e6e80] font-mono">Cron: {run.cron}</div>
+                <div className="text-[10px] text-purple-300">
+                  Next: {run.next ? new Date(run.next).toLocaleString() : 'Pending'}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Live Stats Row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          { label: 'Total Jobs', count: stats.total, color: 'text-white', bg: 'bg-[#0e0e12]' },
-          { label: 'Waiting', count: stats.waiting, color: 'text-blue-400', bg: 'bg-[#0e0e12]' },
-          { label: 'Active (Running)', count: stats.active, color: 'text-purple-400', bg: 'bg-purple-950/10 border-purple-500/20' },
-          { label: 'Delayed', count: stats.delayed, color: 'text-yellow-400', bg: 'bg-[#0e0e12]' },
-          { label: 'Failed', count: stats.failed, color: 'text-red-400', bg: 'bg-red-950/10 border-red-500/20' },
-          { label: 'Archived', count: stats.archived, color: 'text-[#6e6e80]', bg: 'bg-[#0e0e12]' },
-        ].map((item, idx) => (
-          <div key={idx} className={`rounded-xl border border-[#1a1a24] p-4 text-center ${item.bg}`}>
-            <p className="text-xs text-[#6e6e80] font-medium">{item.label}</p>
-            <p className={`mt-2 text-2xl font-bold ${item.color}`}>{item.count}</p>
-          </div>
-        ))}
+      {/* Filter Bar */}
+      <div className="flex flex-wrap gap-4 items-center justify-between bg-[#0e0e12] p-4 rounded-xl border border-[#1a1a24]">
+        <span className="text-sm font-semibold text-white">Pipeline Execution Items</span>
+        
+        <div className="flex gap-3">
+          <select
+            value={stageFilter}
+            onChange={(e) => {
+              setStageFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+          >
+            <option value="">All Pipeline Stages</option>
+            <option value="Queued">Queued (Awaiting Approval)</option>
+            <option value="Published">Published</option>
+            <option value="Failed">Failed</option>
+            <option value="Archived">Archived</option>
+          </select>
+
+          <select
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+          >
+            <option value="">All Job Types</option>
+            <option value="CONTENT_PIPELINE">CONTENT_PIPELINE</option>
+            <option value="MANUAL">MANUAL</option>
+          </select>
+        </div>
       </div>
 
-      {/* Upcoming Repeat Schedules */}
-      {scheduled.length > 0 && (
-        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Clock className="h-4 w-4 text-yellow-400" /> Upcoming Repeat Schedules (BullMQ)
-          </h3>
+      {/* Table / Empty State */}
+      {isJobsLoading ? (
+        <SkeletonTable rows={6} columns={5} />
+      ) : jobsList.length === 0 ? (
+        <EmptyState
+          icon={ListTodo}
+          title="Queue is clean"
+          description="Zero pending queue tasks. Trigger manual generations or wait for automated cron schedules."
+        />
+      ) : (
+        <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] overflow-hidden shadow-lg">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-[#e0e0e6] divide-y divide-[#1a1a24]">
-              <thead>
-                <tr className="text-xs text-[#6e6e80] font-medium">
-                  <th className="pb-3">Channel Name</th>
-                  <th className="pb-3">Cron Rule</th>
-                  <th className="pb-3">Timezone</th>
-                  <th className="pb-3">Next Scheduled Run</th>
+            <table className="w-full text-left text-sm text-[#e0e0e6]">
+              <thead className="bg-[#161620] text-xs font-semibold uppercase tracking-wider text-[#6e6e80] border-b border-[#1a1a24]">
+                <tr>
+                  <th className="px-6 py-4">Job ID & Type</th>
+                  <th className="px-6 py-4">Channel & Mode</th>
+                  <th className="px-6 py-4">Stage Status</th>
+                  <th className="px-6 py-4">Created Time</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1a1a24]">
-                {scheduled.map((s) => (
-                  <tr key={s.key} className="text-xs">
-                    <td className="py-3 font-semibold text-white">{s.channelName}</td>
-                    <td className="py-3 font-mono text-purple-400">{s.cron}</td>
-                    <td className="py-3 text-[#9c9cb0]">{s.tz}</td>
-                    <td className="py-3 text-yellow-400 font-medium">
-                      {s.next ? new Date(s.next).toLocaleString() : 'N/A'}
+                {jobsList.map((job) => (
+                  <tr key={job.id} className="hover:bg-[#161620]/30 transition">
+                    <td className="px-6 py-4">
+                      <div className="font-mono text-xs font-semibold text-purple-400">
+                        {job.id.slice(0, 8)}...
+                      </div>
+                      <div className="text-[10px] text-[#6e6e80]">{job.jobType}</div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-white">{job.channel?.name || 'Manual Generation'}</div>
+                      <div className="text-[10px] text-[#6e6e80] font-mono">
+                        {job.channel?.automationMode || 'Manual'} Mode
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
+                          job.pipelineStage === 'Published' || job.pipelineStage === 'Queued'
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                            : job.pipelineStage === 'Failed'
+                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                        }`}
+                      >
+                        {job.pipelineStage === 'Queued' ? 'Ready (Awaiting Review)' : job.pipelineStage}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-4 text-xs text-[#9c9cb0]">
+                      {new Date(job.createdAt).toLocaleString()}
+                    </td>
+
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {job.pipelineStage === 'Queued' && (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            icon={Eye}
+                            onClick={() => setSelectedJobForReview(job)}
+                          >
+                            Review
+                          </Button>
+                        )}
+
+                        {job.pipelineStage === 'Failed' && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            icon={RefreshCcw}
+                            isLoading={retryMutation.isPending && actionJobId === job.id}
+                            loadingText="Retrying..."
+                            onClick={() => retryMutation.mutate(job.id)}
+                          >
+                            Retry
+                          </Button>
+                        )}
+
+                        {job.pipelineStage !== 'Published' && job.pipelineStage !== 'Failed' && job.pipelineStage !== 'Archived' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={XCircle}
+                            isLoading={cancelMutation.isPending && actionJobId === job.id}
+                            loadingText="Cancelling..."
+                            onClick={() => cancelMutation.mutate(job.id)}
+                            className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Toolbar */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-[#1a1a24] bg-[#161620] px-6 py-4">
+              <span className="text-xs text-[#9c9cb0]">
+                Page <span className="font-semibold text-white">{page}</span> of{' '}
+                <span className="font-semibold text-white">{totalPages}</span>
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Active & Historical Jobs Table */}
-      <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Activity className="h-4 w-4 text-purple-400" /> Execution Registry
-          </h3>
-
-          <div className="flex items-center gap-3">
-            {/* Filter by Job Type */}
-            <select
-              value={typeFilter}
-              onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-[#e0e0e6] outline-none"
-            >
-              <option value="">All Job Types</option>
-              <option value="ContentPipeline">Content Pipeline</option>
-              <option value="Cleanup">Cleanup</option>
-              <option value="HealthCheck">Health Check</option>
-            </select>
-
-            {/* Filter by Stage */}
-            <select
-              value={stageFilter}
-              onChange={(e) => { setStageFilter(e.target.value); setPage(1); }}
-              className="rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-[#e0e0e6] outline-none"
-            >
-              <option value="">All Stages</option>
-              <option value="Draft">Draft</option>
-              <option value="Running">Running</option>
-              <option value="Queued">Queued (Approval Pending)</option>
-              <option value="Completed">Completed</option>
-              <option value="Failed">Failed</option>
-              <option value="Archived">Archived</option>
-            </select>
-          </div>
-        </div>
-
-        {isJobsLoading ? (
-          <div className="flex h-48 items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-4 border-purple-500 border-t-transparent" />
-          </div>
-        ) : jobs.length === 0 ? (
-          <div className="text-center py-12 text-sm text-[#6e6e80]">No matching execution records found</div>
-        ) : (
-          <div className="space-y-4">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-[#e0e0e6] divide-y divide-[#1a1a24]">
-                <thead>
-                  <tr className="text-xs text-[#6e6e80] font-medium">
-                    <th className="pb-3">Job ID / Type</th>
-                    <th className="pb-3">Channel Scope</th>
-                    <th className="pb-3">Current Stage</th>
-                    <th className="pb-3">Registered At</th>
-                    <th className="pb-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#1a1a24]">
-                  {jobs.map((job) => (
-                    <tr key={job.id} className="text-xs">
-                      <td className="py-4">
-                        <p className="font-mono text-purple-400 font-medium truncate w-32" title={job.id}>
-                          {job.id}
-                        </p>
-                        <p className="text-[10px] text-[#6e6e80] mt-0.5">{job.jobType}</p>
-                      </td>
-                      <td className="py-4">
-                        <p className="font-semibold text-white">{job.channel?.name || 'Workspace Level'}</p>
-                        {job.channel && (
-                          <p className="text-[10px] text-[#6e6e80] mt-0.5">Mode: {job.channel.automationMode}</p>
-                        )}
-                      </td>
-                      <td className="py-4">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`h-2.5 w-2.5 rounded-full ${
-                              job.pipelineStage === 'Completed'
-                                ? 'bg-emerald-500'
-                                : job.pipelineStage === 'Failed'
-                                ? 'bg-red-500'
-                                : job.pipelineStage === 'Running'
-                                ? 'bg-purple-500 animate-pulse'
-                                : job.pipelineStage === 'Queued'
-                                ? 'bg-yellow-500'
-                                : 'bg-[#6e6e80]'
-                            }`}
-                          />
-                          <span className="font-medium text-white">{job.pipelineStage || 'N/A'}</span>
-                        </div>
-                        {job.pipelineStage === 'Failed' && job.failureReason && (
-                          <p className="text-[10px] text-red-400 mt-1 max-w-xs truncate" title={job.failureReason}>
-                            Error: {job.failureReason}
-                          </p>
-                        )}
-                      </td>
-                      <td className="py-4 text-[#9c9cb0]">
-                        {new Date(job.createdAt).toLocaleString()}
-                      </td>
-                      <td className="py-4 text-right space-x-2">
-                        {job.pipelineStage === 'Queued' && (
-                          <button
-                            onClick={() => setSelectedJobForReview(job)}
-                            className="inline-flex items-center gap-1 rounded bg-yellow-500/10 px-2.5 py-1 text-[11px] font-semibold text-yellow-400 border border-yellow-500/20 hover:bg-yellow-500 hover:text-black transition"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            Review
-                          </button>
-                        )}
-
-                        {job.pipelineStage === 'Failed' && (
-                          <button
-                            onClick={() => retryMutation.mutate(job.id)}
-                            disabled={retryMutation.isPending}
-                            className="inline-flex items-center gap-1 rounded bg-purple-600/10 px-2.5 py-1 text-[11px] font-semibold text-purple-400 border border-purple-500/20 hover:bg-purple-600 hover:text-white transition disabled:opacity-50"
-                          >
-                            <RefreshCcw className="h-3.5 w-3.5" />
-                            Retry
-                          </button>
-                        )}
-
-                        {['Draft', 'Running', 'Queued'].includes(job.pipelineStage || '') && (
-                          <button
-                            onClick={() => cancelMutation.mutate(job.id)}
-                            disabled={cancelMutation.isPending}
-                            className="inline-flex items-center gap-1 rounded bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-400 border border-red-500/20 hover:bg-red-600 hover:text-white transition disabled:opacity-50"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                            Cancel
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination controls */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-[#1a1a24] pt-4">
-                <span className="text-xs text-[#6e6e80]">
-                  Showing Page {page} of {totalPages}
-                </span>
-                <div className="space-x-2">
-                  <button
-                    disabled={page === 1}
-                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                    className="rounded border border-[#1a1a24] bg-[#161620] px-3 py-1 text-xs text-[#9c9cb0] hover:text-white disabled:opacity-50 transition"
-                  >
-                    Prev
-                  </button>
-                  <button
-                    disabled={page === totalPages}
-                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                    className="rounded border border-[#1a1a24] bg-[#161620] px-3 py-1 text-xs text-[#9c9cb0] hover:text-white disabled:opacity-50 transition"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Visual Review and Approval Modal */}
+      {/* Hybrid Approval Review Drawer */}
       {selectedJobForReview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="relative w-full max-w-4xl rounded-2xl border border-[#1a1a24] bg-[#0c0c0e] shadow-2xl p-6 sm:p-8 space-y-6 flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
-                <h3 className="text-lg font-bold text-white">Review Generated Pipeline Output</h3>
-                <p className="text-xs text-[#6e6e80] mt-0.5">Job ID: {selectedJobForReview.id}</p>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Check className="h-5 w-5 text-emerald-400" />
+                  Hybrid Approval Gate
+                </h3>
+                <p className="text-xs text-[#9c9cb0]">
+                  Channel: {selectedJobForReview.channel?.name || 'Manual Run'}
+                </p>
               </div>
-              <button
+              <button onClick={() => setSelectedJobForReview(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Render Output Artifacts */}
+            <div className="space-y-4">
+              <div className="bg-[#13131d] p-4 rounded-xl border border-[#20202e]">
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Quote Text</span>
+                <p className="text-sm font-semibold text-white mt-1">"{selectedJobForReview.generatedText}"</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {selectedJobForReview.imageUrl && (
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Compiled PNG</span>
+                    <img
+                      src={formatMediaUrl(selectedJobForReview.imageUrl)}
+                      alt="Rendered"
+                      className="mt-1.5 h-36 w-full object-cover rounded-lg border border-[#1a1a24]"
+                    />
+                  </div>
+                )}
+                {selectedJobForReview.videoUrl && (
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Rendered MP4 Short</span>
+                    <video
+                      src={formatMediaUrl(selectedJobForReview.videoUrl)}
+                      controls
+                      className="mt-1.5 h-36 w-full object-cover rounded-lg border border-[#1a1a24]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {selectedJobForReview.caption && (
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Caption & Tags</span>
+                  <p className="text-xs text-[#9c9cb0] mt-1 bg-[#14141e] p-3 rounded-lg border border-[#1a1a24]">
+                    {selectedJobForReview.caption}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setSelectedJobForReview(null)}
-                className="rounded-lg p-1 text-[#9c9cb0] hover:bg-[#161620] hover:text-white transition"
               >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Modal Body (Scrollable content) */}
-            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Media Preview Column */}
-                <div className="space-y-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Rendered Assets</p>
-                  
-                  {/* Video Player */}
-                  {selectedJobForReview.videoUrl ? (
-                    <div className="rounded-xl border border-[#1a1a24] bg-black overflow-hidden aspect-[9/16] max-h-[400px] flex items-center justify-center">
-                      <video
-                        src={selectedJobForReview.videoUrl}
-                        controls
-                        className="w-full h-full object-contain"
-                        poster={selectedJobForReview.imageUrl || undefined}
-                      />
-                    </div>
-                  ) : selectedJobForReview.imageUrl ? (
-                    // Image Preview fallback if video rendering is not done
-                    <div className="rounded-xl border border-[#1a1a24] bg-black overflow-hidden aspect-[9/16] max-h-[400px] flex items-center justify-center">
-                      <img
-                        src={selectedJobForReview.imageUrl}
-                        alt="Rendered Canvas"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] h-48 flex flex-col items-center justify-center text-center p-4">
-                      <AlertTriangle className="h-8 w-8 text-yellow-500/70" />
-                      <p className="text-xs text-[#9c9cb0] mt-2 font-medium">No rendered assets available</p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Text Content & Metadata Column */}
-                <div className="space-y-6">
-                  {/* Quote Text */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5" /> Quote Text
-                    </p>
-                    <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-sm italic text-white text-center leading-relaxed">
-                      "{selectedJobForReview.generatedText}"
-                    </div>
-                  </div>
-
-                  {/* Caption */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Caption</p>
-                    <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-4 text-xs font-mono whitespace-pre-wrap text-[#9c9cb0] leading-relaxed">
-                      {selectedJobForReview.caption}
-                    </div>
-                  </div>
-
-                  {/* Hashtags */}
-                  {selectedJobForReview.hashtags && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Hashtags</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(Array.isArray(selectedJobForReview.hashtags)
-                          ? selectedJobForReview.hashtags
-                          : JSON.parse(selectedJobForReview.hashtags || '[]')
-                        ).map((tag: string, idx: number) => (
-                          <span
-                            key={idx}
-                            className="rounded bg-purple-500/10 px-2 py-0.5 text-[11px] font-medium text-purple-400 border border-purple-500/15"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="border-t border-[#1a1a24] pt-4 flex flex-col sm:flex-row items-center justify-end gap-3">
-              <button
-                disabled={rejectMutation.isPending || approveMutation.isPending}
+                Close
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                icon={X}
+                isLoading={rejectMutation.isPending}
+                loadingText="Rejecting..."
                 onClick={() => rejectMutation.mutate(selectedJobForReview.id)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg bg-red-500/10 px-5 py-2.5 text-sm font-semibold text-red-400 border border-red-500/20 hover:bg-red-600 hover:text-white transition duration-200 disabled:opacity-50"
               >
-                <X className="h-4 w-4" />
-                Reject and Fail
-              </button>
-
-              <button
-                disabled={rejectMutation.isPending || approveMutation.isPending}
+                Reject Post
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Check}
+                isLoading={approveMutation.isPending}
+                loadingText="Approving..."
                 onClick={() => approveMutation.mutate(selectedJobForReview.id)}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 transition duration-200 disabled:opacity-50"
               >
-                <Check className="h-4 w-4" />
-                Approve and Complete
-              </button>
+                Approve & Publish
+              </Button>
             </div>
           </div>
         </div>

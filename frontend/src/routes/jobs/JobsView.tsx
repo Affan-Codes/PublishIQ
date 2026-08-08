@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import apiClient from '../../lib/api-client.js';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonTable, SkeletonCard } from '../../components/ui/Skeleton.js';
+import { EmptyState } from '../../components/ui/EmptyState.js';
+import { Button } from '../../components/ui/Button.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
 import {
   Plus,
   X,
   AlertTriangle,
-  RefreshCw,
-  Image,
+  Image as ImageIcon,
   Video,
   FileText,
   RotateCcw,
@@ -18,8 +23,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Calendar,
-  Layers
+  Layers,
+  Trash2,
+  Copy,
+  RefreshCw
 } from 'lucide-react';
 
 // Form validation schemas
@@ -35,6 +42,7 @@ type TriggerGenValues = z.infer<typeof triggerGenSchema>;
 
 export const JobsView: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
   const [activeTab, setActiveTab] = useState<'jobs' | 'content'>('jobs');
 
   // Search & Filter state for Jobs
@@ -87,7 +95,14 @@ export const JobsView: React.FC = () => {
   });
 
   // Fetch Jobs list
-  const { data: jobsData = { data: [], meta: { total: 0 } }, isLoading: isJobsLoading } = useQuery<any>({
+  const { 
+    data: jobsData = { data: [], meta: { total: 0 } }, 
+    isLoading: isJobsLoading, 
+    isFetching: isJobsFetching,
+    isError: isJobsError,
+    error: jobsError,
+    refetch: refetchJobs 
+  } = useQuery<any>({
     queryKey: ['jobs', jobPage, jobChannelFilter, jobStageFilter],
     queryFn: async () => {
       const params: Record<string, any> = {
@@ -100,7 +115,8 @@ export const JobsView: React.FC = () => {
       const res = await apiClient.get('/jobs', { params });
       return res.data;
     },
-    refetchInterval: activeTab === 'jobs' ? 5000 : false, // Poll jobs faster for real-time stage updates
+    placeholderData: keepPreviousData,
+    refetchInterval: activeTab === 'jobs' ? 5000 : false,
   });
 
   // Fetch Job details
@@ -112,11 +128,18 @@ export const JobsView: React.FC = () => {
       return res.data.data;
     },
     enabled: !!selectedJobId,
-    refetchInterval: !!selectedJobId ? 3000 : false, // Fast poll on detailed pipeline progress
+    refetchInterval: !!selectedJobId ? 3000 : false,
   });
 
   // Fetch Generated Content list
-  const { data: gcData = { data: [], meta: { total: 0 } }, isLoading: isGcLoading } = useQuery<any>({
+  const { 
+    data: gcData = { data: [], meta: { total: 0 } }, 
+    isLoading: isGcLoading,
+    isFetching: isGcFetching,
+    isError: isGcError,
+    error: gcError,
+    refetch: refetchGc 
+  } = useQuery<any>({
     queryKey: ['generated-contents', gcPage, gcProfileFilter, gcLangFilter, gcSearch],
     queryFn: async () => {
       const params: Record<string, any> = {
@@ -130,6 +153,7 @@ export const JobsView: React.FC = () => {
       const res = await apiClient.get('/generated-contents', { params });
       return res.data;
     },
+    placeholderData: keepPreviousData,
   });
 
   // Fetch single Generated Content details
@@ -143,6 +167,14 @@ export const JobsView: React.FC = () => {
     enabled: !!previewContentId,
   });
 
+  const handleRefresh = () => {
+    if (activeTab === 'jobs') {
+      refetchJobs();
+    } else {
+      refetchGc();
+    }
+  };
+
   // Mutations
   const createJobMutation = useMutation({
     mutationFn: async (values: TriggerGenValues) => {
@@ -150,6 +182,7 @@ export const JobsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      addToast('Content generation job triggered successfully', 'success');
       setIsTriggerGenOpen(false);
       resetGen();
     },
@@ -165,9 +198,10 @@ export const JobsView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       queryClient.invalidateQueries({ queryKey: ['job', selectedJobId] });
+      addToast('Job retry enqueued successfully', 'success');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to retry job');
+      addToast(err.response?.data?.error?.message || 'Failed to retry job', 'error');
     },
   });
 
@@ -178,9 +212,10 @@ export const JobsView: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
       queryClient.invalidateQueries({ queryKey: ['job', selectedJobId] });
+      addToast('Job cancelled successfully', 'info');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to cancel job');
+      addToast(err.response?.data?.error?.message || 'Failed to cancel job', 'error');
     },
   });
 
@@ -190,9 +225,10 @@ export const JobsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      addToast('Content duplicate pipeline started', 'success');
       setDuplicateContentId(null);
       resetAction();
-      setActiveTab('jobs'); // switch to jobs to see the rendering pipeline progress
+      setActiveTab('jobs');
     },
     onError: (err: any) => {
       setErrorText(err.response?.data?.error?.message || 'Failed to duplicate content');
@@ -205,6 +241,7 @@ export const JobsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      addToast('Content regeneration pipeline started', 'success');
       setRegenerateContentId(null);
       resetAction();
       setActiveTab('jobs');
@@ -220,10 +257,11 @@ export const JobsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['generated-contents'] });
+      addToast('Generated content record deleted', 'success');
       setDeletingContentId(null);
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to delete content');
+      addToast(err.response?.data?.error?.message || 'Failed to delete content', 'error');
     },
   });
 
@@ -231,7 +269,6 @@ export const JobsView: React.FC = () => {
   const formatMediaUrl = (urlPath: string | null) => {
     if (!urlPath) return '';
     if (urlPath.startsWith('http')) return urlPath;
-    // Resolve relative path to backend dev server address
     return `http://localhost:4000${urlPath}`;
   };
 
@@ -283,16 +320,16 @@ export const JobsView: React.FC = () => {
           </h2>
           <p className="text-sm text-[#9c9cb0]">Orchestrate content generation, rendering engine, and asset compiling</p>
         </div>
-        <button
-          onClick={() => {
-            setErrorText(null);
-            setIsTriggerGenOpen(true);
-          }}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-purple-500 cursor-pointer shadow-lg hover:shadow-purple-500/25"
-        >
-          <Plus size={16} />
-          Trigger Generation
-        </button>
+        <div className="flex items-center gap-3">
+          <RefreshButton
+            onRefresh={handleRefresh}
+            isRefreshing={activeTab === 'jobs' ? isJobsFetching : isGcFetching}
+            title="Refresh jobs & content"
+          />
+          <Button icon={Plus} onClick={() => { setErrorText(null); setIsTriggerGenOpen(true); }}>
+            Trigger Generation
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -371,18 +408,23 @@ export const JobsView: React.FC = () => {
           </div>
 
           {/* Job Executions Table */}
-          {isJobsLoading ? (
-            <div className="flex h-64 items-center justify-center">
-              <RefreshCw className="animate-spin text-purple-500" size={32} />
-            </div>
+          {isJobsError ? (
+            <ErrorState
+              title="Failed to load job executions"
+              message={(jobsError as any)?.message || 'An error occurred while fetching pipeline jobs.'}
+              onRetry={refetchJobs}
+              onRefresh={refetchJobs}
+            />
+          ) : isJobsLoading ? (
+            <SkeletonTable rows={5} columns={6} />
           ) : filteredJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-[#1a1a24] bg-[#0e0e12] py-16 text-center">
-              <Layers size={48} className="text-[#6e6e80] mb-4" />
-              <h3 className="text-lg font-bold text-white">No job executions found</h3>
-              <p className="text-sm text-[#9c9cb0] max-w-sm mt-1">
-                Trigger content generation or connect channels to run the automated rendering engines.
-              </p>
-            </div>
+            <EmptyState
+              icon={Layers}
+              title="No job executions found"
+              description="Trigger content generation manually or connect channels to execute automated rendering pipelines."
+              actionLabel="Trigger Generation"
+              onAction={() => setIsTriggerGenOpen(true)}
+            />
           ) : (
             <div className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] overflow-hidden shadow-lg">
               <table className="w-full text-left text-sm text-[#e0e0e6]">
@@ -503,390 +545,207 @@ export const JobsView: React.FC = () => {
                 <option value="">All Languages</option>
                 <option value="English">English</option>
                 <option value="Hindi">Hindi</option>
-                <option value="Urdu">Urdu</option>
+                <option value="Hinglish">Hinglish</option>
+                <option value="Spanish">Spanish</option>
               </select>
             </div>
           </div>
 
           {/* Content Gallery Grid */}
-          {isGcLoading ? (
-            <div className="flex h-64 items-center justify-center">
-              <RefreshCw className="animate-spin text-purple-500" size={32} />
+          {isGcError ? (
+            <ErrorState
+              title="Failed to load content gallery"
+              message={(gcError as any)?.message || 'An error occurred while fetching generated content.'}
+              onRetry={refetchGc}
+              onRefresh={refetchGc}
+            />
+          ) : isGcLoading ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
           ) : gcData.data.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-[#1a1a24] bg-[#0e0e12] py-16 text-center">
-              <Eye size={48} className="text-[#6e6e80] mb-4" />
-              <h3 className="text-lg font-bold text-white">No generated content found</h3>
-              <p className="text-sm text-[#9c9cb0] max-w-sm mt-1">
-                Your pipeline outputs will be saved here as soon as a Content Pipeline Job executes successfully.
-              </p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="No generated content records"
+              description="Generated quotes, Shayari, and rendered video assets will appear here once pipeline jobs complete."
+            />
           ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {gcData.data.map((gc: any) => (
-                  <div
-                    key={gc.id}
-                    className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 hover:-translate-y-0.5 transition duration-300 hover:shadow-lg flex flex-col justify-between"
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-[#9c9cb0] flex items-center gap-1.5">
-                          <Layers size={12} />
-                          {gc.contentProfile?.name || 'Direct Run'}
-                        </span>
-                        <span className="inline-flex rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-semibold text-purple-400 border border-purple-500/20">
-                          {gc.language}
-                        </span>
-                      </div>
-                      <div
-                        className={`rounded-lg bg-[#161620] p-4 text-sm leading-relaxed border border-[#222230] text-white select-all font-medium ${
-                          gc.language === 'Urdu' ? 'text-right font-serif text-lg leading-loose' : ''
-                        }`}
-                        dir={gc.language === 'Urdu' ? 'rtl' : 'ltr'}
-                      >
-                        {gc.text}
-                      </div>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {gcData.data.map((item: any) => (
+                <div key={item.id} className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-5 space-y-4 flex flex-col justify-between hover:border-[#2b2b3a] transition">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] bg-purple-950/40 border border-purple-800/40 text-purple-400 px-2 py-0.5 rounded font-mono">
+                        {item.language}
+                      </span>
+                      <span className="text-xs text-[#6e6e80]">
+                        {new Date(item.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    
+                    <p className="text-sm text-white font-medium line-clamp-3 bg-[#151522] p-3 rounded-lg border border-[#222235]">
+                      "{item.text}"
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-2 text-xs text-[#9c9cb0]">
+                      {item.imageUrl && <ImageIcon size={14} className="text-emerald-400" />}
+                      {item.videoUrl && <Video size={14} className="text-purple-400" />}
+                      <span className="truncate">{item.caption || 'No caption'}</span>
                     </div>
 
-                    <div className="space-y-3 pt-3 border-t border-[#1a1a24]/50">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#6e6e80] flex items-center gap-1">
-                          <Calendar size={12} />
-                          {new Date(gc.createdAt).toLocaleDateString()}
-                        </span>
-                        
-                        <div className="flex gap-1.5">
-                          {gc.imageUrl && <Image size={14} className="text-purple-400" />}
-                          {gc.videoUrl && <Video size={14} className="text-emerald-400" />}
-                          {gc.caption && <FileText size={14} className="text-blue-400" />}
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between border-t border-[#1a1a24]/50 pt-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={Eye}
+                        onClick={() => setPreviewContentId(item.id)}
+                      >
+                        Preview
+                      </Button>
 
-                      <div className="flex justify-between items-center gap-2 pt-1 text-xs">
+                      <div className="flex gap-2">
                         <button
-                          onClick={() => setPreviewContentId(gc.id)}
-                          className="flex items-center gap-1 rounded bg-[#161620] hover:bg-[#222230] border border-[#222233] px-2.5 py-1.5 font-semibold text-white transition cursor-pointer"
+                          onClick={() => {
+                            setErrorText(null);
+                            setRegenerateContentId(item.id);
+                          }}
+                          title="Regenerate Content"
+                          className="p-1.5 rounded-lg bg-[#161622] hover:bg-[#1d1d2e] text-[#6e6e80] hover:text-purple-400 transition cursor-pointer"
                         >
-                          <Eye size={12} />
-                          Preview
+                          <RotateCcw size={14} />
                         </button>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setErrorText(null);
-                              setDuplicateContentId(gc.id);
-                            }}
-                            className="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer"
-                          >
-                            Duplicate
-                          </button>
-                          <button
-                            onClick={() => {
-                              setErrorText(null);
-                              setRegenerateContentId(gc.id);
-                            }}
-                            className="text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer"
-                          >
-                            Regen
-                          </button>
-                          <button
-                            onClick={() => setDeletingContentId(gc.id)}
-                            className="text-red-400 hover:text-red-300 font-semibold cursor-pointer"
-                          >
-                            Delete
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => {
+                            setErrorText(null);
+                            setDuplicateContentId(item.id);
+                          }}
+                          title="Duplicate Content"
+                          className="p-1.5 rounded-lg bg-[#161622] hover:bg-[#1d1d2e] text-[#6e6e80] hover:text-purple-400 transition cursor-pointer"
+                        >
+                          <Copy size={14} />
+                        </button>
+                        <button
+                          onClick={() => setDeletingContentId(item.id)}
+                          title="Delete Content"
+                          className="p-1.5 rounded-lg bg-[#161622] hover:bg-[#1d1d2e] text-[#6e6e80] hover:text-rose-400 transition cursor-pointer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {/* Pagination */}
-              <div className="flex items-center justify-between border-t border-[#1a1a24] bg-[#0e0e12] px-6 py-4 rounded-xl">
-                <span className="text-xs text-[#9c9cb0]">
-                  Showing <span className="font-semibold text-white">{gcData.data.length}</span> items
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    disabled={gcPage === 1}
-                    onClick={() => setGcPage(p => Math.max(p - 1, 1))}
-                    className="rounded border border-[#1a1a24] bg-[#161620] p-1.5 text-[#9c9cb0] hover:text-white transition disabled:opacity-50 cursor-pointer"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button
-                    disabled={gcData.data.length < 6}
-                    onClick={() => setGcPage(p => p + 1)}
-                    className="rounded border border-[#1a1a24] bg-[#161620] p-1.5 text-[#9c9cb0] hover:text-white transition disabled:opacity-50 cursor-pointer"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* Content Gallery Pagination */}
+          {gcData.data.length > 0 && (
+            <div className="flex items-center justify-between border-t border-[#1a1a24] bg-[#0e0e12] p-4 rounded-xl">
+              <span className="text-xs text-[#9c9cb0]">
+                Showing <span className="font-semibold text-white">{gcData.data.length}</span> records
+              </span>
+              <div className="flex gap-2">
+                <button
+                  disabled={gcPage === 1}
+                  onClick={() => setGcPage(p => Math.max(p - 1, 1))}
+                  className="rounded border border-[#1a1a24] bg-[#161620] p-1.5 text-[#9c9cb0] hover:text-white transition disabled:opacity-50 cursor-pointer"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  disabled={gcData.data.length < 6}
+                  onClick={() => setGcPage(p => p + 1)}
+                  className="rounded border border-[#1a1a24] bg-[#161620] p-1.5 text-[#9c9cb0] hover:text-white transition disabled:opacity-50 cursor-pointer"
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Trigger Generation Dialog */}
+      {/* Trigger Generation Modal */}
       {isTriggerGenOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsTriggerGenOpen(false)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl">
-            <button
-              onClick={() => setIsTriggerGenOpen(false)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-              <Sparkles size={18} className="text-purple-400" />
-              Trigger Content Generation
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">Trigger Content Pipeline</h3>
+              <button onClick={() => setIsTriggerGenOpen(false)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
 
             {errorText && (
-              <div className="mb-4 rounded-lg bg-red-950/40 border border-red-900/50 p-4 text-sm text-red-400">
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300">
                 {errorText}
               </div>
             )}
 
-            <form onSubmit={handleSubmitGen(onSubmitGen => createJobMutation.mutate(onSubmitGen))} className="space-y-4">
+            <form onSubmit={handleSubmitGen((v) => createJobMutation.mutate(v))} className="space-y-4 text-sm">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                  Target Channel
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Select Channel
                 </label>
                 <select
                   {...registerGen('channelId')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
                 >
-                  <option value="">Select an active channel...</option>
-                  {channels
-                    .filter((ch: any) => ch.status === 'Active')
-                    .map((ch: any) => (
-                      <option key={ch.id} value={ch.id}>
-                        {ch.name} ({ch.contentProfile?.language})
-                      </option>
-                    ))}
-                </select>
-                {genErrors.channelId && (
-                  <p className="mt-1 text-xs text-red-400">{genErrors.channelId.message}</p>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsTriggerGenOpen(false)}
-                  className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createJobMutation.isPending}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 cursor-pointer shadow-md hover:shadow-purple-555/25"
-                >
-                  {createJobMutation.isPending ? 'Generating...' : 'Start Pipeline'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Duplicate Content Dialog */}
-      {duplicateContentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDuplicateContentId(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl">
-            <button
-              onClick={() => setDuplicateContentId(null)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <h3 className="text-lg font-bold text-white mb-6">
-              Duplicate Quote to Channel
-            </h3>
-
-            {errorText && (
-              <div className="mb-4 rounded-lg bg-red-950/40 border border-red-900/50 p-4 text-sm text-red-400">
-                {errorText}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitAction(onSubmitAction => duplicateContentMutation.mutate(onSubmitAction))} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                  Target Channel
-                </label>
-                <select
-                  {...registerAction('channelId')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
-                >
-                  <option value="">Select channel...</option>
+                  <option value="">Select a Channel</option>
                   {channels.map((ch: any) => (
                     <option key={ch.id} value={ch.id}>{ch.name}</option>
                   ))}
                 </select>
-                {actionErrors.channelId && (
-                  <p className="mt-1 text-xs text-red-400">{actionErrors.channelId.message}</p>
-                )}
+                {genErrors.channelId && <p className="mt-1 text-xs text-red-400">{genErrors.channelId.message}</p>}
               </div>
 
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setDuplicateContentId(null)}
-                  className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-                >
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button variant="secondary" type="button" onClick={() => setIsTriggerGenOpen(false)} disabled={createJobMutation.isPending}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={duplicateContentMutation.isPending}
-                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-500 cursor-pointer"
-                >
-                  Duplicate & Render
-                </button>
+                </Button>
+                <Button type="submit" isLoading={createJobMutation.isPending} loadingText="Triggering...">
+                  Start Pipeline
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Regenerate Content Dialog */}
-      {regenerateContentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setRegenerateContentId(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl">
-            <button
-              onClick={() => setRegenerateContentId(null)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <h3 className="text-lg font-bold text-white mb-6">
-              Regenerate Content
-            </h3>
-
-            {errorText && (
-              <div className="mb-4 rounded-lg bg-red-950/40 border border-red-900/50 p-4 text-sm text-red-400">
-                {errorText}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitAction(onSubmitAction => regenerateContentMutation.mutate(onSubmitAction))} className="space-y-4">
-              <p className="text-sm text-[#9c9cb0]">
-                This will trigger content generation using the target channel's prompt version, calling the AI provider again for new text.
-              </p>
+      {/* Monitor Pipeline Drawer */}
+      {selectedJobId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
-                  Target Channel
-                </label>
-                <select
-                  {...registerAction('channelId')}
-                  className="mt-2 w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2.5 text-sm text-white focus:border-purple-500 outline-none"
-                >
-                  <option value="">Select channel...</option>
-                  {channels.map((ch: any) => (
-                    <option key={ch.id} value={ch.id}>{ch.name}</option>
-                  ))}
-                </select>
-                {actionErrors.channelId && (
-                  <p className="mt-1 text-xs text-red-400">{actionErrors.channelId.message}</p>
-                )}
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Sparkles size={18} className="text-purple-400" />
+                  Job Monitor: <span className="font-mono text-purple-400">{selectedJobId.slice(0, 8)}...</span>
+                </h3>
+                <p className="text-xs text-[#9c9cb0]">Real-time pipeline stage monitor & retry engine</p>
               </div>
-
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setRegenerateContentId(null)}
-                  className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={regenerateContentMutation.isPending}
-                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 cursor-pointer"
-                >
-                  Generate Fresh Text
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Content Dialog */}
-      {deletingContentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDeletingContentId(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-4">Delete Generated Content</h3>
-            <p className="text-sm text-[#9c9cb0] mb-6">
-              Are you sure you want to delete this content item? This action removes the database record and media files, and cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setDeletingContentId(null)}
-                className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteContentMutation.mutate(deletingContentId)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 cursor-pointer"
-              >
-                Delete Content
+              <button onClick={() => setSelectedJobId(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Job Executions Progress Modal */}
-      {selectedJobId && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setSelectedJobId(null)} />
-          <div className="relative z-10 w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl max-h-[85vh] overflow-y-auto space-y-6">
-            <button
-              onClick={() => setSelectedJobId(null)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            {isJobDetailLoading ? (
+            {isJobDetailLoading || !selectedJob ? (
               <div className="flex h-48 items-center justify-center">
-                <RefreshCw className="animate-spin text-purple-500" size={24} />
+                <RefreshCw className="animate-spin text-purple-500" size={32} />
               </div>
-            ) : selectedJob && (
+            ) : (
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-bold text-white">Pipeline Execution Status</h3>
-                  <p className="text-xs font-mono text-[#6e6e80] mt-1">{selectedJob.id}</p>
-                </div>
-
-                {/* Info Grid */}
-                <div className="grid grid-cols-2 gap-4 bg-[#161620] p-4 rounded-lg border border-[#222230] text-xs">
-                  <p className="text-[#9c9cb0]">Channel: <span className="font-semibold text-white">{selectedJob.channel?.name || 'Manual'}</span></p>
-                  <p className="text-[#9c9cb0]">Profile: <span className="font-semibold text-white">{selectedJob.contentProfile?.name || 'Manual'}</span></p>
-                  <p className="text-[#9c9cb0]">Attempts: <span className="font-semibold text-white">{selectedJob.retryCount + 1}</span></p>
-                  <p className="text-[#9c9cb0]">Created: <span className="font-semibold text-white">{new Date(selectedJob.createdAt).toLocaleString()}</span></p>
-                </div>
-
-                {/* Pipeline visualizer */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Pipeline Stages</h4>
-                  <div className="grid grid-cols-3 gap-2">
+                {/* Pipeline Stage Tracker */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                    Execution Pipeline Stages
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
                     {[
                       'Draft',
                       'GeneratingContent',
@@ -897,77 +756,120 @@ export const JobsView: React.FC = () => {
                       'GeneratingCaption',
                       'GeneratingHashtags',
                       'Queued',
-                    ].map((stg) => (
-                      <div
-                        key={stg}
-                        className={`rounded border p-2 text-center text-[10px] font-mono leading-tight flex flex-col justify-center items-center h-16 ${getStageColor(stg, selectedJob.pipelineStage, !!selectedJob.failureReason)}`}
-                      >
-                        <span className="font-bold text-white mb-1">
-                          {stg.replace('Generating', 'Gen ')}
-                        </span>
-                        {selectedJob.pipelineStage === stg && (
-                          <span className="text-[8px] opacity-75">
-                            {selectedJob.failureReason ? 'FAILED' : 'ACTIVE'}
-                          </span>
-                        )}
-                      </div>
-                    ))}
+                    ].map((stage) => {
+                      const color = getStageColor(
+                        stage,
+                        selectedJob.pipelineStage,
+                        selectedJob.pipelineStage === 'Failed'
+                      );
+                      return (
+                        <div
+                          key={stage}
+                          className={`border p-2.5 rounded-lg text-center font-semibold transition ${color}`}
+                        >
+                          {stage}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Failure card */}
-                {selectedJob.failureReason && (
-                  <div className="rounded-lg bg-red-950/20 border border-red-500/30 p-4 space-y-2">
-                    <div className="flex items-center gap-2 text-red-400 text-sm font-semibold">
+                {/* Job Error Warning */}
+                {selectedJob.pipelineStage === 'Failed' && (
+                  <div className="rounded-xl bg-red-950/30 border border-red-500/40 p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-red-400 font-semibold text-sm">
                       <AlertTriangle size={16} />
-                      Pipeline Failure
+                      Pipeline Failed at Stage: {selectedJob.failureStage || 'Unknown'}
                     </div>
-                    <p className="text-xs text-red-200">
-                      Failed at Stage: <span className="font-mono text-white font-semibold">{selectedJob.failureStage}</span>
-                    </p>
-                    <p className="text-xs text-red-300 font-mono bg-black/30 p-2.5 rounded border border-red-500/10 whitespace-pre-wrap">
-                      {selectedJob.failureReason}
+                    <p className="text-xs text-red-200 font-mono whitespace-pre-wrap bg-[#0e0e12] p-3 rounded border border-red-900/40">
+                      {selectedJob.failureReason || 'No detailed failure reason recorded.'}
                     </p>
                   </div>
                 )}
 
-                {/* Render output text preview */}
-                {selectedJob.generatedText && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Generated Quote Text</h4>
-                    <div className="bg-[#161620] border border-[#222230] p-4 rounded text-sm text-white select-all font-mono leading-relaxed">
-                      {selectedJob.generatedText}
-                    </div>
+                {/* Media Preview Artifacts */}
+                <div className="grid grid-cols-2 gap-4 border-t border-[#1a1a24] pt-4">
+                  <div>
+                    <h5 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
+                      Rendered Image Asset
+                    </h5>
+                    {selectedJob.imageUrl ? (
+                      <img
+                        src={formatMediaUrl(selectedJob.imageUrl)}
+                        alt="Rendered Image"
+                        className="h-44 w-full object-cover rounded-lg border border-[#1a1a24]"
+                      />
+                    ) : (
+                      <div className="h-44 w-full bg-[#161620] rounded-lg border border-[#1a1a24] flex items-center justify-center text-xs text-[#6e6e80]">
+                        Image Not Yet Compiled
+                      </div>
+                    )}
                   </div>
-                )}
 
-                {/* Actions */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-[#1a1a24]/50">
-                  {selectedJob.pipelineStage !== 'Queued' && selectedJob.pipelineStage !== 'Archived' && !selectedJob.failureReason && (
-                    <button
-                      onClick={() => cancelJobMutation.mutate(selectedJob.id)}
-                      disabled={cancelJobMutation.isPending}
-                      className="rounded-lg border border-red-900/50 hover:bg-red-950/20 bg-[#161620] px-4 py-2 text-sm font-semibold text-red-400 cursor-pointer disabled:opacity-50"
-                    >
-                      Cancel Job
-                    </button>
-                  )}
-                  {selectedJob.failureReason && (
-                    <button
-                      onClick={() => retryJobMutation.mutate(selectedJob.id)}
-                      disabled={retryJobMutation.isPending}
-                      className="rounded-lg bg-purple-600 hover:bg-purple-500 px-4 py-2 text-sm font-semibold text-white flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <RotateCcw size={14} />
-                      Retry Failure
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setSelectedJobId(null)}
-                    className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-                  >
-                    Close
-                  </button>
+                  <div>
+                    <h5 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
+                      Compiled Video Asset
+                    </h5>
+                    {selectedJob.videoUrl ? (
+                      <video
+                        src={formatMediaUrl(selectedJob.videoUrl)}
+                        controls
+                        className="h-44 w-full object-cover rounded-lg border border-[#1a1a24]"
+                      />
+                    ) : (
+                      <div className="h-44 w-full bg-[#161620] rounded-lg border border-[#1a1a24] flex items-center justify-center text-xs text-[#6e6e80]">
+                        Video Not Yet Compiled
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Text Content */}
+                <div>
+                  <h5 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Generated Text Quote / Shayari
+                  </h5>
+                  <p className="text-xs text-white bg-[#161620] p-3 rounded-lg border border-[#1a1a24] font-medium">
+                    {selectedJob.generatedText || 'Text generation pending...'}
+                  </p>
+                </div>
+
+                {/* Action Footer */}
+                <div className="flex justify-between items-center border-t border-[#1a1a24] pt-4">
+                  <span className="text-xs text-[#6e6e80]">
+                    Total Attempts: {selectedJob.retryCount + 1}
+                  </span>
+
+                  <div className="flex gap-3">
+                    {selectedJob.pipelineStage === 'Failed' && (
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        icon={RotateCcw}
+                        isLoading={retryJobMutation.isPending}
+                        loadingText="Retrying..."
+                        onClick={() => retryJobMutation.mutate(selectedJob.id)}
+                      >
+                        Retry Job
+                      </Button>
+                    )}
+
+                    {selectedJob.pipelineStage !== 'Completed' && selectedJob.pipelineStage !== 'Failed' && selectedJob.pipelineStage !== 'Archived' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isLoading={cancelJobMutation.isPending}
+                        loadingText="Cancelling..."
+                        onClick={() => cancelJobMutation.mutate(selectedJob.id)}
+                      >
+                        Cancel Job
+                      </Button>
+                    )}
+
+                    <Button variant="secondary" size="sm" onClick={() => setSelectedJobId(null)}>
+                      Close Monitor
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -975,116 +877,174 @@ export const JobsView: React.FC = () => {
         </div>
       )}
 
-      {/* Generated Content Preview Modal */}
-      {previewContentId && previewContent && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center px-4">
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setPreviewContentId(null)} />
-          <div className="relative z-10 w-full max-w-4xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-8 shadow-2xl max-h-[90vh] overflow-y-auto space-y-6">
-            <button
-              onClick={() => setPreviewContentId(null)}
-              className="absolute right-4 top-4 text-[#6e6e80] hover:text-white cursor-pointer"
-            >
-              <X size={20} />
-            </button>
-
-            <div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Eye size={20} className="text-purple-400" />
-                Pipeline Output Preview
-              </h3>
-              <p className="text-xs text-[#9c9cb0] font-mono mt-1">{previewContent.id}</p>
+      {/* Preview Content Modal */}
+      {previewContentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">Content Preview Inspector</h3>
+              <button onClick={() => setPreviewContentId(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Media rendering column */}
-              <div className="space-y-4 flex flex-col items-center">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] self-start">Rendered Assets</h4>
-                
-                {/* 9:16 vertical ratio container */}
-                <div className="relative w-[280px] h-[497px] rounded-xl border border-[#1a1a24] bg-[#000000] overflow-hidden shadow-inner flex items-center justify-center group">
-                  {previewContent.videoUrl ? (
-                    <video
-                      src={formatMediaUrl(previewContent.videoUrl)}
-                      controls
-                      playsInline
-                      className="w-full h-full object-cover"
-                    />
-                  ) : previewContent.imageUrl ? (
-                    <img
-                      src={formatMediaUrl(previewContent.imageUrl)}
-                      alt="Rendered output"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <div className="text-center p-4">
-                      <Image className="mx-auto text-[#6e6e80] mb-2 animate-bounce" size={32} />
-                      <p className="text-xs text-[#6e6e80]">Rendering media...</p>
+            {!previewContent ? (
+              <div className="flex h-48 items-center justify-center">
+                <RefreshCw className="animate-spin text-purple-500" size={32} />
+              </div>
+            ) : (
+              <div className="space-y-4 text-sm">
+                <div className="bg-[#151522] border border-[#222235] p-4 rounded-xl">
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Quote Text</span>
+                  <p className="text-white font-semibold text-base mt-2">"{previewContent.text}"</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {previewContent.imageUrl && (
+                    <div>
+                      <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Rendered PNG</span>
+                      <img src={formatMediaUrl(previewContent.imageUrl)} alt="Rendered" className="mt-2 h-40 w-full object-cover rounded-lg border border-[#1a1a24]" />
+                    </div>
+                  )}
+                  {previewContent.videoUrl && (
+                    <div>
+                      <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Rendered Video</span>
+                      <video src={formatMediaUrl(previewContent.videoUrl)} controls className="mt-2 h-40 w-full object-cover rounded-lg border border-[#1a1a24]" />
                     </div>
                   )}
                 </div>
 
-                <p className="text-xs text-[#6e6e80] text-center max-w-[280px]">
-                  {previewContent.videoUrl 
-                    ? '🎥 Video rendered successfully with zoom animation and background music' 
-                    : '🖼️ Image rendering is complete (vertical 1080x1920 PNG)'
-                  }
-                </p>
-              </div>
-
-              {/* Text outputs column */}
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Generated Quote Text</h4>
-                  <div
-                    className={`rounded-lg bg-[#161620] border border-[#222230] p-4 text-sm leading-relaxed text-white font-medium select-all ${
-                      previewContent.language === 'Urdu' ? 'text-right font-serif text-lg leading-loose' : ''
-                    }`}
-                    dir={previewContent.language === 'Urdu' ? 'rtl' : 'ltr'}
-                  >
-                    {previewContent.text}
-                  </div>
+                <div>
+                  <span className="text-xs text-[#6e6e80] uppercase tracking-wider font-semibold">Caption & Hashtags</span>
+                  <p className="text-xs text-[#9c9cb0] mt-1 bg-[#14141e] p-3 rounded-lg border border-[#1a1a24]">{previewContent.caption}</p>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Social Caption</h4>
-                  <div className="rounded-lg bg-[#161620] border border-[#222230] p-4 text-xs font-mono text-gray-200 select-all whitespace-pre-wrap leading-relaxed">
-                    {previewContent.caption || 'No caption generated'}
-                  </div>
-                </div>
-
-                {previewContent.hashtags && Array.isArray(previewContent.hashtags) && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">Hashtags</h4>
-                    <div className="flex flex-wrap gap-1.5">
-                      {previewContent.hashtags.map((h: string) => (
-                        <span
-                          key={h}
-                          className="rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 font-mono text-xs text-purple-400 select-all"
-                        >
-                          #{h}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-[#161620] border border-[#222230] p-4 rounded-lg text-xs space-y-2 text-[#9c9cb0]">
-                  <p className="font-semibold text-white uppercase text-[10px] tracking-wider mb-1">Provenance Details</p>
-                  <p>Content Profile: <span className="text-white font-medium">{previewContent.contentProfile?.name}</span></p>
-                  <p>Language: <span className="text-white font-medium">{previewContent.language}</span></p>
-                  <p>Content Type: <span className="text-white font-medium">{previewContent.contentProfile?.contentType?.name}</span></p>
-                  <p>Originating Job ID: <span className="font-mono text-white select-all">{previewContent.jobId}</span></p>
+                <div className="flex justify-end border-t border-[#1a1a24] pt-4">
+                  <Button variant="secondary" size="sm" onClick={() => setPreviewContentId(null)}>
+                    Close Preview
+                  </Button>
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Content Modal */}
+      {duplicateContentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">Duplicate Content</h3>
+              <button onClick={() => setDuplicateContentId(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-[#1a1a24]/50">
-              <button
-                onClick={() => setPreviewContentId(null)}
-                className="rounded-lg border border-[#1a1a24] bg-[#161620] px-4 py-2 text-sm font-semibold text-white hover:bg-[#222230] cursor-pointer"
-              >
-                Close Preview
+            {errorText && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300">
+                {errorText}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitAction((v) => duplicateContentMutation.mutate(v))} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Target Channel
+                </label>
+                <select
+                  {...registerAction('channelId')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                >
+                  <option value="">Select a Channel</option>
+                  {channels.map((ch: any) => (
+                    <option key={ch.id} value={ch.id}>{ch.name}</option>
+                  ))}
+                </select>
+                {actionErrors.channelId && <p className="mt-1 text-xs text-red-400">{actionErrors.channelId.message}</p>}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button variant="secondary" type="button" onClick={() => setDuplicateContentId(null)} disabled={duplicateContentMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={duplicateContentMutation.isPending} loadingText="Duplicating...">
+                  Duplicate & Run Pipeline
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Regenerate Content Modal */}
+      {regenerateContentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <h3 className="text-lg font-bold text-white">Regenerate Content</h3>
+              <button onClick={() => setRegenerateContentId(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
               </button>
+            </div>
+
+            {errorText && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300">
+                {errorText}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitAction((v) => regenerateContentMutation.mutate(v))} className="space-y-4 text-sm">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Target Channel
+                </label>
+                <select
+                  {...registerAction('channelId')}
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                >
+                  <option value="">Select a Channel</option>
+                  {channels.map((ch: any) => (
+                    <option key={ch.id} value={ch.id}>{ch.name}</option>
+                  ))}
+                </select>
+                {actionErrors.channelId && <p className="mt-1 text-xs text-red-400">{actionErrors.channelId.message}</p>}
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
+                <Button variant="secondary" type="button" onClick={() => setRegenerateContentId(null)} disabled={regenerateContentMutation.isPending}>
+                  Cancel
+                </Button>
+                <Button type="submit" isLoading={regenerateContentMutation.isPending} loadingText="Regenerating...">
+                  Regenerate Pipeline
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Content Modal */}
+      {deletingContentId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
+            <h3 className="text-lg font-bold text-white">Delete Content Record</h3>
+            <p className="text-sm text-[#9c9cb0]">
+              Are you sure you want to delete this generated content record? The rendered media files will remain in local storage archive.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" size="sm" onClick={() => setDeletingContentId(null)} disabled={deleteContentMutation.isPending}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={deleteContentMutation.isPending}
+                loadingText="Deleting..."
+                onClick={() => deleteContentMutation.mutate(deletingContentId)}
+              >
+                Delete Content
+              </Button>
             </div>
           </div>
         </div>

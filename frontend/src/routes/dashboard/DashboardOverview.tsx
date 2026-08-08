@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../../lib/api-client.js';
+import { useNotifications } from '../../context/NotificationContext.js';
+import { RefreshButton } from '../../components/ui/RefreshButton.js';
+import { SkeletonStatCard, SkeletonCard, SkeletonTable } from '../../components/ui/Skeleton.js';
+import { ErrorState } from '../../components/ui/ErrorState.js';
+import { Button } from '../../components/ui/Button.js';
 import { 
   CheckCircle, 
-  RefreshCw, 
   Activity, 
   Server, 
   Radio, 
@@ -62,35 +66,86 @@ interface DashboardStats {
 
 export const DashboardOverview: React.FC = () => {
   const queryClient = useQueryClient();
+  const { addToast } = useNotifications();
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
 
   // Query dashboard statistics
-  const { data, isLoading, refetch } = useQuery<{ data: DashboardStats }>({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<{ data: DashboardStats }>({
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
       const res = await apiClient.get('/dashboard/stats');
       return res.data;
     },
-    refetchInterval: 10000, // auto-refresh every 10 seconds for real-time operations!
+    refetchInterval: 10000,
   });
 
-  // Mutation to retry/re-enqueue a failed job
+  // Mutation to retry a failed job
   const retryJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
+      setRetryingJobId(jobId);
       await apiClient.post(`/jobs/${jobId}/retry`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      alert('Job retry enqueued successfully!');
+      addToast('Job retry enqueued successfully!', 'success');
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error?.message || 'Failed to retry job');
-    }
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to retry job', 'error');
+    },
+    onSettled: () => {
+      setRetryingJobId(null);
+    },
   });
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <RefreshCw className="h-8 w-8 animate-spin text-purple-500" />
+      <div className="space-y-8 p-6 text-white bg-[#0a0a0c] min-h-screen">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-red-500">
+              System Operations Dashboard
+            </h2>
+            <p className="text-sm text-[#9c9cb0] mt-1">Real-time status overview of content generation and distribution queues.</p>
+          </div>
+          <RefreshButton onRefresh={() => {}} isRefreshing={true} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <SkeletonStatCard />
+          <SkeletonStatCard />
+          <SkeletonStatCard />
+          <SkeletonStatCard />
+        </div>
+
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-8">
+            <SkeletonTable rows={4} columns={3} />
+            <SkeletonCard />
+          </div>
+          <div className="space-y-8">
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="p-6 bg-[#0a0a0c] min-h-screen">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-extrabold tracking-tight text-white">
+            System Operations Dashboard
+          </h2>
+          <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
+        </div>
+        <ErrorState
+          title="Unable to load dashboard statistics"
+          message={(error as any)?.message || 'Failed to retrieve system status metrics.'}
+          onRetry={() => refetch()}
+          onRefresh={() => refetch()}
+        />
       </div>
     );
   }
@@ -114,13 +169,7 @@ export const DashboardOverview: React.FC = () => {
           </h2>
           <p className="text-sm text-[#9c9cb0] mt-1">Real-time status overview of content generation and distribution queues.</p>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="p-2.5 bg-[#161622] hover:bg-[#1d1d2e] rounded-xl border border-[#222235] transition-all"
-          title="Refresh Dashboard"
-        >
-          <RefreshCw className="h-4 w-4" />
-        </button>
+        <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} title="Refresh System Dashboard" />
       </div>
 
       {/* Grid Stats */}
@@ -217,14 +266,16 @@ export const DashboardOverview: React.FC = () => {
                         Retries: {job.retryCount} • Time: {new Date(job.failedAt).toLocaleString()}
                       </div>
                     </div>
-                    <button
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon={Play}
+                      isLoading={retryJobMutation.isPending && retryingJobId === job.id}
+                      loadingText="Retrying..."
                       onClick={() => retryJobMutation.mutate(job.id)}
-                      disabled={retryJobMutation.isPending}
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-md transition-colors disabled:opacity-50"
                     >
-                      <Play className="h-3.5 w-3.5 fill-current" />
                       Retry Run
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>

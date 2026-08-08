@@ -13,10 +13,22 @@ export const validateRequest = (schema: {
         req.body = await schema.body.parseAsync(req.body);
       }
       if (schema.query) {
-        req.query = (await schema.query.parseAsync(req.query)) as any;
+        const parsedQuery = await schema.query.parseAsync(req.query);
+        Object.defineProperty(req, 'query', {
+          value: parsedQuery,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
       if (schema.params) {
-        req.params = (await schema.params.parseAsync(req.params)) as any;
+        const parsedParams = await schema.params.parseAsync(req.params);
+        Object.defineProperty(req, 'params', {
+          value: parsedParams,
+          writable: true,
+          configurable: true,
+          enumerable: true,
+        });
       }
       next();
     } catch (error) {
@@ -36,4 +48,5 @@ export const validateRequest = (schema: {
     }
   };
 };
+
 export default validateRequest;

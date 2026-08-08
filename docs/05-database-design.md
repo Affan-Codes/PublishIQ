@@ -187,7 +187,7 @@ jobType                 Enum(ContentPipeline, Cleanup, Archive, RetryPublish, To
 channelId               FK -> Channel NULL          // NULL for non-pipeline maintenance jobs not tied to a Channel
 contentProfileId        FK -> ContentProfile NULL
 configSnapshot          JSONB NULL                  // {promptVersionId, templateVersionId} captured at Draft time — resolves A-13 restart consistency check
-pipelineStage           Enum(Draft, GeneratingContent, Validating, RenderingImage, AttachingMusic, RenderingVideo, GeneratingCaption, GeneratingHashtags, Publishing, Completed, Failed, Archived) NULL   // NULL for non-pipeline Job Types
+pipelineStage           Enum(Draft, Queued, Running, GeneratingContent, Validating, RenderingImage, AttachingMusic, RenderingVideo, GeneratingCaption, GeneratingHashtags, Publishing, Completed, Failed, Archived) NULL   // NULL for non-pipeline Job Types
 maintenanceState        String NULL                 // simple state for Independent Job Types (Section 18.2), own smaller enum per type
 failureStage            String NULL
 failureReason           Text NULL
