@@ -13,6 +13,12 @@ const idParamSchema = z.object({
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(['unread', 'read', 'all']).optional(),
+  type: z.string().optional(),
+  search: z.string().optional(),
+  severity: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
 });
 
 router.use(requireAuth);
@@ -23,9 +29,20 @@ router.get(
 );
 
 router.get(
+  '/notifications/unread-count',
+  notificationsController.getUnreadCount
+);
+
+router.get(
   '/notifications',
   validateRequest({ query: listQuerySchema }),
   notificationsController.list
+);
+
+router.get(
+  '/notifications/:id',
+  validateRequest({ params: idParamSchema }),
+  notificationsController.getById
 );
 
 router.post(
@@ -37,6 +54,12 @@ router.post(
 router.post(
   '/notifications/read-all',
   notificationsController.markAllAsRead
+);
+
+router.delete(
+  '/notifications/:id',
+  validateRequest({ params: idParamSchema }),
+  notificationsController.delete
 );
 
 export default router;

@@ -34,7 +34,25 @@ export const notificationsController = {
   },
 
   /**
-   * Lists all in-app notifications for the workspace, paginated.
+   * Gets unread notification count for the workspace.
+   */
+  async getUnreadCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const workspaceId = req.workspaceId as string;
+      const unreadCount = await notificationService.getUnreadCount(workspaceId);
+
+      res.json({
+        success: true,
+        data: { unreadCount },
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Lists in-app notifications for the workspace with search, filter, and pagination.
    */
   async list(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -43,7 +61,19 @@ export const notificationsController = {
       const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
       const skip = (page - 1) * limit;
 
-      const { items, total } = await notificationService.listNotifications(workspaceId, skip, limit);
+      const status = req.query.status as 'unread' | 'read' | 'all' | undefined;
+      const type = req.query.type as string | undefined;
+      const search = req.query.search as string | undefined;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+      const { items, total, unreadCount } = await notificationService.listNotifications(workspaceId, skip, limit, {
+        status,
+        type,
+        search,
+        startDate,
+        endDate,
+      });
 
       res.json({
         success: true,
@@ -52,7 +82,28 @@ export const notificationsController = {
           total,
           page,
           limit,
+          unreadCount,
         },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Gets a single notification by ID with details.
+   */
+  async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const workspaceId = req.workspaceId as string;
+
+      const notification = await notificationService.getNotificationById(id as string, workspaceId);
+
+      res.json({
+        success: true,
+        data: notification,
+        meta: {},
       });
     } catch (error) {
       next(error);
@@ -91,6 +142,26 @@ export const notificationsController = {
       res.json({
         success: true,
         data: {},
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Deletes a notification by ID.
+   */
+  async delete(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { id } = req.params;
+      const workspaceId = req.workspaceId as string;
+
+      const deleted = await notificationService.deleteNotification(id as string, workspaceId);
+
+      res.json({
+        success: true,
+        data: deleted,
         meta: {},
       });
     } catch (error) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
-import { useNotifications } from '../../context/NotificationContext.js';
+import { NotificationDropdown } from '../notifications/NotificationDropdown.js';
 import { useQuery } from '@tanstack/react-query';
 import apiClient from '../../lib/api-client.js';
 import {
@@ -20,7 +20,6 @@ import {
   Terminal,
   Settings,
   LogOut,
-  Bell,
   Search,
   Loader2,
   ExternalLink
@@ -39,7 +38,6 @@ interface SearchResult {
 
 export const DashboardLayout: React.FC = () => {
   const { operator, logout } = useAuth();
-  const { unreadCount, resetUnreadCount } = useNotifications();
   const navigate = useNavigate();
 
   const [searchVal, setSearchVal] = useState('');
@@ -286,20 +284,7 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Right Header Controls */}
           <div className="flex items-center gap-4">
-            <button
-              onClick={() => {
-                resetUnreadCount();
-                navigate('/notifications');
-              }}
-              className="relative rounded-full p-2 text-[#9c9cb0] transition hover:bg-[#161620] hover:text-white"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-purple-500 text-[10px] font-bold text-white">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
+            <NotificationDropdown />
 
             <div className="h-8 w-px bg-[#1a1a24]" />
 

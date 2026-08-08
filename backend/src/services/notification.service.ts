@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { notificationRepository } from '../repositories/notification.repository.js';
+import { notificationRepository, NotificationListOptions } from '../repositories/notification.repository.js';
 import { localEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 
@@ -59,13 +59,13 @@ export const notificationService = {
 
         switch (type) {
           case 'JobFailed':
-            const attempts = payload.retryCount || 0;
-            const maxAttempts = 3; // or fetch from configuration
+            const attempts = payload?.retryCount || 0;
+            const maxAttempts = 3;
             if (attempts >= maxAttempts) {
-              message = `Job failed and all retries have been exhausted: ${payload.message || 'Unknown error'}`;
+              message = `Job failed and all retries have been exhausted: ${payload?.message || 'Unknown error'}`;
               shouldNotify = true;
             } else {
-              message = `Job failed and is retrying (Attempt ${attempts}): ${payload.message || 'Unknown error'}`;
+              message = `Job failed and is retrying (Attempt ${attempts}): ${payload?.message || 'Unknown error'}`;
               shouldNotify = true;
             }
             break;
@@ -81,17 +81,15 @@ export const notificationService = {
             break;
 
           case 'SchedulerError':
-            message = `Scheduler encountered a processing error: ${payload.message || 'Unknown error'}`;
+            message = `Scheduler encountered a processing error: ${payload?.message || 'Unknown error'}`;
             shouldNotify = true;
             break;
 
           default:
-            // Skip other intermediate stages to avoid spamming the user
             break;
         }
 
         if (shouldNotify && message) {
-          // Check if notification already exists for this event to avoid duplicate inserts
           const existing = await notificationRepository.findFirst({
             domainEventId: eventId,
           });
@@ -103,6 +101,8 @@ export const notificationService = {
               message,
             });
 
+            const unreadCount = await notificationRepository.countUnread(workspaceId);
+
             logger.info({ notificationId: notification.id, type }, 'Created in-app notification');
 
             // Stream notification to active dashboard clients
@@ -112,6 +112,8 @@ export const notificationService = {
               readAt: notification.readAt,
               createdAt: notification.createdAt,
               jobId,
+              unreadCount,
+              domainEvent: (notification as any).domainEvent,
             });
           }
         }
@@ -119,16 +121,29 @@ export const notificationService = {
         logger.error({ err }, 'Failed to translate domain event to notification');
       }
     });
-    
+
     logger.info('Notification Service event listener started');
   },
 
-  async listNotifications(workspaceId: string, skip: number, limit: number) {
-    const [items, total] = await Promise.all([
-      notificationRepository.list(workspaceId, skip, limit),
-      notificationRepository.count(workspaceId),
+  async getUnreadCount(workspaceId: string): Promise<number> {
+    return notificationRepository.countUnread(workspaceId);
+  },
+
+  async getNotificationById(id: string, workspaceId: string) {
+    const item = await notificationRepository.getById(id, workspaceId);
+    if (!item) {
+      throw new Error('Notification not found');
+    }
+    return item;
+  },
+
+  async listNotifications(workspaceId: string, skip: number, limit: number, options: NotificationListOptions = {}) {
+    const [items, total, unreadCount] = await Promise.all([
+      notificationRepository.list(workspaceId, skip, limit, options),
+      notificationRepository.count(workspaceId, options),
+      notificationRepository.countUnread(workspaceId),
     ]);
-    return { items, total };
+    return { items, total, unreadCount };
   },
 
   async markAsRead(id: string, workspaceId: string) {
@@ -136,13 +151,29 @@ export const notificationService = {
     if (!existing || existing.workspaceId !== workspaceId) {
       throw new Error('Notification not found');
     }
-    return notificationRepository.update(id, {
+    const updated = await notificationRepository.update(id, {
       readAt: new Date(),
     });
+    const unreadCount = await notificationRepository.countUnread(workspaceId);
+    this.broadcastToSSE(workspaceId, 'unread_count_update', { unreadCount });
+    return updated;
   },
 
   async markAllAsRead(workspaceId: string) {
-    return notificationRepository.markAllAsRead(workspaceId);
+    const res = await notificationRepository.markAllAsRead(workspaceId);
+    this.broadcastToSSE(workspaceId, 'unread_count_update', { unreadCount: 0 });
+    return res;
+  },
+
+  async deleteNotification(id: string, workspaceId: string) {
+    const existing = await notificationRepository.getById(id);
+    if (!existing || existing.workspaceId !== workspaceId) {
+      throw new Error('Notification not found');
+    }
+    const deleted = await notificationRepository.delete(id, workspaceId);
+    const unreadCount = await notificationRepository.countUnread(workspaceId);
+    this.broadcastToSSE(workspaceId, 'unread_count_update', { unreadCount });
+    return deleted;
   },
 };
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { useAuth } from './AuthContext.js';
 import { connectSSE } from '../lib/sse-client.js';
 
@@ -16,6 +17,7 @@ interface NotificationContextType {
   removeToast: (id: string) => void;
   addToast: (message: string, type?: Toast['type']) => void;
   resetUnreadCount: () => void;
+  refetchUnreadCount: () => void;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -23,14 +25,25 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const [unreadCount, setUnreadCount] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // React Query unread count fetcher
+  const { data: unreadData, refetch: refetchUnreadCount } = useQuery<{ data: { unreadCount: number } }>({
+    queryKey: ['notifications', 'unread-count'],
+    queryFn: async () => {
+      const res = await axios.get('/api/v1/notifications/unread-count', { withCredentials: true });
+      return res.data;
+    },
+    enabled: isAuthenticated,
+    staleTime: 30000,
+  });
+
+  const unreadCount = unreadData?.data?.unreadCount || 0;
 
   const addToast = (message: string, type: Toast['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
     
-    // Automatically clear toast after 5 seconds
     setTimeout(() => {
       removeToast(id);
     }, 5000);
@@ -41,16 +54,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const clearToasts = () => setToasts([]);
-  const resetUnreadCount = () => setUnreadCount(0);
+
+  const resetUnreadCount = () => {
+    queryClient.setQueryData(['notifications', 'unread-count'], 0);
+  };
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setUnreadCount(0);
+      queryClient.setQueryData(['notifications', 'unread-count'], 0);
       return;
     }
 
     const disconnect = connectSSE(queryClient, (message) => {
-      setUnreadCount((c) => c + 1);
+      queryClient.setQueryData(['notifications', 'unread-count'], (old: any) => {
+        const current = typeof old === 'number' ? old : (old?.data?.unreadCount || 0);
+        return current + 1;
+      });
       addToast(message, 'info');
     });
 
@@ -66,6 +85,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         removeToast,
         addToast,
         resetUnreadCount,
+        refetchUnreadCount,
       }}
     >
       {children}
@@ -80,3 +100,5 @@ export const useNotifications = () => {
   }
   return context;
 };
+
+export default NotificationProvider;
