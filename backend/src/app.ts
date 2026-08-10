@@ -63,9 +63,6 @@ app.use(cookieParser(env.SESSION_SECRET));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static media files from MEDIA_ROOT
-app.use('/media', express.static(env.MEDIA_ROOT));
-
 // Mount routes
 app.use('/api/v1', v1Router);
 

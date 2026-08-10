@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import { NotificationDropdown } from '../notifications/NotificationDropdown.js';
+import ErrorBoundary from './ErrorBoundary.js';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import apiClient from '../../lib/api-client.js';
@@ -299,7 +300,9 @@ export const DashboardLayout: React.FC = () => {
 
         {/* Route Page Body */}
         <main className="flex-1 overflow-y-auto bg-[#0a0a0c] p-8 text-[#e0e0e6]">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

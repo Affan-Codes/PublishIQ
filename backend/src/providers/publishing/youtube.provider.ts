@@ -2,17 +2,15 @@ import { PublishingAdapter, GeneratedContentData, PlatformConnectionData, Publis
 import { Platform } from '@prisma/client';
 import { logger } from '../../utils/logger.js';
 import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
 import { decrypt } from '../../utils/crypto.js';
 import { env } from '../../config/env.js';
 
 /**
- * Uploads a video file stream to YouTube via a resumable upload session location URL.
- * If a network disconnect or socket error occurs mid-transfer, it queries Google for the
- * received byte range (Content-Range: bytes *\/total) and resumes streaming from that offset (YT-013 fix).
+ * Uploads a video file stream directly from a remote Cloudinary URL to YouTube via a resumable upload session location URL.
+ * If a network disconnect occurs mid-transfer, it queries Google for the received byte range
+ * and resumes streaming from Cloudinary using an HTTP Range header (bytes=${offset}-).
  */
-async function uploadStreamWithResumption(uploadUrl: string, videoFilePath: string, fileSize: number): Promise<any> {
+async function uploadStreamWithResumption(uploadUrl: string, videoUrl: string, fileSize: number): Promise<any> {
   let offset = 0;
   let attempts = 0;
   const maxAttempts = 3;
@@ -21,8 +19,9 @@ async function uploadStreamWithResumption(uploadUrl: string, videoFilePath: stri
     attempts++;
     try {
       if (offset === 0) {
-        const fileStream = fs.createReadStream(videoFilePath);
-        const response = await axios.put(uploadUrl, fileStream, {
+        logger.info({ videoUrl, fileSize, attempt: attempts }, 'Streaming video from Cloudinary to YouTube resumable upload endpoint');
+        const remoteStreamRes = await axios.get(videoUrl, { responseType: 'stream' });
+        const response = await axios.put(uploadUrl, remoteStreamRes.data, {
           headers: {
             'Content-Length': fileSize.toString(),
             'Content-Type': 'video/mp4',
@@ -37,10 +36,13 @@ async function uploadStreamWithResumption(uploadUrl: string, videoFilePath: stri
         }
       } else {
         const remainingBytes = fileSize - offset;
-        const fileStream = fs.createReadStream(videoFilePath, { start: offset });
-        logger.info({ offset, remainingBytes, attempt: attempts }, 'Resuming YouTube video upload stream from byte offset');
+        logger.info({ offset, remainingBytes, attempt: attempts }, 'Resuming YouTube video upload stream from Cloudinary byte offset using Range header');
+        const remoteStreamRes = await axios.get(videoUrl, {
+          headers: { Range: `bytes=${offset}-` },
+          responseType: 'stream',
+        });
 
-        const response = await axios.put(uploadUrl, fileStream, {
+        const response = await axios.put(uploadUrl, remoteStreamRes.data, {
           headers: {
             'Content-Length': remainingBytes.toString(),
             'Content-Range': `bytes ${offset}-${fileSize - 1}/${fileSize}`,
@@ -121,7 +123,7 @@ export const youtubeAdapter: PublishingAdapter = {
   },
 
   async publish(content: GeneratedContentData, connection: PlatformConnectionData, options?: { privacyStatus?: string }): Promise<PublishResult> {
-    logger.info({ platform: this.platform }, 'Publishing to YouTube Shorts via Resumable Upload');
+    logger.info({ platform: this.platform }, 'Publishing to YouTube Shorts via Resumable Upload from Cloudinary');
 
     let accessToken: string;
     try {
@@ -149,19 +151,32 @@ export const youtubeAdapter: PublishingAdapter = {
     }
 
     try {
-      const relativeVideoPath = content.videoUrl!.replace(/^\/?(media\/)?/, '');
-      const videoFilePath = path.resolve(env.MEDIA_ROOT, relativeVideoPath);
+      const videoUrl = content.videoUrl!;
 
-      if (!fs.existsSync(videoFilePath)) {
-        return {
-          success: false,
-          errorMessage: `Video file not found locally at: ${videoFilePath}`,
-          errorCode: 'FILE_NOT_FOUND',
-        };
+      // Determine size of remote video file on Cloudinary
+      let fileSize = 0;
+      try {
+        const headRes = await axios.head(videoUrl);
+        const contentLengthHeader = headRes.headers['content-length'];
+        if (contentLengthHeader) {
+          fileSize = parseInt(String(contentLengthHeader), 10);
+        }
+      } catch (headErr: any) {
+        logger.debug({ videoUrl, err: headErr.message }, 'HEAD request failed for Cloudinary video, falling back to GET for size');
       }
 
-      const fileStat = fs.statSync(videoFilePath);
-      const fileSize = fileStat.size;
+      if (!fileSize) {
+        const getRes = await axios.get(videoUrl, { responseType: 'arraybuffer' });
+        fileSize = getRes.data.length;
+      }
+
+      if (!fileSize) {
+        return {
+          success: false,
+          errorMessage: `Unable to determine file size for remote video URL: ${videoUrl}`,
+          errorCode: 'INVALID_REMOTE_MEDIA',
+        };
+      }
 
       // Build Title and Description
       const rawTitle = content.caption || 'Daily Wisdom';
@@ -189,7 +204,7 @@ export const youtubeAdapter: PublishingAdapter = {
       };
 
       // Step 1: Initiate YouTube Resumable Upload session (YT-003 fix)
-      logger.info({ fileSize, privacyStatus }, 'Initiating YouTube resumable upload session');
+      logger.info({ fileSize, privacyStatus }, 'Initiating YouTube resumable upload session for Cloudinary asset');
       const initResponse = await axios.post(
         'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
         metadata,
@@ -212,12 +227,12 @@ export const youtubeAdapter: PublishingAdapter = {
         };
       }
 
-      logger.info('YouTube resumable upload session created. Uploading video stream with byte-level resumption capability...');
+      logger.info('YouTube resumable upload session created. Uploading video stream directly from Cloudinary...');
 
-      // Step 2 & Resumption: Stream file to uploadUrl with byte-offset query resumption (YT-013 fix)
-      const uploadResultData = await uploadStreamWithResumption(uploadUrl, videoFilePath, fileSize);
+      // Step 2 & Resumption: Stream file from Cloudinary to uploadUrl with byte-offset query resumption
+      const uploadResultData = await uploadStreamWithResumption(uploadUrl, videoUrl, fileSize);
 
-      logger.info({ videoId: uploadResultData?.id }, 'YouTube video upload completed successfully');
+      logger.info({ videoId: uploadResultData?.id }, 'YouTube video upload completed successfully from Cloudinary');
 
       return {
         success: true,

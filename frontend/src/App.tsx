@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { NotificationProvider } from './context/NotificationContext.js';
 import DashboardLayout from './components/shared/DashboardLayout.js';
+import ErrorBoundary from './components/shared/ErrorBoundary.js';
 import { PageSkeleton } from './components/ui/Skeleton.js';
 
 // Lazy-loaded Page Views (Route Code Splitting)
@@ -88,11 +89,13 @@ export const AppContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <NotificationProvider>
-          <AppContent />
-        </NotificationProvider>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <NotificationProvider>
+            <AppContent />
+          </NotificationProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </QueryClientProvider>
   );
 };

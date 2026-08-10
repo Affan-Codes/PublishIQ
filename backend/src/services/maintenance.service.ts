@@ -1,11 +1,110 @@
-import { HealthStatus, PipelineStage } from '@prisma/client';
+import { HealthStatus, PipelineStage, PublishRecordStatus } from '@prisma/client';
+import { prisma } from '../database/db.js';
+import { env } from '../config/env.js';
 import { jobRepository } from '../repositories/job.repository.js';
 import { logRepository } from '../repositories/log.repository.js';
 import { platformConnectionRepository } from '../repositories/platformConnection.repository.js';
+import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
 import { runContentPipeline } from './content-pipeline.service.js';
 import { publishingService } from './publishing.service.js';
 import eventBus from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
+
+export async function runMediaCleanup(): Promise<{ cleanedJobsCount: number; deletedFilesCount: number }> {
+  const retentionDays = env.MEDIA_RETENTION_DAYS;
+  logger.info({ retentionDays }, 'Running background media retention cleanup task');
+
+  const thresholdDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+  // Query generated content linked to terminal jobs older than retention threshold
+  const contentsToClean = await prisma.generatedContent.findMany({
+    where: {
+      mediaDeletedAt: null,
+      job: {
+        pipelineStage: {
+          in: [PipelineStage.Completed, PipelineStage.Failed, PipelineStage.Archived],
+        },
+        updatedAt: {
+          lte: thresholdDate,
+        },
+      },
+      OR: [
+        { imageUrl: { not: null } },
+        { videoUrl: { not: null } },
+      ],
+    },
+    include: {
+      job: {
+        include: {
+          publishingRecords: true,
+        },
+      },
+    },
+  });
+
+  let cleanedJobsCount = 0;
+  let deletedFilesCount = 0;
+
+  for (const gc of contentsToClean) {
+    const job = gc.job;
+
+    // Skip if any publishing record is non-terminal
+    if (job?.publishingRecords) {
+      const hasNonTerminalRecords = job.publishingRecords.some((rec) => {
+        return rec.status !== PublishRecordStatus.Success && rec.status !== PublishRecordStatus.Failure;
+      });
+
+      if (hasNonTerminalRecords) {
+        logger.debug({ jobId: gc.jobId }, 'Skipping media cleanup for job with non-terminal publishing records');
+        continue;
+      }
+    }
+
+    const jobUpdatedAt = job?.updatedAt || gc.updatedAt;
+    const ageInDays = Math.floor((Date.now() - new Date(jobUpdatedAt).getTime()) / (1000 * 60 * 60 * 24));
+    let filesDeletedForJob = 0;
+
+    if (gc.imageUrl) {
+      try {
+        if (cloudinaryStorageProvider.delete) {
+          await cloudinaryStorageProvider.delete(gc.imageUrl);
+        }
+        logger.info({ jobId: gc.jobId, imageUrl: gc.imageUrl, ageInDays }, 'Deleted expired job image asset');
+        filesDeletedForJob++;
+      } catch (err: any) {
+        logger.error({ jobId: gc.jobId, imageUrl: gc.imageUrl, err: err.message }, 'Failed to delete job image asset');
+      }
+    }
+
+    if (gc.videoUrl) {
+      try {
+        if (cloudinaryStorageProvider.delete) {
+          await cloudinaryStorageProvider.delete(gc.videoUrl);
+        }
+        logger.info({ jobId: gc.jobId, videoUrl: gc.videoUrl, ageInDays }, 'Deleted expired job video asset');
+        filesDeletedForJob++;
+      } catch (err: any) {
+        logger.error({ jobId: gc.jobId, videoUrl: gc.videoUrl, err: err.message }, 'Failed to delete job video asset');
+      }
+    }
+
+    // Mark mediaDeletedAt and clear URLs in database
+    await prisma.generatedContent.update({
+      where: { id: gc.id },
+      data: {
+        imageUrl: null,
+        videoUrl: null,
+        mediaDeletedAt: new Date(),
+      },
+    });
+
+    cleanedJobsCount++;
+    deletedFilesCount += filesDeletedForJob;
+  }
+
+  logger.info({ cleanedJobsCount, deletedFilesCount, retentionDays }, 'Media retention cleanup completed');
+  return { cleanedJobsCount, deletedFilesCount };
+}
 
 export async function runCleanup(): Promise<void> {
   logger.info('Running background data cleanup tasks');
@@ -16,14 +115,10 @@ export async function runCleanup(): Promise<void> {
 
   const { count } = await logRepository.deleteLogsOlderThan(thresholdDate);
 
-  logger.info({ logsDeleted: count }, 'Cleanup completed successfully');
-}
+  // Run media retention cleanup
+  const mediaResult = await runMediaCleanup();
 
-export async function runArchive(): Promise<void> {
-  logger.info('Running background data archiving tasks');
-  
-  // Simulated archiving task
-  logger.info('Archiving completed successfully');
+  logger.info({ logsDeleted: count, ...mediaResult }, 'Cleanup completed successfully');
 }
 
 export async function runRetryPublish(jobId: string): Promise<void> {
@@ -88,7 +183,7 @@ export async function runHealthCheck(): Promise<void> {
 
 export const maintenanceService = {
   runCleanup,
-  runArchive,
+  runMediaCleanup,
   runRetryPublish,
   runTokenRefresh,
   runHealthCheck,

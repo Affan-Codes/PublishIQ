@@ -28,18 +28,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const queryClient = useQueryClient();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  // React Query unread count fetcher
-  const { data: unreadData, refetch: refetchUnreadCount } = useQuery<{ data: { unreadCount: number } }>({
+  // Standardized plain number React Query unread count fetcher
+  const { data: unreadCount = 0, refetch: refetchUnreadCount } = useQuery<number>({
     queryKey: ['notifications', 'unread-count'],
     queryFn: async () => {
       const res = await axios.get('/api/v1/notifications/unread-count', { withCredentials: true });
-      return res.data;
+      const count = res.data?.data?.unreadCount;
+      return typeof count === 'number' ? count : 0;
     },
     enabled: isAuthenticated,
     staleTime: 30000,
   });
-
-  const unreadCount = unreadData?.data?.unreadCount || 0;
 
   const addToast = (message: string, type: ToastItem['type'] = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -61,20 +60,17 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const clearToasts = () => setToasts([]);
 
   const resetUnreadCount = () => {
-    queryClient.setQueryData(['notifications', 'unread-count'], 0);
+    queryClient.setQueryData<number>(['notifications', 'unread-count'], 0);
   };
 
   useEffect(() => {
     if (!isAuthenticated) {
-      queryClient.setQueryData(['notifications', 'unread-count'], 0);
+      queryClient.setQueryData<number>(['notifications', 'unread-count'], 0);
       return;
     }
 
     const disconnect = connectSSE(queryClient, (message) => {
-      queryClient.setQueryData(['notifications', 'unread-count'], (old: any) => {
-        const current = typeof old === 'number' ? old : (old?.data?.unreadCount || 0);
-        return current + 1;
-      });
+      queryClient.setQueryData<number>(['notifications', 'unread-count'], (old = 0) => old + 1);
       toast.info(message);
     });
 

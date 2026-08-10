@@ -2,8 +2,6 @@ import { PublishingAdapter, GeneratedContentData, PlatformConnectionData, Publis
 import { Platform } from '@prisma/client';
 import { logger } from '../../utils/logger.js';
 import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
 import FormData from 'form-data';
 import { decrypt } from '../../utils/crypto.js';
 import { env } from '../../config/env.js';
@@ -35,7 +33,7 @@ export const facebookAdapter: PublishingAdapter = {
   },
 
   async publish(content: GeneratedContentData, connection: PlatformConnectionData): Promise<PublishResult> {
-    logger.info({ platform: this.platform }, 'Publishing to Facebook Page');
+    logger.info({ platform: this.platform }, 'Publishing to Facebook Page from Cloudinary storage');
     
     let accessToken: string;
     try {
@@ -76,16 +74,13 @@ export const facebookAdapter: PublishingAdapter = {
 
       const caption = content.caption || '';
       
-      // 2. Publish Image or Video
+      // 2. Publish Image or Video from Cloudinary URL
       if (content.videoUrl) {
-        const videoFilePath = path.resolve(env.MEDIA_ROOT, content.videoUrl);
-        
-        if (!fs.existsSync(videoFilePath)) {
-          return { success: false, errorMessage: `Video file not found locally at: ${videoFilePath}` };
-        }
+        logger.info({ videoUrl: content.videoUrl, pageId }, 'Publishing video to Facebook Page via Cloudinary URL stream');
+        const videoStreamRes = await axios.get(content.videoUrl, { responseType: 'stream' });
 
         const form = new FormData();
-        form.append('source', fs.createReadStream(videoFilePath));
+        form.append('source', videoStreamRes.data);
         form.append('description', caption);
 
         const response = await axios.post(`https://graph.facebook.com/${apiVersion}/${pageId}/videos`, form, {
@@ -103,15 +98,12 @@ export const facebookAdapter: PublishingAdapter = {
           platformResponse: response.data,
         };
       } else {
-        // Image upload
-        const imageFilePath = path.resolve(env.MEDIA_ROOT, content.imageUrl!);
-        
-        if (!fs.existsSync(imageFilePath)) {
-          return { success: false, errorMessage: `Image file not found locally at: ${imageFilePath}` };
-        }
+        // Image upload from Cloudinary URL
+        logger.info({ imageUrl: content.imageUrl, pageId }, 'Publishing photo to Facebook Page via Cloudinary URL');
+        const imageStreamRes = await axios.get(content.imageUrl!, { responseType: 'stream' });
 
         const form = new FormData();
-        form.append('source', fs.createReadStream(imageFilePath));
+        form.append('source', imageStreamRes.data);
         form.append('message', caption);
 
         const response = await axios.post(`https://graph.facebook.com/${apiVersion}/${pageId}/photos`, form, {
@@ -148,7 +140,7 @@ export const facebookAdapter: PublishingAdapter = {
   },
 
   async refreshToken(refreshToken: string) {
-    const appId = env.FACEBOOK_APP_ID || process.env.FACEBOOK_APP_ID;
+    const appId = env.FACEBOOK_APP_ID || process.env.FACEBOOK_APP_SECRET;
     const appSecret = env.FACEBOOK_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
     if (!appId || !appSecret) {
       throw new Error('FACEBOOK_APP_ID and FACEBOOK_APP_SECRET must be set to refresh Facebook tokens.');

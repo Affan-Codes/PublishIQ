@@ -10,13 +10,13 @@ import { SkeletonCard } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
-import { Plus, Edit2, Trash2, X, AlertCircle, Music } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, AlertCircle, Music, Upload, FileText, ExternalLink } from 'lucide-react';
 
 const assetSchema = z.object({
   name: z.string().min(1, 'Asset name is required').max(100),
   type: z.enum(['Background', 'Font', 'Music', 'Logo', 'Watermark', 'Animation', 'Icon']),
   status: z.enum(['Active', 'Disabled']),
-  filePath: z.string().min(1, 'Asset file path is required'),
+  filePath: z.string().optional(),
   licenseStatus: z.enum(['Confirmed', 'Unconfirmed']),
 });
 
@@ -41,6 +41,7 @@ export const AssetsView: React.FC = () => {
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [selectedFilterType, setSelectedFilterType] = useState<string>('ALL');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Queries
   const { data: assets = [], isLoading, isFetching, isError, error, refetch } = useQuery<Asset[]>({
@@ -52,25 +53,28 @@ export const AssetsView: React.FC = () => {
     },
   });
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<AssetFormValues>({
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<AssetFormValues>({
     resolver: zodResolver(assetSchema),
   });
 
   const closeDialog = () => {
     setIsDialogOpen(false);
     setEditingAsset(null);
+    setSelectedFile(null);
     setErrorText(null);
   };
 
   // Mutations
   const createMutation = useMutation({
-    mutationFn: async (values: AssetFormValues) => {
-      const res = await apiClient.post('/assets', { ...values, metadata: {} });
+    mutationFn: async (formData: FormData) => {
+      const res = await apiClient.post('/assets', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       return res.data.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
-      addToast('Asset registered successfully', 'success');
+      addToast('Asset uploaded and registered successfully to Cloudinary', 'success');
       closeDialog();
     },
     onError: (err: any) => {
@@ -79,8 +83,10 @@ export const AssetsView: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (values: AssetFormValues) => {
-      const res = await apiClient.put(`/assets/${editingAsset?.id}`, values);
+    mutationFn: async (formData: FormData) => {
+      const res = await apiClient.put(`/assets/${editingAsset?.id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       return res.data.data;
     },
     onSuccess: () => {
@@ -100,7 +106,7 @@ export const AssetsView: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
-      addToast('Asset deleted successfully', 'success');
+      addToast('Asset deleted from Cloudinary successfully', 'success');
       setDeletingAssetId(null);
     },
     onError: (err: any) => {
@@ -110,15 +116,34 @@ export const AssetsView: React.FC = () => {
 
   const onSubmit = (values: AssetFormValues) => {
     setErrorText(null);
+
+    if (!editingAsset && !selectedFile && !values.filePath) {
+      setErrorText('Please select a file to upload or enter a Cloudinary asset URL.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('name', values.name);
+    formData.append('type', values.type);
+    formData.append('status', values.status);
+    formData.append('licenseStatus', values.licenseStatus);
+
+    if (selectedFile) {
+      formData.append('file', selectedFile);
+    } else if (values.filePath) {
+      formData.append('filePath', values.filePath);
+    }
+
     if (editingAsset) {
-      updateMutation.mutate(values);
+      updateMutation.mutate(formData);
     } else {
-      createMutation.mutate(values);
+      createMutation.mutate(formData);
     }
   };
 
   const openCreateDialog = () => {
     setEditingAsset(null);
+    setSelectedFile(null);
     setErrorText(null);
     reset({ name: '', type: 'Music', status: 'Active', filePath: '', licenseStatus: 'Confirmed' });
     setIsDialogOpen(true);
@@ -126,6 +151,7 @@ export const AssetsView: React.FC = () => {
 
   const openEditDialog = (asset: Asset) => {
     setEditingAsset(asset);
+    setSelectedFile(null);
     setErrorText(null);
     reset({
       name: asset.name,
@@ -143,7 +169,7 @@ export const AssetsView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
-            <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets</p>
+            <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets stored on Cloudinary</p>
           </div>
           <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
         </div>
@@ -163,13 +189,13 @@ export const AssetsView: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
-          <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets</p>
+          <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets backed by Cloudinary</p>
         </div>
 
         <div className="flex items-center gap-3">
           <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} title="Refresh assets" />
           <Button icon={Plus} onClick={openCreateDialog}>
-            Register Asset
+            Upload Asset
           </Button>
         </div>
       </div>
@@ -202,8 +228,8 @@ export const AssetsView: React.FC = () => {
         <EmptyState
           icon={Music}
           title="No media assets registered"
-          description="Register background music tracks, fonts, or logos to customize automated video renders."
-          actionLabel="Register Asset"
+          description="Upload background music tracks, fonts, or logos to Cloudinary for automated video rendering."
+          actionLabel="Upload Asset"
           onAction={openCreateDialog}
         />
       ) : (
@@ -215,11 +241,11 @@ export const AssetsView: React.FC = () => {
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="rounded-full bg-purple-500/10 text-purple-400 px-2 py-0.5 text-xs font-semibold">
+                  <span className="rounded-full bg-purple-500/10 text-purple-400 px-2.5 py-0.5 text-xs font-semibold">
                     {asset.type}
                   </span>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
                       asset.status === 'Active'
                         ? 'bg-emerald-500/10 text-emerald-400'
                         : 'bg-red-500/10 text-red-400'
@@ -231,9 +257,22 @@ export const AssetsView: React.FC = () => {
 
                 <div>
                   <h3 className="text-lg font-bold text-white">{asset.name}</h3>
-                  <p className="text-xs text-[#9c9cb0] font-mono mt-1 truncate">
-                    {asset.filePath}
-                  </p>
+                  <div className="flex items-center gap-1 mt-1">
+                    <p className="text-xs text-[#9c9cb0] font-mono truncate max-w-[220px]">
+                      {asset.filePath}
+                    </p>
+                    {asset.filePath.startsWith('http') && (
+                      <a
+                        href={asset.filePath}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-purple-400 hover:text-purple-300 ml-1"
+                        title="Open Cloudinary asset"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 <div className="bg-[#14141e] p-3 rounded-lg flex justify-between items-center text-xs">
@@ -278,7 +317,7 @@ export const AssetsView: React.FC = () => {
           <div className="w-full max-w-sm rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4">
             <h3 className="text-lg font-bold text-white">Delete Media Asset</h3>
             <p className="text-sm text-[#9c9cb0]">
-              Are you sure you want to delete this media asset? Render pipelines relying on it will fail validation.
+              Are you sure you want to delete this asset from Cloudinary? Render pipelines relying on it will fail validation.
             </p>
             <div className="flex justify-end gap-3 pt-2">
               <Button
@@ -303,13 +342,13 @@ export const AssetsView: React.FC = () => {
         </div>
       )}
 
-      {/* Create / Edit Dialog Modal */}
+      {/* Upload / Edit Dialog Modal */}
       {isDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <h3 className="text-lg font-bold text-white">
-                {editingAsset ? 'Edit Media Asset' : 'Register New Media Asset'}
+                {editingAsset ? 'Edit Media Asset' : 'Upload Asset to Cloudinary'}
               </h3>
               <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
@@ -370,15 +409,54 @@ export const AssetsView: React.FC = () => {
                 </div>
               </div>
 
+              {/* File Upload Picker */}
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  File Path
+                  Upload File to Cloudinary
+                </label>
+                <div className="relative border-2 border-dashed border-[#1a1a24] hover:border-purple-500/50 rounded-lg p-4 bg-[#14141e] text-center transition cursor-pointer">
+                  <input
+                    type="file"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setSelectedFile(e.target.files[0]);
+                        if (!editingAsset) {
+                          const file = e.target.files[0];
+                          const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                          setValue('name', nameWithoutExt);
+                        }
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="flex flex-col items-center gap-2">
+                    <Upload className="text-purple-400" size={24} />
+                    {selectedFile ? (
+                      <div className="flex items-center gap-1 text-xs text-emerald-400 font-semibold">
+                        <FileText size={14} />
+                        <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                        <span className="text-[#6e6e80]">({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</span>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xs text-white font-medium">Click or drag file to upload</span>
+                        <span className="text-[10px] text-[#6e6e80]">MP3, WAV, PNG, JPG, TTF (Max 100MB)</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Optional Cloudinary URL Input */}
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                  Or Existing Cloudinary URL
                 </label>
                 <input
                   type="text"
-                  placeholder="music/inspiring_acoustic.mp3"
+                  placeholder="https://res.cloudinary.com/.../file.mp3"
                   {...register('filePath')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono outline-none focus:border-purple-500"
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono text-xs outline-none focus:border-purple-500"
                 />
                 {errors.filePath && <p className="mt-1 text-xs text-red-400">{errors.filePath.message}</p>}
               </div>
@@ -408,9 +486,9 @@ export const AssetsView: React.FC = () => {
                 <Button
                   type="submit"
                   isLoading={createMutation.isPending || updateMutation.isPending}
-                  loadingText="Saving..."
+                  loadingText="Uploading to Cloudinary..."
                 >
-                  {editingAsset ? 'Save Changes' : 'Register Asset'}
+                  {editingAsset ? 'Save Changes' : 'Upload Asset'}
                 </Button>
               </div>
             </form>

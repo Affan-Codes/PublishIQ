@@ -9,7 +9,7 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     // Should fail if videoUrl is missing
     const missingVideo = youtubeAdapter.validate({
       text: 'Hello world',
-      imageUrl: '/media/img.png',
+      imageUrl: 'https://res.cloudinary.com/demo/image/upload/sample.png',
       videoUrl: null,
       caption: 'Wisdom shorts',
       hashtags: [],
@@ -21,7 +21,7 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     const longTitle = youtubeAdapter.validate({
       text: 'Hello world',
       imageUrl: null,
-      videoUrl: '/media/video.mp4',
+      videoUrl: 'https://res.cloudinary.com/demo/video/upload/sample.mp4',
       caption: 'a'.repeat(101),
       hashtags: [],
     });
@@ -32,7 +32,7 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     const valid = youtubeAdapter.validate({
       text: 'Hello world',
       imageUrl: null,
-      videoUrl: '/media/video.mp4',
+      videoUrl: 'https://res.cloudinary.com/demo/video/upload/sample.mp4',
       caption: 'Valid Short Title',
       hashtags: ['shorts'],
     });
@@ -54,7 +54,7 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     // Should fail if caption > 2200 chars
     const longCaption = instagramAdapter.validate({
       text: 'Hello world',
-      imageUrl: '/media/img.png',
+      imageUrl: 'https://res.cloudinary.com/demo/image/upload/sample.png',
       videoUrl: null,
       caption: 'a'.repeat(2201),
       hashtags: [],
@@ -67,7 +67,7 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     // Should pass valid post
     const valid = facebookAdapter.validate({
       text: 'Hello Facebook Page!',
-      imageUrl: '/media/image.png',
+      imageUrl: 'https://res.cloudinary.com/demo/image/upload/sample.png',
       videoUrl: null,
       caption: 'Facebook Update',
       hashtags: [],

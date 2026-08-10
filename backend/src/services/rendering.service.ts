@@ -2,7 +2,7 @@ import { chromium, Browser } from 'playwright';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { templateRepository } from '../repositories/template.repository.js';
-import { localDiskStorageProvider } from '../providers/storage/local-disk.provider.js';
+import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
 import { getTemplateRenderer } from '../templates/index.js';
 
 export interface RenderOptions {
@@ -92,7 +92,7 @@ export const renderingService = {
       });
 
       const relativePath = `images/${jobId}_render.png`;
-      const mediaUri = await localDiskStorageProvider.save(imageBuffer, relativePath);
+      const mediaUri = await cloudinaryStorageProvider.save(imageBuffer, relativePath);
 
       logger.info({ mediaUri }, 'Image rendered and saved via StorageProvider successfully');
       

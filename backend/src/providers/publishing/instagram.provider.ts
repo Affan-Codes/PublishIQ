@@ -87,13 +87,13 @@ export const instagramAdapter: PublishingAdapter = {
 
       const caption = content.caption || '';
       
-      // Determine media URL (needs to be public)
-      const mediaPath = content.videoUrl || content.imageUrl;
-      // Strip leading './' from mediaPath if it exists
-      const cleanedPath = mediaPath?.replace(/^\.\//, '') || '';
-      const publicMediaUrl = `${env.APP_BASE_URL}/${cleanedPath}`;
+      // Determine media URL (Cloudinary HTTPS URL)
+      const mediaPath = content.videoUrl || content.imageUrl || '';
+      const publicMediaUrl = (mediaPath.startsWith('http://') || mediaPath.startsWith('https://'))
+        ? mediaPath
+        : `${env.APP_BASE_URL}/${mediaPath.replace(/^\.?\//, '')}`;
 
-      logger.info({ publicMediaUrl }, 'Resolved public media URL for Instagram download');
+      logger.info({ publicMediaUrl }, 'Resolved public media Cloudinary URL for Instagram download');
 
       let igContainerId: string;
 

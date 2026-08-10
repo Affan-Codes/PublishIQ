@@ -11,11 +11,6 @@ export const cleanupProcessor = async (job: Job) => {
   await maintenanceService.runCleanup();
 };
 
-export const archiveProcessor = async (job: Job) => {
-  logger.info({ job: job.id }, 'Running archive job');
-  await maintenanceService.runArchive();
-};
-
 export const retryPublishProcessor = async (job: Job<{ jobId: string }>) => {
   logger.info({ job: job.id, jobId: job.data.jobId }, 'Running retry publish job');
   await maintenanceService.runRetryPublish(job.data.jobId);
@@ -41,7 +36,6 @@ export function startMaintenanceWorkers(): Worker[] {
 
   const workers = [
     new Worker('cleanup', cleanupProcessor, { ...baseWorkerOpts, concurrency: 1 }),
-    new Worker('archive', archiveProcessor, { ...baseWorkerOpts, concurrency: 1 }),
     new Worker('retry-publish', retryPublishProcessor, { ...baseWorkerOpts, concurrency: 2 }),
     new Worker('token-refresh', tokenRefreshProcessor, { ...baseWorkerOpts, concurrency: 1 }),
     new Worker('health-check', healthCheckProcessor, { ...baseWorkerOpts, concurrency: 1 }),

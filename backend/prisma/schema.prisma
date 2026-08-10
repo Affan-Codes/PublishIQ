@@ -363,6 +363,7 @@ model GeneratedContent {
   metadata                 Json?
   imageUrl                 String?
   videoUrl                 String?
+  mediaDeletedAt           DateTime?
   caption                  String?           @db.Text
   hashtags                 Json?
   publishStatus            PublishStatus

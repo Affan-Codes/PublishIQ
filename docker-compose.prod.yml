@@ -52,8 +52,6 @@ services:
     container_name: publishiq-api-prod
     restart: unless-stopped
     command: node dist/api.js
-    volumes:
-      - media_prod_data:/usr/src/app/media
     environment:
       - NODE_ENV=production
       - PORT=4000
@@ -63,7 +61,10 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENCRYPTION_SALT=${ENCRYPTION_SALT}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MEDIA_ROOT=/usr/src/app/media
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - TEMP_RENDER_DIR=${TEMP_RENDER_DIR:-/tmp/publishiq-render}
       - QUEUE_PREFIX=publishiq-prod
       - OPERATOR_EMAIL=${OPERATOR_EMAIL}
       - OPERATOR_PASSWORD=${OPERATOR_PASSWORD}
@@ -91,8 +92,6 @@ services:
     container_name: publishiq-worker-prod
     restart: unless-stopped
     command: node dist/worker.js
-    volumes:
-      - media_prod_data:/usr/src/app/media
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
@@ -101,7 +100,10 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ENCRYPTION_SALT=${ENCRYPTION_SALT}
       - LOG_LEVEL=${LOG_LEVEL:-info}
-      - MEDIA_ROOT=/usr/src/app/media
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - TEMP_RENDER_DIR=${TEMP_RENDER_DIR:-/tmp/publishiq-render}
       - QUEUE_PREFIX=publishiq-prod
       - OPERATOR_EMAIL=${OPERATOR_EMAIL}
       - OPERATOR_PASSWORD=${OPERATOR_PASSWORD}
@@ -153,8 +155,6 @@ volumes:
   postgres_prod_data:
     driver: local
   valkey_prod_data:
-    driver: local
-  media_prod_data:
     driver: local
   caddy_data:
     driver: local
