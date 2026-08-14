@@ -31,7 +31,7 @@ export const assetRepository = {
     status: AssetStatus;
     filePath: string;
     metadata: any;
-    licenseStatus?: LicenseStatus;
+    licenseStatus?: LicenseStatus | undefined;
   }): Promise<Asset> {
     return prisma.asset.create({
       data: {
@@ -49,11 +49,11 @@ export const assetRepository = {
   async update(
     id: string,
     data: {
-      name?: string;
-      status?: AssetStatus;
-      filePath?: string;
+      name?: string | undefined;
+      status?: AssetStatus | undefined;
+      filePath?: string | undefined;
       metadata?: any;
-      licenseStatus?: LicenseStatus;
+      licenseStatus?: LicenseStatus | undefined;
     }
   ): Promise<Asset> {
     const updateData: Record<string, any> = {};

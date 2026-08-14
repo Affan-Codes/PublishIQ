@@ -50,7 +50,7 @@ export const AppContent: React.FC = () => {
   return (
     <BrowserRouter>
       {/* Global Sonner Toast Provider */}
-      <Toaster position="top-right" theme="dark" richColors closeButton />
+      <Toaster position="bottom-right" theme="dark" richColors closeButton />
 
       <Suspense fallback={<PageSkeleton />}>
         <Routes>

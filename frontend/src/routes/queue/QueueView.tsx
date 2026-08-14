@@ -286,7 +286,7 @@ export const QueueView: React.FC = () => {
       {/* Filter Bar */}
       <div className="flex flex-wrap gap-4 items-center justify-between bg-[#0e0e12] p-4 rounded-xl border border-[#1a1a24]">
         <span className="text-sm font-semibold text-white">Pipeline Execution Items</span>
-        
+
         <div className="flex gap-3">
           <select
             value={stageFilter}
@@ -359,13 +359,12 @@ export const QueueView: React.FC = () => {
 
                     <td className="px-6 py-4">
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
-                          job.pipelineStage === 'Published' || job.pipelineStage === 'Queued'
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border ${job.pipelineStage === 'Published' || job.pipelineStage === 'Queued'
                             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                             : job.pipelineStage === 'Failed'
-                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                        }`}
+                              ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                              : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                          }`}
                       >
                         {job.pipelineStage === 'Queued' ? 'Ready (Awaiting Review)' : job.pipelineStage}
                       </span>

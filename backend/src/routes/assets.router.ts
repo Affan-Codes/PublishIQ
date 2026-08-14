@@ -18,6 +18,8 @@ const assetCreateSchema = z.object({
   name: z.string().min(1, 'Asset name is required').max(100),
   status: z.nativeEnum(AssetStatus),
   filePath: z.string().optional(),
+  startTime: z.coerce.number().min(0).optional(),
+  endTime: z.coerce.number().min(0).optional(),
   metadata: z.union([z.record(z.string(), z.any()), z.string()]).optional().default({}),
   licenseStatus: z.nativeEnum(LicenseStatus).optional(),
 });
@@ -26,6 +28,8 @@ const assetUpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   status: z.nativeEnum(AssetStatus).optional(),
   filePath: z.string().min(1).optional(),
+  startTime: z.coerce.number().min(0).optional(),
+  endTime: z.coerce.number().min(0).optional(),
   metadata: z.union([z.record(z.string(), z.any()), z.string()]).optional(),
   licenseStatus: z.nativeEnum(LicenseStatus).optional(),
 });

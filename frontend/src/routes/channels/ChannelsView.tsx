@@ -13,14 +13,15 @@ import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
 import { Plus, Trash2, Edit2, Copy, X, Calendar, Layers } from 'lucide-react';
 
-const cronRegex = /^(\*|([0-5]?\d)(-[0-5]?\d)?(\/[0-5]?\d)?)( +(\*|([0-9]|1\d|2[0-3])(-([0-9]|1\d|2[0-3]))?(\/([0-9]|1\d|2[0-3]))?)){4}$/;
+// Regex for standard 5-field cron validation (supports wildcard steps like */2, ranges, lists)
+const cronRegex = /^((?:\*|[0-5]?\d)(?:-[0-5]?\d)?(?:\/[0-5]?\d)?(?:,(?:\*|[0-5]?\d)(?:-[0-5]?\d)?(?:\/[0-5]?\d)?)*)\s+((?:\*|(?:[0-9]|1\d|2[0-3]))(?:-(?:[0-9]|1\d|2[0-3]))?(?:\/(?:[0-9]|1\d|2[0-3]))?(?:,(?:\*|(?:[0-9]|1\d|2[0-3]))(?:-(?:[0-9]|1\d|2[0-3]))?(?:\/(?:[0-9]|1\d|2[0-3]))?)*)\s+((?:\*|(?:[1-9]|[12]\d|3[01]))(?:-(?:[1-9]|[12]\d|3[01]))?(?:\/(?:[1-9]|[12]\d|3[01]))?(?:,(?:\*|(?:[1-9]|[12]\d|3[01]))(?:-(?:[1-9]|[12]\d|3[01]))?(?:\/(?:[1-9]|[12]\d|3[01]))?)*)\s+((?:\*|(?:[1-9]|1[02]))(?:-(?:[1-9]|1[02]))?(?:\/(?:[1-9]|1[02]))?(?:,(?:\*|(?:[1-9]|1[02]))(?:-(?:[1-9]|1[02]))?(?:\/(?:[1-9]|1[02]))?)*)\s+((?:\*|[0-7])(?:-[0-7])?(?:\/[0-7])?(?:,(?:\*|[0-7])(?:-[0-7])?(?:\/[0-7])?)*)$/;
 
 const channelSchema = z.object({
   name: z.string().min(1, 'Channel name is required').max(100),
   contentProfileId: z.string().uuid('Please select a Content Profile'),
   automationMode: z.enum(['Manual', 'Automatic', 'Hybrid', 'FullyAutomated']),
   status: z.enum(['Active', 'Disabled']),
-  scheduleCron: z.string().regex(cronRegex, 'Must be a valid 5-field cron expression (e.g. "0 9 * * *")'),
+  scheduleCron: z.string().regex(cronRegex, 'Must be a valid 5-field cron expression (e.g. "*/2 * * * *" or "0 9 * * *")'),
   maxDurationSeconds: z.number().min(5, 'Duration must be at least 5 seconds').max(3600, 'Duration cannot exceed 1 hour'),
   autoTagEnabled: z.boolean(),
   platformConnectionIds: z.array(z.string().uuid()).min(1, 'Select at least one platform connection'),
@@ -218,7 +219,7 @@ export const ChannelsView: React.FC = () => {
     e.stopPropagation();
     setErrorText(null);
     setEditingChannel(channel);
-    
+
     reset({
       name: channel.name,
       contentProfileId: channel.contentProfileId,
@@ -313,11 +314,10 @@ export const ChannelsView: React.FC = () => {
             >
               <div className="flex items-center justify-between">
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    channel.status === 'Active'
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${channel.status === 'Active'
                       ? 'bg-emerald-500/10 text-emerald-400'
                       : 'bg-red-500/10 text-red-400'
-                  }`}
+                    }`}
                 >
                   {channel.status}
                 </span>
@@ -340,11 +340,10 @@ export const ChannelsView: React.FC = () => {
                 {channel.platformConnections.map((pc) => (
                   <span
                     key={pc.id}
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
-                      pc.status === 'Disabled' || pc.healthStatus !== 'Healthy'
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${pc.status === 'Disabled' || pc.healthStatus !== 'Healthy'
                         ? 'bg-amber-950/20 border-amber-900/50 text-amber-400'
                         : 'bg-purple-950/20 border-purple-900/50 text-purple-400'
-                    }`}
+                      }`}
                   >
                     {pc.platform}
                   </span>
@@ -463,20 +462,18 @@ export const ChannelsView: React.FC = () => {
                         <span className="font-semibold text-white">{pc.platform}</span>
                         <div className="flex gap-2">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              pc.healthStatus === 'Healthy'
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${pc.healthStatus === 'Healthy'
                                 ? 'bg-emerald-500/10 text-emerald-400'
                                 : 'bg-rose-500/10 text-rose-400'
-                            }`}
+                              }`}
                           >
                             {pc.healthStatus}
                           </span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              pc.status === 'Active'
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold ${pc.status === 'Active'
                                 ? 'bg-purple-500/10 text-purple-400'
                                 : 'bg-gray-500/10 text-gray-400'
-                            }`}
+                              }`}
                           >
                             {pc.status}
                           </span>
@@ -661,11 +658,10 @@ export const ChannelsView: React.FC = () => {
                       return (
                         <label
                           key={pc.id}
-                          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-xs transition ${
-                            checked
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border text-xs transition ${checked
                               ? 'bg-purple-950/40 border-purple-500/50 text-white'
                               : 'bg-[#181824] border-[#222234] text-[#9c9cb0] hover:text-white'
-                          }`}
+                            }`}
                         >
                           <input
                             type="checkbox"
@@ -675,9 +671,8 @@ export const ChannelsView: React.FC = () => {
                           />
                           <span className="font-semibold">{pc.platform}</span>
                           <span
-                            className={`ml-auto text-[10px] ${
-                              pc.healthStatus === 'Healthy' ? 'text-emerald-400' : 'text-rose-400'
-                            }`}
+                            className={`ml-auto text-[10px] ${pc.healthStatus === 'Healthy' ? 'text-emerald-400' : 'text-rose-400'
+                              }`}
                           >
                             {pc.healthStatus}
                           </span>

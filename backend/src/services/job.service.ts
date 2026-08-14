@@ -203,9 +203,9 @@ export const jobService = {
     if (isSnapshotMatching) {
       // Snapshot matches! We can resume from the last failed stage
       logger.info({ jobId: id }, 'Config snapshot matches channel profile. Resuming from last failed stage.');
-      
+
       const failedStage = job.failureStage ? (job.failureStage as PipelineStage) : PipelineStage.GeneratingContent;
-      
+
       // Update job to be in the last completed/progress stage instead of Failed
       await jobRepository.transitionJobStage(id, failedStage, {
         failedAt: null,
@@ -215,7 +215,7 @@ export const jobService = {
     } else {
       // Snapshot mismatch! Reset the job and run from scratch
       logger.info({ jobId: id }, 'Config snapshot mismatch. Resetting job to Draft and running from scratch.');
-      
+
       const configSnapshot = {
         promptVersionId: profile.promptVersionId,
         templateVersionId: profile.templateVersionId,

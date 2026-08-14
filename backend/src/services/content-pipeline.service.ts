@@ -1,4 +1,4 @@
-import { PipelineStage, PublishStatus, Job, Asset } from '@prisma/client';
+import { PipelineStage, PublishStatus, Job, Asset, AssetType } from '@prisma/client';
 import { jobRepository } from '../repositories/job.repository.js';
 import { channelRepository } from '../repositories/channel.repository.js';
 import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
@@ -182,9 +182,15 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
 
       // Load selected music file path from the configSnapshot
       const snapshot = job.configSnapshot as Record<string, any> || {};
-      const musicFilePath = snapshot.selectedMusicFilePath;
-      if (!musicFilePath) {
-        throw new ValidationError('No music track was selected or stored in the snapshot.');
+      let musicFilePath = snapshot.selectedMusicFilePath;
+      if (!musicFilePath || (!musicFilePath.startsWith('http://') && !musicFilePath.startsWith('https://'))) {
+        const activeMusicAssets = await assetRepository.list(job.workspaceId, AssetType.Music);
+        const validCloudinaryTrack = activeMusicAssets.find((a: Asset) => a.filePath && (a.filePath.startsWith('http://') || a.filePath.startsWith('https://')));
+        if (validCloudinaryTrack) {
+          musicFilePath = validCloudinaryTrack.filePath;
+        } else {
+          throw new ValidationError('No valid Cloudinary music track available for rendering.');
+        }
       }
 
       // Load duration from system configurations

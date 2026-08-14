@@ -38,7 +38,8 @@ export const templateRepository = {
     componentPath: string;
     componentSource?: string | null;
   }): Promise<Template & { versions: TemplateVersion[] }> {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(
+      async (tx) => {
       const template = await tx.template.create({
         data: {
           workspaceId: data.workspaceId,
@@ -106,7 +107,8 @@ export const templateRepository = {
     notes?: string | null;
     status: PromptStatus;
   }): Promise<TemplateVersion> {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(
+      async (tx) => {
       const versions = await tx.templateVersion.findMany({
         where: { templateId: data.templateId },
         select: { versionNumber: true },
@@ -135,11 +137,12 @@ export const templateRepository = {
       });
 
       return newVersion;
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   },
 
   async rollbackTemplateVersion(templateId: string, versionNumber: number): Promise<TemplateVersion> {
-    return prisma.$transaction(async (tx) => {
+    return prisma.$transaction(
+      async (tx) => {
       const targetVersion = await tx.templateVersion.findUnique({
         where: {
           templateId_versionNumber: { templateId, versionNumber },
@@ -163,7 +166,7 @@ export const templateRepository = {
       });
 
       return updatedVersion;
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   },
 
   async listVersions(templateId: string): Promise<TemplateVersion[]> {

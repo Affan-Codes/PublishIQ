@@ -75,3 +75,21 @@ test('Platform Publishing Adapter Validation Tests', async (t) => {
     assert.strictEqual(valid.length, 0);
   });
 });
+
+test('Cron Expression Validation Tests', async (t) => {
+  const cronRegex = /^((?:\*|[0-5]?\d)(?:-[0-5]?\d)?(?:\/[0-5]?\d)?(?:,(?:\*|[0-5]?\d)(?:-[0-5]?\d)?(?:\/[0-5]?\d)?)*)\s+((?:\*|(?:[0-9]|1\d|2[0-3]))(?:-(?:[0-9]|1\d|2[0-3]))?(?:\/(?:[0-9]|1\d|2[0-3]))?(?:,(?:\*|(?:[0-9]|1\d|2[0-3]))(?:-(?:[0-9]|1\d|2[0-3]))?(?:\/(?:[0-9]|1\d|2[0-3]))?)*)\s+((?:\*|(?:[1-9]|[12]\d|3[01]))(?:-(?:[1-9]|[12]\d|3[01]))?(?:\/(?:[1-9]|[12]\d|3[01]))?(?:,(?:\*|(?:[1-9]|[12]\d|3[01]))(?:-(?:[1-9]|[12]\d|3[01]))?(?:\/(?:[1-9]|[12]\d|3[01]))?)*)\s+((?:\*|(?:[1-9]|1[02]))(?:-(?:[1-9]|1[02]))?(?:\/(?:[1-9]|1[02]))?(?:,(?:\*|(?:[1-9]|1[02]))(?:-(?:[1-9]|1[02]))?(?:\/(?:[1-9]|1[02]))?)*)\s+((?:\*|[0-7])(?:-[0-7])?(?:\/[0-7])?(?:,(?:\*|[0-7])(?:-[0-7])?(?:\/[0-7])?)*)$/;
+
+  await t.test('should accept step interval cron expressions like */2 * * * *', () => {
+    assert.strictEqual(cronRegex.test('*/2 * * * *'), true);
+    assert.strictEqual(cronRegex.test('*/15 * * * *'), true);
+    assert.strictEqual(cronRegex.test('0/5 * * * *'), true);
+    assert.strictEqual(cronRegex.test('0 9 * * *'), true);
+    assert.strictEqual(cronRegex.test('0 0 1 * *'), true);
+  });
+
+  await t.test('should reject invalid cron expressions', () => {
+    assert.strictEqual(cronRegex.test('invalid cron'), false);
+    assert.strictEqual(cronRegex.test('0 9 * *'), false); // Only 4 fields
+    assert.strictEqual(cronRegex.test('60 * * * *'), false); // Minute 60 out of bounds
+  });
+});

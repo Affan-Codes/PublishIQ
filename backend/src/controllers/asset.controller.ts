@@ -48,7 +48,7 @@ export const assetController = {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.workspaceId!;
-      let { type, name, status, filePath, metadata, licenseStatus } = req.body;
+      let { type, name, status, filePath, startTime, endTime, metadata, licenseStatus } = req.body;
 
       if (typeof metadata === 'string') {
         try {
@@ -58,22 +58,16 @@ export const assetController = {
         }
       }
 
-      if (req.file) {
-        const folder = getFolderForAssetType(type);
-        const relativePath = `${folder}/${Date.now()}_${req.file.originalname}`;
-        filePath = await cloudinaryStorageProvider.save(req.file.buffer, relativePath);
-      }
-
-      if (!filePath) {
-        throw new ValidationError('Either a file upload or a valid filePath string is required.');
-      }
-
       const asset = await assetService.createAsset({
         workspaceId,
         type,
         name,
         status,
         filePath,
+        fileBuffer: req.file?.buffer,
+        originalName: req.file?.originalname,
+        startTime: startTime !== undefined ? Number(startTime) : undefined,
+        endTime: endTime !== undefined ? Number(endTime) : undefined,
         metadata: metadata || {},
         licenseStatus,
       });
@@ -90,7 +84,7 @@ export const assetController = {
 
   async update(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      let { name, status, filePath, metadata, licenseStatus } = req.body;
+      let { name, status, filePath, startTime, endTime, metadata, licenseStatus } = req.body;
 
       if (typeof metadata === 'string') {
         try {
@@ -100,17 +94,14 @@ export const assetController = {
         }
       }
 
-      if (req.file) {
-        const existingAsset = await assetService.getAssetById(req.params.id as string);
-        const folder = getFolderForAssetType(existingAsset?.type || 'asset');
-        const relativePath = `${folder}/${Date.now()}_${req.file.originalname}`;
-        filePath = await cloudinaryStorageProvider.save(req.file.buffer, relativePath);
-      }
-
       const asset = await assetService.updateAsset(req.params.id as string, {
         name,
         status,
         filePath,
+        fileBuffer: req.file?.buffer,
+        originalName: req.file?.originalname,
+        startTime: startTime !== undefined ? Number(startTime) : undefined,
+        endTime: endTime !== undefined ? Number(endTime) : undefined,
         metadata,
         licenseStatus,
       });

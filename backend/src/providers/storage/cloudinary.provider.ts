@@ -87,44 +87,68 @@ function derivePublicId(pathOrUrl: string): string {
   return clean;
 }
 
+/**
+ * Splits a derived public_id string into an explicit folder path and filename ID
+ * so Cloudinary Console Media Library visually displays physical subfolders.
+ */
+function parseCloudinaryFolderAndId(pathOrUrl: string): { folder: string; filenameId: string; fullPublicId: string } {
+  const fullPublicId = derivePublicId(pathOrUrl);
+  const lastSlashIdx = fullPublicId.lastIndexOf('/');
+  if (lastSlashIdx !== -1) {
+    return {
+      folder: fullPublicId.substring(0, lastSlashIdx),
+      filenameId: fullPublicId.substring(lastSlashIdx + 1),
+      fullPublicId,
+    };
+  }
+  return {
+    folder: 'publishiq',
+    filenameId: fullPublicId,
+    fullPublicId,
+  };
+}
+
 export const cloudinaryStorageProvider: StorageProvider = {
   /**
    * Uploads a Buffer to Cloudinary using upload_stream and returns its secure_url.
    */
   async save(buffer: Buffer, relativePath: string): Promise<string> {
     const resourceType = inferResourceType(relativePath);
-    const publicId = derivePublicId(relativePath);
+    const { folder, filenameId, fullPublicId } = parseCloudinaryFolderAndId(relativePath);
 
-    logger.debug({ relativePath, publicId, resourceType }, 'Uploading buffer to Cloudinary storage');
+    logger.debug({ relativePath, folder, filenameId, fullPublicId, resourceType }, 'Uploading buffer to Cloudinary storage');
 
     return new Promise<string>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          public_id: publicId,
+          folder: folder,
+          public_id: filenameId,
           resource_type: resourceType,
           overwrite: true,
           invalidate: true,
+          use_filename: true,
+          unique_filename: false,
         },
         (error, result: UploadApiResponse | undefined) => {
           if (error) {
             // Categorize Cloudinary specific errors
             const errMsg = error.message || String(error);
             if (error.http_code === 401 || error.http_code === 403 || errMsg.includes('Must supply api_key') || errMsg.includes('Invalid API key') || errMsg.includes('403')) {
-              logger.error({ error, publicId }, 'Cloudinary Authentication/Authorization Failure (HTTP 401/403): Invalid Cloud Name, API Key, or Secret provided in .env. Please configure valid credentials.');
+              logger.error({ error, publicId: fullPublicId }, 'Cloudinary Authentication/Authorization Failure (HTTP 401/403): Invalid Cloud Name, API Key, or Secret provided in .env. Please configure valid credentials.');
             } else if (error.http_code === 420 || errMsg.includes('disabled') || errMsg.includes('quota') || errMsg.includes('exceeded')) {
-              logger.error({ error, publicId }, 'Cloudinary Quota Exceeded / Storage Plan Limit reached.');
+              logger.error({ error, publicId: fullPublicId }, 'Cloudinary Quota Exceeded / Storage Plan Limit reached.');
             } else {
-              logger.error({ error, publicId, resourceType }, 'Cloudinary Upload Failed.');
+              logger.error({ error, publicId: fullPublicId, resourceType }, 'Cloudinary Upload Failed.');
             }
             return reject(new Error(`Cloudinary storage upload error: ${errMsg}`));
           }
 
           if (!result || !result.secure_url) {
-            logger.error({ publicId }, 'Cloudinary returned empty result or missing secure_url.');
+            logger.error({ publicId: fullPublicId }, 'Cloudinary returned empty result or missing secure_url.');
             return reject(new Error('Cloudinary response missing secure_url.'));
           }
 
-          logger.info({ publicId, secureUrl: result.secure_url, format: result.format, bytes: result.bytes }, 'Uploaded file to Cloudinary successfully');
+          logger.info({ publicId: fullPublicId, secureUrl: result.secure_url, format: result.format, bytes: result.bytes }, 'Uploaded file to Cloudinary successfully');
           resolve(result.secure_url);
         }
       );

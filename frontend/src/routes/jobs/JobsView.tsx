@@ -61,7 +61,7 @@ export const JobsView: React.FC = () => {
   const [isTriggerGenOpen, setIsTriggerGenOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [previewContentId, setPreviewContentId] = useState<string | null>(null);
-  
+
   const [duplicateContentId, setDuplicateContentId] = useState<string | null>(null);
   const [regenerateContentId, setRegenerateContentId] = useState<string | null>(null);
   const [deletingContentId, setDeletingContentId] = useState<string | null>(null);
@@ -95,13 +95,13 @@ export const JobsView: React.FC = () => {
   });
 
   // Fetch Jobs list
-  const { 
-    data: jobsData = { data: [], meta: { total: 0 } }, 
-    isLoading: isJobsLoading, 
+  const {
+    data: jobsData = { data: [], meta: { total: 0 } },
+    isLoading: isJobsLoading,
     isFetching: isJobsFetching,
     isError: isJobsError,
     error: jobsError,
-    refetch: refetchJobs 
+    refetch: refetchJobs
   } = useQuery<any>({
     queryKey: ['jobs', jobPage, jobChannelFilter, jobStageFilter],
     queryFn: async () => {
@@ -132,13 +132,13 @@ export const JobsView: React.FC = () => {
   });
 
   // Fetch Generated Content list
-  const { 
-    data: gcData = { data: [], meta: { total: 0 } }, 
+  const {
+    data: gcData = { data: [], meta: { total: 0 } },
     isLoading: isGcLoading,
     isFetching: isGcFetching,
     isError: isGcError,
     error: gcError,
-    refetch: refetchGc 
+    refetch: refetchGc
   } = useQuery<any>({
     queryKey: ['generated-contents', gcPage, gcProfileFilter, gcLangFilter, gcSearch],
     queryFn: async () => {
@@ -336,17 +336,15 @@ export const JobsView: React.FC = () => {
       <div className="flex border-b border-[#1a1a24] gap-6 text-sm">
         <button
           onClick={() => setActiveTab('jobs')}
-          className={`pb-4 font-semibold transition cursor-pointer ${
-            activeTab === 'jobs' ? 'border-b-2 border-purple-500 text-purple-400' : 'text-[#6e6e80] hover:text-[#9c9cb0]'
-          }`}
+          className={`pb-4 font-semibold transition cursor-pointer ${activeTab === 'jobs' ? 'border-b-2 border-purple-500 text-purple-400' : 'text-[#6e6e80] hover:text-[#9c9cb0]'
+            }`}
         >
           Job Executions
         </button>
         <button
           onClick={() => setActiveTab('content')}
-          className={`pb-4 font-semibold transition cursor-pointer ${
-            activeTab === 'content' ? 'border-b-2 border-purple-500 text-purple-400' : 'text-[#6e6e80] hover:text-[#9c9cb0]'
-          }`}
+          className={`pb-4 font-semibold transition cursor-pointer ${activeTab === 'content' ? 'border-b-2 border-purple-500 text-purple-400' : 'text-[#6e6e80] hover:text-[#9c9cb0]'
+            }`}
         >
           Generated Content Gallery
         </button>
@@ -367,7 +365,7 @@ export const JobsView: React.FC = () => {
                 className="w-full sm:w-72 rounded-lg border border-[#1a1a24] bg-[#161620] pl-10 pr-4 py-2 text-sm text-white placeholder-[#6e6e80] focus:border-purple-500 outline-none transition"
               />
             </div>
-            
+
             <div className="flex flex-wrap gap-3 w-full sm:w-auto">
               <select
                 value={jobChannelFilter}
@@ -450,13 +448,12 @@ export const JobsView: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 text-white font-medium">{job.channel?.name || 'Manual Run'}</td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
-                          job.pipelineStage === 'Published' || job.pipelineStage === 'Queued'
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold border ${job.pipelineStage === 'Published' || job.pipelineStage === 'Queued'
                             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                             : job.pipelineStage === 'Failed'
-                            ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                            : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-                        }`}>
+                              ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                              : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
+                          }`}>
                           {job.pipelineStage === 'Queued' ? 'Ready (Queued)' : job.pipelineStage}
                         </span>
                       </td>
@@ -477,7 +474,7 @@ export const JobsView: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-              
+
               {/* Pagination */}
               <div className="flex items-center justify-between border-t border-[#1a1a24] bg-[#161620] px-6 py-4">
                 <span className="text-xs text-[#9c9cb0]">
@@ -518,7 +515,7 @@ export const JobsView: React.FC = () => {
                 className="w-full sm:w-72 rounded-lg border border-[#1a1a24] bg-[#161620] pl-10 pr-4 py-2 text-sm text-white placeholder-[#6e6e80] focus:border-purple-500 outline-none transition"
               />
             </div>
-            
+
             <div className="flex flex-wrap gap-3 w-full sm:w-auto">
               <select
                 value={gcProfileFilter}
@@ -584,7 +581,7 @@ export const JobsView: React.FC = () => {
                         {new Date(item.createdAt).toLocaleDateString()}
                       </span>
                     </div>
-                    
+
                     <p className="text-sm text-white font-medium line-clamp-3 bg-[#151522] p-3 rounded-lg border border-[#222235]">
                       "{item.text}"
                     </p>

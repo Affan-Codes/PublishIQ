@@ -9,9 +9,9 @@ import { systemConfigCache } from '../../config/system-config.cache.js';
 const geminiResponseSchema = {
   type: 'OBJECT',
   properties: {
-    title: { type: 'STRING', description: 'A short headline or title for the generated content' },
+    title: { type: 'STRING', description: 'A short headline or title for the generated content (MUST NOT exceed 100 characters)' },
     quote: { type: 'STRING', description: 'The main motivational/business quote or Shayari text in the requested language' },
-    caption: { type: 'STRING', description: 'A descriptive caption for social media posts' },
+    caption: { type: 'STRING', description: 'A descriptive caption for social media posts (MUST NOT exceed 100 characters)' },
     hashtags: { type: 'ARRAY', items: { type: 'STRING' }, description: 'At least 3 relevant hashtags' },
     metadata: { type: 'OBJECT', description: 'Any extra generation metadata or settings' },
     language: { type: 'STRING', description: 'The language code or name of the output text (English, Hindi, or Urdu)' },
@@ -111,6 +111,14 @@ export const geminiProvider: AIProviderAdapter = {
       let parsedJson: any;
       try {
         parsedJson = JSON.parse(rawText.trim());
+        if (parsedJson && typeof parsedJson === 'object') {
+          if (typeof parsedJson.title === 'string' && parsedJson.title.length > 100) {
+            parsedJson.title = parsedJson.title.substring(0, 97) + '...';
+          }
+          if (typeof parsedJson.caption === 'string' && parsedJson.caption.length > 100) {
+            parsedJson.caption = parsedJson.caption.substring(0, 97) + '...';
+          }
+        }
       } catch (err: any) {
         throw new Error(`Failed to parse Gemini response as JSON: ${err.message}. Raw output: ${rawText}`);
       }

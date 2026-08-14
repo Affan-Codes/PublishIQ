@@ -6,6 +6,11 @@ import { logger } from '../utils/logger.js';
 
 const pool = new pg.Pool({
   connectionString: env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 30000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 const adapter = new PrismaPg(pool);

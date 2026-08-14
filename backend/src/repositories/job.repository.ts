@@ -1,6 +1,7 @@
 import { Prisma, Job, JobType, PipelineStage, GeneratedContent, PublishStatus, DomainEvent, Notification, PublishingRecord, PublishRecordStatus, Platform } from '@prisma/client';
 import { prisma } from '../database/db.js';
 import { eventBus } from '../events/event-bus.js';
+import { logger } from '../utils/logger.js';
 
 export type JobWithRelations = Prisma.JobGetPayload<{
   include: {
@@ -110,64 +111,86 @@ export const jobRepository = {
     updates: Partial<Omit<Job, 'id' | 'createdAt' | 'updatedAt'>>,
     eventData?: { type: string; payload: any }
   ): Promise<Job> {
-    const postCommitCallbacks: (() => Promise<void>)[] = [];
+    let retries = 3;
+    let lastErr: any;
 
-    const job = await prisma.$transaction(async (tx) => {
-      const dataUpdate: Record<string, any> = {};
-      for (const [key, val] of Object.entries(updates)) {
-        if (val !== undefined) {
-          dataUpdate[key] = val;
-        }
-      }
-      dataUpdate.pipelineStage = stage;
+    while (retries > 0) {
+      const postCommitCallbacks: (() => Promise<void>)[] = [];
 
-      const updatedJob = await tx.job.update({
-        where: { id: jobId },
-        data: dataUpdate,
-      });
+      try {
+        const job = await prisma.$transaction(
+          async (tx) => {
+            const dataUpdate: Record<string, any> = {};
+            for (const [key, val] of Object.entries(updates)) {
+              if (val !== undefined) {
+                dataUpdate[key] = val;
+              }
+            }
+            dataUpdate.pipelineStage = stage;
 
-      if (eventData) {
-        const domainEvent = await tx.domainEvent.create({
-          data: {
-            workspaceId: updatedJob.workspaceId,
-            jobId: updatedJob.id,
-            type: eventData.type,
-            payload: eventData.payload,
+            const updatedJob = await tx.job.update({
+              where: { id: jobId },
+              data: dataUpdate,
+            });
+
+            if (eventData) {
+              const domainEvent = await tx.domainEvent.create({
+                data: {
+                  workspaceId: updatedJob.workspaceId,
+                  jobId: updatedJob.id,
+                  type: eventData.type,
+                  payload: eventData.payload,
+                },
+              });
+
+              const notifyWorthy = ['PublishFailed', 'JobFailed', 'TokenExpiring', 'ApprovalRequired'].includes(eventData.type) 
+                || stage === PipelineStage.Failed;
+                
+              if (notifyWorthy) {
+                const notificationMessage = eventData.payload.message || `Job transitioned to ${stage}: ${updates.failureReason || ''}`;
+                
+                const notification = await tx.notification.create({
+                  data: {
+                    workspaceId: updatedJob.workspaceId,
+                    domainEventId: domainEvent.id,
+                    message: notificationMessage,
+                  },
+                });
+
+                postCommitCallbacks.push(async () => {
+                  await eventBus.emitDomainEvent('NotificationCreated', notification);
+                });
+              }
+
+              postCommitCallbacks.push(async () => {
+                await eventBus.emitDomainEvent(eventData.type, domainEvent);
+              });
+            }
+
+            return updatedJob;
           },
-        });
+          {
+            maxWait: 15000, // 15 seconds to acquire connection from pool
+            timeout: 30000, // 30 seconds max transaction execution duration
+          }
+        );
 
-        const notifyWorthy = ['PublishFailed', 'JobFailed', 'TokenExpiring', 'ApprovalRequired'].includes(eventData.type) 
-          || stage === PipelineStage.Failed;
-          
-        if (notifyWorthy) {
-          const notificationMessage = eventData.payload.message || `Job transitioned to ${stage}: ${updates.failureReason || ''}`;
-          
-          const notification = await tx.notification.create({
-            data: {
-              workspaceId: updatedJob.workspaceId,
-              domainEventId: domainEvent.id,
-              message: notificationMessage,
-            },
-          });
-
-          postCommitCallbacks.push(async () => {
-            await eventBus.emitDomainEvent('NotificationCreated', notification);
-          });
+        for (const cb of postCommitCallbacks) {
+          await cb();
         }
 
-        postCommitCallbacks.push(async () => {
-          await eventBus.emitDomainEvent(eventData.type, domainEvent);
-        });
+        return job;
+      } catch (err: any) {
+        lastErr = err;
+        retries--;
+        if (retries > 0) {
+          logger.warn({ jobId, stage, err: err.message, remainingRetries: retries }, 'Database transaction lock acquisition failed, retrying transitionJobStage...');
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
-
-      return updatedJob;
-    });
-
-    for (const cb of postCommitCallbacks) {
-      await cb();
     }
 
-    return job;
+    throw lastErr;
   },
 
   async saveGeneratedContent(data: {
