@@ -6,6 +6,7 @@ import crypto from 'crypto';
  */
 export function normalizeText(text: string): string {
   return text
+    .normalize('NFC')
     .toLowerCase()
     .replace(/\p{P}/gu, '')
     .replace(/\s+/g, ' ')

@@ -5,6 +5,7 @@ import { channelRepository } from '../repositories/channel.repository.js';
 import { ValidationError, NotFoundError, ConflictError } from '../errors/custom-errors.js';
 import { contentPipelineQueue } from '../jobs/index.js';
 import { logger } from '../utils/logger.js';
+import { createContentProfileSnapshot } from '../utils/profile-snapshot.js';
 
 export const generatedContentService = {
   async listGeneratedContent(
@@ -64,10 +65,7 @@ export const generatedContentService = {
     }
 
     // Create the pipeline job in Draft state, prefilled with the source text
-    const configSnapshot = {
-      promptVersionId: profile.promptVersionId,
-      templateVersionId: profile.templateVersionId,
-    };
+    const configSnapshot = createContentProfileSnapshot(profile);
 
     const dbJob = await jobRepository.createJob({
       workspaceId,
@@ -118,10 +116,7 @@ export const generatedContentService = {
     }
 
     // Create a brand new Job in Draft state (without prefilled text) to run AI generation fresh
-    const configSnapshot = {
-      promptVersionId: profile.promptVersionId,
-      templateVersionId: profile.templateVersionId,
-    };
+    const configSnapshot = createContentProfileSnapshot(profile);
 
     const dbJob = await jobRepository.createJob({
       workspaceId,

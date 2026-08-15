@@ -86,6 +86,32 @@ export const promptService = {
     }
     return version;
   },
+
+  async testPromptVersion(
+    promptId: string,
+    versionNumber: number,
+    workspaceId: string,
+    variables: Record<string, any>
+  ): Promise<{ text: string; metadata?: any; versionNumber: number }> {
+    logger.info({ promptId, versionNumber }, 'Running test generation for prompt version');
+    await this.getPromptById(promptId, workspaceId);
+    const version = await this.getVersionDetails(promptId, versionNumber);
+
+    // Call Gemini AI provider adapter directly for testing
+    const aiResponse = await (await import('../providers/ai/gemini.provider.js')).geminiProvider.generate(
+      {
+        body: version.body,
+        versionNumber: version.versionNumber,
+      },
+      variables
+    );
+
+    return {
+      text: aiResponse.text,
+      metadata: aiResponse.metadata,
+      versionNumber: version.versionNumber,
+    };
+  },
 };
 
 export default promptService;

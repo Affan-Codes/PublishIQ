@@ -1,17 +1,108 @@
 import { z } from 'zod';
+import { ContentProfileStatus, Language } from '@prisma/client';
 
-export const ContentProfileSchema = z.object({
-  name: z.string().min(1, 'Profile name is required'),
-  language: z.enum(['English', 'Hindi', 'Urdu']),
+export const PromptVariablesSchema = z.record(
+  z.string().min(1).max(64),
+  z.union([z.string(), z.number(), z.boolean()])
+);
+
+export const BrandingRulesSchema = z
+  .object({
+    text: z.string().max(100).optional(),
+    position: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']).optional(),
+    color: z.string().max(32).optional(),
+    opacity: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+export const WatermarkRulesSchema = z
+  .object({
+    text: z.string().max(100).optional(),
+    position: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']).optional(),
+    opacity: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+export const CaptionStrategySchema = z
+  .object({
+    template: z.string().max(500).optional(),
+    prefix: z.string().max(200).optional(),
+    suffix: z.string().max(200).optional(),
+  })
+  .strict();
+
+export const HashtagStrategySchema = z
+  .object({
+    tags: z.array(z.string().min(1).max(50)).max(30).optional(),
+    mode: z.enum(['append', 'prepend', 'replace', 'none']).optional(),
+  })
+  .strict();
+
+export const MusicSelectionRulesSchema = z
+  .object({
+    mood: z.string().min(1).max(50).optional(),
+    genre: z.string().min(1).max(50).optional(),
+    tempo: z.string().max(50).optional(),
+    minDurationSeconds: z.number().min(0).max(3600).optional(),
+    maxDurationSeconds: z.number().min(0).max(3600).optional(),
+  })
+  .strict();
+
+export const RenderingConfigurationSchema = z
+  .object({
+    branding: z.string().max(100).optional(),
+    watermark: z.string().max(100).optional(),
+    resolution: z.enum(['1080x1920', '1920x1080', '1080x1080', '720x1280']).optional(),
+    fps: z.number().min(1).max(60).optional(),
+  })
+  .strict();
+
+export const ValidationRulesSchema = z
+  .object({
+    bannedWords: z.array(z.string().min(1).max(50)).max(100).optional(),
+    minLength: z.number().min(0).max(10000).optional(),
+    maxLength: z.number().min(1).max(10000).optional(),
+    strictProfanity: z.boolean().optional(),
+  })
+  .strict();
+
+export const ContentProfileCreateSchema = z.object({
+  name: z.string().min(1, 'Profile name is required').max(100),
+  status: z.nativeEnum(ContentProfileStatus),
+  contentTypeId: z.string().uuid('Invalid ContentType ID format'),
+  promptVersionId: z.string().uuid('Invalid PromptVersion ID format'),
+  templateVersionId: z.string().uuid('Invalid TemplateVersion ID format'),
+  language: z.nativeEnum(Language),
   tone: z.string().min(1, 'Tone is required'),
   writingStyle: z.string().min(1, 'Writing style is required'),
-  contentTypeId: z.string().min(1, 'Content type is required'),
-  promptVersionId: z.string().min(1, 'Prompt version is required'),
-  templateVersionId: z.string().min(1, 'Template version is required'),
-  captionStrategy: z.record(z.string(), z.any()).optional(),
-  hashtagStrategy: z.record(z.string(), z.any()).optional(),
-  musicSelectionRules: z.record(z.string(), z.any()).optional(),
-  renderingConfiguration: z.record(z.string(), z.any()).optional(),
+  promptVariables: PromptVariablesSchema.default({}),
+  brandingRules: BrandingRulesSchema.default({}),
+  watermarkRules: WatermarkRulesSchema.default({}),
+  captionStrategy: CaptionStrategySchema.default({}),
+  hashtagStrategy: HashtagStrategySchema.default({}),
+  musicSelectionRules: MusicSelectionRulesSchema.default({}),
+  renderingConfiguration: RenderingConfigurationSchema.default({}),
+  validationRules: ValidationRulesSchema.default({}),
 });
 
-export type ContentProfileInput = z.infer<typeof ContentProfileSchema>;
+export const ContentProfileUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  status: z.nativeEnum(ContentProfileStatus).optional(),
+  contentTypeId: z.string().uuid().optional(),
+  promptVersionId: z.string().uuid().optional(),
+  templateVersionId: z.string().uuid().optional(),
+  language: z.nativeEnum(Language).optional(),
+  tone: z.string().optional(),
+  writingStyle: z.string().optional(),
+  promptVariables: PromptVariablesSchema.optional(),
+  brandingRules: BrandingRulesSchema.optional(),
+  watermarkRules: WatermarkRulesSchema.optional(),
+  captionStrategy: CaptionStrategySchema.optional(),
+  hashtagStrategy: HashtagStrategySchema.optional(),
+  musicSelectionRules: MusicSelectionRulesSchema.optional(),
+  renderingConfiguration: RenderingConfigurationSchema.optional(),
+  validationRules: ValidationRulesSchema.optional(),
+});
+
+export type ContentProfileInput = z.infer<typeof ContentProfileCreateSchema>;
+export type ContentProfileUpdateInput = z.infer<typeof ContentProfileUpdateSchema>;

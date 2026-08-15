@@ -123,6 +123,26 @@ export const promptController = {
       next(error);
     }
   },
+
+  async testVersion(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const versionNumber = parseInt(req.params.versionNumber as string, 10);
+      const variables = req.body?.variables || {};
+      const result = await promptService.testPromptVersion(
+        req.params.id as string,
+        versionNumber,
+        req.workspaceId!,
+        variables
+      );
+      res.json({
+        success: true,
+        data: result,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 };
 
 export default promptController;

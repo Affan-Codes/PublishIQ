@@ -1,9 +1,10 @@
 import { AIProviderAdapter, PromptVersionData, StructuredAIResponse } from './ai-provider.interface.js';
 import { env } from '../../config/env.js';
-import { ExternalProviderError } from '../../errors/custom-errors.js';
+import { ExternalProviderError, ValidationError } from '../../errors/custom-errors.js';
 import { logger } from '../../utils/logger.js';
 import { AIContentResponseSchema } from '../../schemas/ai-response.schema.js';
 import { systemConfigCache } from '../../config/system-config.cache.js';
+import { extractPromptVariables } from '../../constants/prompt-variables.js';
 
 // JSON schema definition to send to Gemini API for structured JSON response format
 const geminiResponseSchema = {
@@ -51,6 +52,20 @@ export const geminiProvider: AIProviderAdapter = {
     variables: Record<string, unknown>,
     responseSchema?: any
   ): Promise<StructuredAIResponse> {
+    // Replace variables in the prompt body
+    let finalPrompt = prompt.body;
+    for (const [key, value] of Object.entries(variables)) {
+      finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+    }
+
+    // CFG-02: Last line of defense - ensure no unmatched placeholders remain
+    const remainingTokens = extractPromptVariables(finalPrompt);
+    if (remainingTokens.length > 0) {
+      throw new ValidationError(
+        `Unmatched prompt placeholder(s) detected: ${remainingTokens.map((t) => `{{${t}}}`).join(', ')}`
+      );
+    }
+
     const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       throw new ExternalProviderError(
@@ -61,12 +76,6 @@ export const geminiProvider: AIProviderAdapter = {
 
     const sysModel = await systemConfigCache.get<string>('ai.gemini_model');
     const modelName = sysModel || env.GEMINI_MODEL || 'gemini-2.5-flash';
-
-    // Replace variables in the prompt body
-    let finalPrompt = prompt.body;
-    for (const [key, value] of Object.entries(variables)) {
-      finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
-    }
 
     const executeCall = async (): Promise<StructuredAIResponse> => {
       logger.debug({ versionNumber: prompt.versionNumber, model: modelName }, 'Sending request to Gemini API');

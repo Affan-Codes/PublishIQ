@@ -10,7 +10,7 @@ import { SkeletonCard } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
-import { Plus, History, RotateCcw, X, AlertCircle, FileText, Search } from 'lucide-react';
+import { Plus, History, RotateCcw, X, AlertCircle, FileText, Search, Play, Sparkles, CheckCircle2 } from 'lucide-react';
 
 const promptCreateSchema = z.object({
   name: z.string().min(1, 'Prompt name is required').max(100),
@@ -44,6 +44,12 @@ interface Prompt {
   versions?: PromptVersion[];
 }
 
+function extractVariables(body: string): string[] {
+  const matches = body.match(/\{\{([a-zA-Z0-9_-]+)\}\}/g) || [];
+  const variables = matches.map((m) => m.replace(/[\{\}]/g, '').trim());
+  return Array.from(new Set(variables));
+}
+
 export const PromptsView: React.FC = () => {
   const queryClient = useQueryClient();
   const { addToast } = useNotifications();
@@ -53,6 +59,13 @@ export const PromptsView: React.FC = () => {
   const [historyPrompt, setHistoryPrompt] = useState<Prompt | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Testing State
+  const [testingVersion, setTestingVersion] = useState<{ prompt: Prompt; version: PromptVersion } | null>(null);
+  const [testVariables, setTestVariables] = useState<Record<string, string>>({});
+  const [testResult, setTestResult] = useState<{ text: string; metadata?: any } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
 
   // Queries
   const { data: prompts = [], isLoading, isFetching, isError, error, refetch } = useQuery<Prompt[]>({
@@ -127,6 +140,41 @@ export const PromptsView: React.FC = () => {
       addToast(err.response?.data?.error?.message || err.message || 'Failed to activate version', 'error');
     },
   });
+
+  const openTestModal = (prompt: Prompt, version: PromptVersion) => {
+    const vars = extractVariables(version.body);
+    const initialVars: Record<string, string> = {};
+    vars.forEach((v) => {
+      if (v === 'contentType') initialVars[v] = 'Quote';
+      else if (v === 'language') initialVars[v] = 'English';
+      else if (v === 'tone') initialVars[v] = 'Inspiring';
+      else if (v === 'style') initialVars[v] = 'Poetic';
+      else initialVars[v] = '';
+    });
+    setTestVariables(initialVars);
+    setTestResult(null);
+    setTestError(null);
+    setTestingVersion({ prompt, version });
+  };
+
+  const handleRunTest = async () => {
+    if (!testingVersion) return;
+    setIsTesting(true);
+    setTestError(null);
+    setTestResult(null);
+    try {
+      const res = await apiClient.post(
+        `/prompts/${testingVersion.prompt.id}/versions/${testingVersion.version.versionNumber}/test`,
+        { variables: testVariables }
+      );
+      setTestResult(res.data.data);
+      addToast('Prompt test generation completed', 'success');
+    } catch (err: any) {
+      setTestError(err.response?.data?.error?.message || err.message || 'Prompt test generation failed');
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   const filteredPrompts = prompts.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -237,7 +285,7 @@ export const PromptsView: React.FC = () => {
                     setHistoryPrompt(res.data.data);
                   }}
                 >
-                  Version History
+                  Version History & Testing
                 </Button>
               </div>
             </div>
@@ -262,6 +310,10 @@ export const PromptsView: React.FC = () => {
                 <span>{errorText}</span>
               </div>
             )}
+
+            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
+              <span className="font-semibold">💡 System Placeholders:</span> You can reference system variables <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, or custom variables like <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{author}}'}</code>.
+            </div>
 
             <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4 text-sm">
               <div>
@@ -295,7 +347,7 @@ export const PromptsView: React.FC = () => {
                 </label>
                 <textarea
                   rows={6}
-                  placeholder="You are an expert poet. Generate a 2-line Shayari in Hindi..."
+                  placeholder="You are an expert poet. Generate a 2-line {{contentType}} in {{language}} with a {{tone}} tone..."
                   {...regCreate('body')}
                   className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] p-3 text-white font-mono text-xs outline-none focus:border-purple-500"
                 />
@@ -322,7 +374,7 @@ export const PromptsView: React.FC = () => {
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
                 <h3 className="text-xl font-bold text-white">{historyPrompt.name}</h3>
-                <p className="text-xs text-[#9c9cb0]">Prompt Version Registry & Rollback Engine</p>
+                <p className="text-xs text-[#9c9cb0]">Prompt Version Registry, Testing & Rollback Engine</p>
               </div>
               <button onClick={() => setHistoryPrompt(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
@@ -364,8 +416,17 @@ export const PromptsView: React.FC = () => {
 
                   {ver.notes && <p className="text-xs text-[#6e6e80] italic">Notes: {ver.notes}</p>}
 
-                  {ver.status !== 'Active' && (
-                    <div className="flex justify-end pt-1">
+                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#1a1a24]/50">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={Sparkles}
+                      onClick={() => openTestModal(historyPrompt, ver)}
+                    >
+                      Test Generation
+                    </Button>
+
+                    {ver.status !== 'Active' && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -378,8 +439,8 @@ export const PromptsView: React.FC = () => {
                       >
                         Set as Active
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -409,6 +470,10 @@ export const PromptsView: React.FC = () => {
                 {errorText}
               </div>
             )}
+
+            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
+              <span className="font-semibold">💡 Placeholders:</span> <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>.
+            </div>
 
             <form onSubmit={subVer((v) => addVersionMutation.mutate(v))} className="space-y-4 text-sm">
               <div>
@@ -445,6 +510,113 @@ export const PromptsView: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt Testing Modal */}
+      {testingVersion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Sparkles className="text-purple-400" size={18} />
+                  Test Generation (Version {testingVersion.version.versionNumber})
+                </h3>
+                <p className="text-xs text-[#9c9cb0]">Execute an interactive test call to Gemini AI using this prompt template</p>
+              </div>
+              <button onClick={() => setTestingVersion(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+
+            {testError && (
+              <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-xs text-red-300 flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{testError}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-2">
+                  Prompt Placeholders & Test Inputs
+                </h4>
+                {Object.keys(testVariables).length === 0 ? (
+                  <p className="text-xs text-[#9c9cb0] italic">No {'{{variable}}'} placeholders detected in this prompt body.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Object.keys(testVariables).map((varKey) => (
+                      <div key={varKey} className="space-y-1">
+                        <label className="text-xs font-mono text-purple-300">{`{{${varKey}}}`}</label>
+                        <input
+                          type="text"
+                          value={testVariables[varKey]}
+                          onChange={(e) =>
+                            setTestVariables((prev) => ({ ...prev, [varKey]: e.target.value }))
+                          }
+                          placeholder={`Value for ${varKey}`}
+                          className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500 font-mono"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  icon={Play}
+                  onClick={handleRunTest}
+                  isLoading={isTesting}
+                  loadingText="Generating AI Test Content..."
+                >
+                  Run Test Generation
+                </Button>
+              </div>
+
+              {testResult && (
+                <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-950/10 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
+                    <CheckCircle2 size={16} />
+                    <span>AI Test Generation Output Received:</span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-[#6e6e80]">Generated Content Text:</span>
+                    <p className="text-sm text-white font-medium bg-[#0e0e12] p-3 rounded-lg border border-[#1a1a24] whitespace-pre-wrap">
+                      {testResult.text}
+                    </p>
+                  </div>
+
+                  {testResult.metadata?.caption && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-bold text-[#6e6e80]">Suggested Caption:</span>
+                      <p className="text-xs text-[#9c9cb0] bg-[#0e0e12] p-2.5 rounded-lg border border-[#1a1a24] whitespace-pre-wrap">
+                        {testResult.metadata.caption}
+                      </p>
+                    </div>
+                  )}
+
+                  {Array.isArray(testResult.metadata?.hashtags) && testResult.metadata.hashtags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {testResult.metadata.hashtags.map((tag: string, i: number) => (
+                        <span key={i} className="text-[11px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                          #{tag.replace(/^#/, '')}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-[#1a1a24] pt-4">
+              <Button variant="secondary" size="sm" onClick={() => setTestingVersion(null)}>
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}

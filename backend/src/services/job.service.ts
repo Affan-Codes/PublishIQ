@@ -5,6 +5,7 @@ import { generatedContentRepository } from '../repositories/generatedContent.rep
 import { ValidationError, NotFoundError, ConflictError } from '../errors/custom-errors.js';
 import { contentPipelineQueue } from '../jobs/index.js';
 import { logger } from '../utils/logger.js';
+import { createContentProfileSnapshot } from '../utils/profile-snapshot.js';
 
 export interface JobListFilters {
   jobType?: JobType;
@@ -130,10 +131,7 @@ export const jobService = {
       throw new ValidationError('Channel does not have a content profile configured');
     }
 
-    const configSnapshot = {
-      promptVersionId: profile.promptVersionId,
-      templateVersionId: profile.templateVersionId,
-    };
+    const configSnapshot = createContentProfileSnapshot(profile);
 
     // Create the job record in Draft
     const dbJob = await jobRepository.createJob({

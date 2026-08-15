@@ -6,6 +6,7 @@ import { contentTypeRepository } from '../repositories/contentType.repository.js
 import { contentProfileRepository } from '../repositories/contentProfile.repository.js';
 import { assetRepository } from '../repositories/asset.repository.js';
 import { templateRepository } from '../repositories/template.repository.js';
+import { musicSelectionStateRepository } from '../repositories/musicSelectionState.repository.js';
 import { geminiProvider } from '../providers/ai/gemini.provider.js';
 import { renderingService } from './rendering.service.js';
 import { videoService } from './video.service.js';
@@ -19,8 +20,15 @@ export interface PipelineOptions {
   onStageComplete?: (stage: PipelineStage) => Promise<void>;
 }
 
-// LOW-02: In-memory cache for licensed music assets per workspace with 60-second TTL
+// LOW-02 / CFG-15: In-memory cache for licensed music assets per workspace with 60-second TTL.
+// Single-worker-process assumption: This cache relies on the single-worker deployment model.
+// If worker processes are scaled horizontally across multiple instances/containers, this cache
+// should be migrated to Valkey to maintain cross-process consistency.
 const musicAssetCache = new Map<string, { timestamp: number; assets: Asset[] }>();
+
+export function clearMusicAssetCache(): void {
+  musicAssetCache.clear();
+}
 
 async function getCachedActiveMusic(workspaceId: string): Promise<Asset[]> {
   const cached = musicAssetCache.get(workspaceId);
@@ -34,9 +42,40 @@ async function getCachedActiveMusic(workspaceId: string): Promise<Asset[]> {
 }
 
 /**
+ * Filters active, license-confirmed music assets matching mood and genre.
+ * Falls back to mood-only matching if no exact mood+genre match is found.
+ */
+export function selectEligibleMusicCandidates(
+  allMusic: Asset[],
+  mood?: string,
+  genre?: string
+): Asset[] {
+  const targetMood = mood || 'Inspiring';
+  const targetGenre = genre || 'Acoustic';
+
+  // Filter candidates that are Active and Confirmed
+  const exactMatches = allMusic.filter((asset) => {
+    if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
+    const meta = (asset.metadata as Record<string, any>) || {};
+    return meta.mood === targetMood && meta.genre === targetGenre;
+  });
+
+  if (exactMatches.length > 0) {
+    return exactMatches;
+  }
+
+  // Fallback to mood-only matching
+  return allMusic.filter((asset) => {
+    if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
+    const meta = (asset.metadata as Record<string, any>) || {};
+    return meta.mood === targetMood;
+  });
+}
+
+/**
  * Orchestrates a single stage in the content pipeline.
  */
-async function processStage(jobId: string, stage: PipelineStage): Promise<void> {
+export async function processStage(jobId: string, stage: PipelineStage): Promise<void> {
   const job = await jobRepository.getById(jobId);
   if (!job) {
     throw new NotFoundError(`Job not found: ${jobId}`);
@@ -51,7 +90,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
-      // MED-04: Use configSnapshot's pinned promptVersionId as authoritative
+      // MED-04 / CFG-10: Sourcing from configSnapshot as authoritative with profile fallback
       const snapshot = (job.configSnapshot as Record<string, any>) || {};
       let promptVersionId = snapshot.promptVersionId;
       if (!promptVersionId) {
@@ -66,8 +105,13 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError(`Prompt version not found: ${promptVersionId}`);
       }
 
+      // Sourcing behavioral fields from snapshot with fallback
+      const language = snapshot.language || profile.language;
+      const tone = snapshot.tone || profile.tone;
+      const style = snapshot.writingStyle || profile.writingStyle;
+      const variables = (snapshot.promptVariables !== undefined ? snapshot.promptVariables : profile.promptVariables) as Record<string, any> || {};
+
       // Generate content via Gemini AI provider
-      const variables = profile.promptVariables as Record<string, any> || {};
       const aiResponse = await geminiProvider.generate(
         {
           body: promptVersion.body,
@@ -75,9 +119,9 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         },
         {
           contentType: contentType?.name || '',
-          language: profile.language,
-          tone: profile.tone,
-          style: profile.writingStyle,
+          language,
+          tone,
+          style,
           ...variables,
         }
       );
@@ -99,11 +143,26 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Generated text content is empty.');
       }
 
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+      const validationRules = (snapshot.validationRules !== undefined ? snapshot.validationRules : job.contentProfile?.validationRules) as Record<string, any> || {};
+
+      // CFG-01: Length validation from additive validationRules if specified
+      if (typeof validationRules.maxLength === 'number' && validationRules.maxLength > 0) {
+        if (text.length > validationRules.maxLength) {
+          throw new ValidationError(`Generated text length (${text.length}) exceeds maximum length limit (${validationRules.maxLength}).`);
+        }
+      }
+
       // Profanity filtering check
       const configProfanity = await systemConfigCache.get<string[]>('profanity_filter_words');
       const defaultProfanities = ['abuse', 'asshole', 'bitch', 'bastard', 'crap', 'cunt', 'dick', 'fuck', 'motherfucker', 'piss', 'pussy', 'shit', 'slut', 'whore'];
-      const profanityList = Array.isArray(configProfanity) ? configProfanity : defaultProfanities;
-      const containsProfanity = profanityList.some((word) => {
+      const baseProfanityList = Array.isArray(configProfanity) ? configProfanity : defaultProfanities;
+
+      // CFG-01: Additive profile-specific bannedWords merged into base profanity list
+      const extraBannedWords = Array.isArray(validationRules.bannedWords) ? validationRules.bannedWords : [];
+      const combinedProfanityList = [...new Set([...baseProfanityList, ...extraBannedWords])];
+
+      const containsProfanity = combinedProfanityList.some((word) => {
         const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
         return regex.test(text);
       });
@@ -130,7 +189,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
-      // MED-04: Use configSnapshot's pinned templateVersionId as authoritative
+      // MED-04 / CFG-10: Use configSnapshot's pinned templateVersionId as authoritative
       const snapshot = (job.configSnapshot as Record<string, any>) || {};
       let templateVersionId = snapshot.templateVersionId;
       if (!templateVersionId) {
@@ -138,11 +197,19 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         templateVersionId = profile.templateVersionId;
       }
 
+      const brandingRules = (snapshot.brandingRules !== undefined ? snapshot.brandingRules : profile.brandingRules) as Record<string, any> || {};
+      const watermarkRules = (snapshot.watermarkRules !== undefined ? snapshot.watermarkRules : profile.watermarkRules) as Record<string, any> || {};
+      const renderingConfiguration = (snapshot.renderingConfiguration !== undefined ? snapshot.renderingConfiguration : profile.renderingConfiguration) as Record<string, any> || {};
+
+      // CFG-01: Wire brandingRules and watermarkRules text with renderingConfiguration fallback
+      const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
+      const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
+
       // Render vertical PNG via Playwright
       const imageUrl = await renderingService.renderImage(jobId, text, {
-        language: profile.language,
-        branding: (profile.renderingConfiguration as any)?.branding || 'PUBLISHIQ',
-        watermark: (profile.renderingConfiguration as any)?.watermark || '@publishiq',
+        language: snapshot.language || profile.language,
+        branding: brandingText,
+        watermark: watermarkText,
         templateVersionId,
       });
 
@@ -161,42 +228,47 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
-      const selectionRules = profile.musicSelectionRules as Record<string, any> || {};
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+      const selectionRules = (snapshot.musicSelectionRules !== undefined ? snapshot.musicSelectionRules : profile.musicSelectionRules) as Record<string, any> || {};
       const mood = selectionRules.mood || 'Inspiring';
       const genre = selectionRules.genre || 'Acoustic';
 
       // LOW-02: Load active licensed music assets using TTL cache
       const allMusic = await getCachedActiveMusic(job.workspaceId);
 
-      // Filter candidates using both mood and genre
-      const exactMatches = allMusic.filter((asset) => {
-        if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
-        const meta = asset.metadata as Record<string, any> || {};
-        return meta.mood === mood && meta.genre === genre;
-      });
-
-      // Fallback: if no exact combination is found, fallback to matching by mood only
-      const candidates = exactMatches.length > 0
-        ? exactMatches
-        : allMusic.filter((asset) => {
-            if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
-            const meta = asset.metadata as Record<string, any> || {};
-            return meta.mood === mood;
-          });
+      // Filter candidates using shared helper
+      const candidates = selectEligibleMusicCandidates(allMusic, mood, genre);
 
       if (candidates.length === 0) {
         throw new ValidationError(`No music track matches profile selection rules: ${JSON.stringify(selectionRules)}`);
       }
 
-      // Pick the first matched asset
-      const selectedAsset = candidates[0]!;
-      logger.info({ jobId, assetId: selectedAsset.id }, 'Music track selected successfully');
+      // CFG-03: Deterministic rotation across eligible candidates
+      const sortedCandidates = [...candidates].sort((a, b) => a.id.localeCompare(b.id));
+      let selectedAsset = sortedCandidates[0]!;
+
+      try {
+        const lastState = await musicSelectionStateRepository.getLastSelected(job.workspaceId, mood, genre);
+        if (lastState && lastState.lastSelectedAssetId) {
+          const lastIdx = sortedCandidates.findIndex((c) => c.id === lastState.lastSelectedAssetId);
+          if (lastIdx !== -1) {
+            selectedAsset = sortedCandidates[(lastIdx + 1) % sortedCandidates.length]!;
+          }
+        }
+        await musicSelectionStateRepository.upsertLastSelected(job.workspaceId, mood, genre, selectedAsset.id);
+      } catch (err: any) {
+        logger.warn({ jobId, err: err.message }, 'Failed to load/update music selection state; falling back to first candidate');
+      }
+
+      logger.info({ jobId, assetId: selectedAsset.id, mood, genre }, 'Music track selected successfully via deterministic rotation');
 
       // Store the selected music asset file path in configSnapshot (since no direct music column exists)
       const updatedSnapshot = {
         ...(job.configSnapshot as Record<string, any> || {}),
         selectedMusicAssetId: selectedAsset.id,
         selectedMusicFilePath: selectedAsset.filePath,
+        selectedMusicMood: mood,
+        selectedMusicGenre: genre,
       };
 
       await jobRepository.transitionJobStage(jobId, stage, {
@@ -211,15 +283,32 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       }
 
       // Load selected music file path from the configSnapshot
-      const snapshot = job.configSnapshot as Record<string, any> || {};
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
       let musicFilePath = snapshot.selectedMusicFilePath;
+
+      // CFG-04: Fallback must honor musicSelectionRules and licenseStatus === 'Confirmed'
       if (!musicFilePath || (!musicFilePath.startsWith('http://') && !musicFilePath.startsWith('https://'))) {
-        const activeMusicAssets = await getCachedActiveMusic(job.workspaceId);
-        const validCloudinaryTrack = activeMusicAssets.find((a: Asset) => a.filePath && (a.filePath.startsWith('http://') || a.filePath.startsWith('https://')));
+        const selectionRules = (snapshot.musicSelectionRules !== undefined ? snapshot.musicSelectionRules : job.contentProfile?.musicSelectionRules) as Record<string, any> || {};
+        const mood = snapshot.selectedMusicMood || selectionRules.mood || 'Inspiring';
+        const genre = snapshot.selectedMusicGenre || selectionRules.genre || 'Acoustic';
+
+        const allActiveMusic = await getCachedActiveMusic(job.workspaceId);
+        const eligibleCandidates = selectEligibleMusicCandidates(allActiveMusic, mood, genre);
+
+        const validCloudinaryTrack = eligibleCandidates.find(
+          (a: Asset) => a.filePath && (a.filePath.startsWith('http://') || a.filePath.startsWith('https://'))
+        );
+
         if (validCloudinaryTrack) {
+          logger.warn(
+            { jobId, fallbackAssetId: validCloudinaryTrack.id, mood, genre },
+            'Selected music path unusable/local; fell back to compliant active Cloudinary track'
+          );
           musicFilePath = validCloudinaryTrack.filePath;
         } else {
-          throw new ValidationError('No valid Cloudinary music track available for rendering.');
+          throw new ValidationError(
+            `Previously selected music track is no longer usable and no compliant fallback candidate exists for mood: ${mood}, genre: ${genre}`
+          );
         }
       }
 
@@ -244,14 +333,14 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         const text = job.generatedText || '';
         let captionText = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
 
-        if (job.contentProfileId) {
-          const profile = await contentProfileRepository.getById(job.contentProfileId, job.workspaceId);
-          const captionStrat = profile?.captionStrategy as Record<string, any> | undefined;
-          if (captionStrat?.template) {
-            captionText = captionStrat.template.replace('{{text}}', text);
-          } else if (captionStrat?.prefix || captionStrat?.suffix) {
-            captionText = `${captionStrat.prefix || ''}${text}${captionStrat.suffix || ''}`;
-          }
+        // CFG-10: Read from snapshot with fallback
+        const snapshot = (job.configSnapshot as Record<string, any>) || {};
+        const captionStrat = (snapshot.captionStrategy !== undefined ? snapshot.captionStrategy : job.contentProfile?.captionStrategy) as Record<string, any> | undefined;
+
+        if (captionStrat?.template) {
+          captionText = captionStrat.template.replace('{{text}}', text);
+        } else if (captionStrat?.prefix || captionStrat?.suffix) {
+          captionText = `${captionStrat.prefix || ''}${text}${captionStrat.suffix || ''}`;
         }
 
         await jobRepository.transitionJobStage(jobId, stage, {
@@ -267,12 +356,12 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       if (!job.hashtags) {
         let hashtagsList = ['wisdom', 'quotes', 'daily', 'motivation'];
 
-        if (job.contentProfileId) {
-          const profile = await contentProfileRepository.getById(job.contentProfileId, job.workspaceId);
-          const hashtagStrat = profile?.hashtagStrategy as Record<string, any> | undefined;
-          if (Array.isArray(hashtagStrat?.tags) && hashtagStrat.tags.length > 0) {
-            hashtagsList = hashtagStrat.tags;
-          }
+        // CFG-10: Read from snapshot with fallback
+        const snapshot = (job.configSnapshot as Record<string, any>) || {};
+        const hashtagStrat = (snapshot.hashtagStrategy !== undefined ? snapshot.hashtagStrategy : job.contentProfile?.hashtagStrategy) as Record<string, any> | undefined;
+
+        if (Array.isArray(hashtagStrat?.tags) && hashtagStrat.tags.length > 0) {
+          hashtagsList = hashtagStrat.tags;
         }
 
         await jobRepository.transitionJobStage(jobId, stage, {

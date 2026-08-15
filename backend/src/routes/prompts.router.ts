@@ -79,4 +79,14 @@ router.post(
   promptController.rollbackVersion
 );
 
+const promptTestSchema = z.object({
+  variables: z.record(z.string(), z.any()).default({}),
+});
+
+router.post(
+  '/prompts/:id/versions/:versionNumber/test',
+  validateRequest({ params: versionParamSchema, body: promptTestSchema }),
+  promptController.testVersion
+);
+
 export default router;

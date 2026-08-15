@@ -3,6 +3,7 @@ import { jobRepository } from '../repositories/job.repository.js';
 import { Job, JobType, PipelineStage } from '@prisma/client';
 import { ValidationError, NotFoundError } from '../errors/custom-errors.js';
 import { logger } from '../utils/logger.js';
+import { createContentProfileSnapshot } from '../utils/profile-snapshot.js';
 
 export const channelSchedulingService = {
   /**
@@ -41,11 +42,9 @@ export const channelSchedulingService = {
       channelId: channel.id,
       contentProfileId: profile.id,
       pipelineStage: PipelineStage.Draft,
-      configSnapshot: {
-        promptVersionId: profile.promptVersionId,
-        templateVersionId: profile.templateVersionId,
+      configSnapshot: createContentProfileSnapshot(profile, {
         bullJobId: bullJobId || null,
-      },
+      }),
     });
 
     return newDbJob.id;
