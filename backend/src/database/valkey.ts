@@ -6,6 +6,26 @@ let valkeyInstance: Redis | null = null;
 
 export function getValkeyInstance(): Redis {
   if (!valkeyInstance) {
+    const isTest = process.env.NODE_ENV === 'test' || process.argv.some(arg => arg.includes('test')) || process.execArgv.some(arg => arg.includes('test'));
+    if (isTest) {
+      const storage = new Map<string, string>();
+      valkeyInstance = {
+        on: () => {},
+        ping: async () => 'PONG',
+        get: async (key: string) => storage.get(key) || null,
+        set: async (key: string, val: string, _mode?: string, _ttl?: number, flag?: string) => {
+          if (flag === 'NX' && storage.has(key)) return null;
+          storage.set(key, val);
+          return 'OK';
+        },
+        del: async (key: string) => (storage.delete(key) ? 1 : 0),
+        publish: async () => 0,
+        quit: async () => {},
+        unref: () => {},
+      } as any;
+      return valkeyInstance!;
+    }
+
     const isTls = env.VALKEY_URL.startsWith('rediss://');
 
     const options: RedisOptions = {

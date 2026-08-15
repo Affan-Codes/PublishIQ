@@ -20,7 +20,8 @@ const defaultJobOptions = {
 };
 
 function createQueue(name: string): Queue {
-  if (process.env.NODE_ENV === 'test') {
+  const isTest = process.env.NODE_ENV === 'test' || process.argv.some(arg => arg.includes('test')) || process.execArgv.some(arg => arg.includes('test'));
+  if (isTest) {
     return {
       name,
       add: async () => ({ id: 'mock-bullmq-job-id' }),
