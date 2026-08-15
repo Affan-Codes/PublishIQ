@@ -4,7 +4,7 @@ import promptService from '../services/prompt.service.js';
 export const promptController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const prompt = await promptService.getPromptById(req.params.id as string);
+      const prompt = await promptService.getPromptById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: prompt,

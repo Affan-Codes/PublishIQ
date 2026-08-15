@@ -7,9 +7,9 @@ import { ContentProfile, ContentProfileStatus, Language } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 export const contentProfileService = {
-  async getProfileById(id: string) {
-    logger.debug({ id }, 'Fetching content profile by ID');
-    const profile = await contentProfileRepository.getById(id);
+  async getProfileById(id: string, workspaceId?: string) {
+    logger.debug({ id, workspaceId }, 'Fetching content profile by ID');
+    const profile = await contentProfileRepository.getById(id, workspaceId);
     if (!profile) {
       throw new NotFoundError(`ContentProfile with ID ${id} not found`);
     }

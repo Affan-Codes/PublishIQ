@@ -6,8 +6,6 @@ import { runContentPipeline } from '../services/content-pipeline.service.js';
 import { channelSchedulingService } from '../services/channel-scheduling.service.js';
 import { ValidationError, NotFoundError } from '../errors/custom-errors.js';
 
-const connection = getValkeyInstance();
-
 /**
  * Classifies whether an error is retryable (network/DB glitches) or non-retryable (validation failures).
  */
@@ -25,10 +23,10 @@ function isRetryableError(err: any): boolean {
 export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channelId?: string; isScheduled?: boolean }>) => {
   let dbJobId = job.data.jobId;
 
-  // Handle scheduled Repeatable execution
+  // Handle scheduled Repeatable execution (CRIT-02: using job.id as idempotency key)
   if (!dbJobId && job.data.channelId) {
     const channelId = job.data.channelId;
-    const createdId = await channelSchedulingService.createScheduledJob(channelId);
+    const createdId = await channelSchedulingService.createScheduledJob(channelId, job.id);
     if (!createdId) {
       return;
     }
@@ -54,9 +52,10 @@ export const contentPipelineProcessor = async (job: Job<{ jobId?: string; channe
       logger.warn({ jobId: dbJobId, bullJobId: job.id, err: err.message }, 'Retryable error encountered, re-throwing to BullMQ');
       throw err;
     } else {
-      // Non-retryable error: We log and resolve the job successfully in BullMQ to avoid retrying
-      logger.error({ jobId: dbJobId, bullJobId: job.id, err: err.message }, 'Non-retryable error encountered. Mark processed in BullMQ.');
-      return;
+      // HIGH-05: Non-retryable error: Discard remaining BullMQ attempts and throw so BullMQ marks it 'failed' without retrying
+      logger.error({ jobId: dbJobId, bullJobId: job.id, err: err.message }, 'Non-retryable error encountered. Discarding remaining retries in BullMQ.');
+      await job.discard();
+      throw err;
     }
   }
 };
@@ -65,7 +64,7 @@ export function startContentPipelineWorker(concurrency: number = 2): Worker {
   logger.info({ queueName: 'content-pipeline', prefix: env.QUEUE_PREFIX, concurrency }, 'Starting Content Pipeline Worker');
 
   const worker = new Worker('content-pipeline', contentPipelineProcessor, {
-    connection: connection as any,
+    connection: getValkeyInstance() as any,
     prefix: env.QUEUE_PREFIX,
     concurrency,
   });

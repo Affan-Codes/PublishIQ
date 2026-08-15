@@ -41,6 +41,19 @@ export function getValkeyInstance(): Redis {
   return valkeyInstance;
 }
 
+export function setMockValkey(mock: any): void {
+  valkeyInstance = mock;
+}
+
+export async function closeValkeyInstance(): Promise<void> {
+  if (valkeyInstance && typeof valkeyInstance.quit === 'function') {
+    try {
+      await valkeyInstance.quit();
+    } catch {}
+    valkeyInstance = null;
+  }
+}
+
 export const getRedisInstance = getValkeyInstance;
 
 export default getValkeyInstance;

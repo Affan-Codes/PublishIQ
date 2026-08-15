@@ -4,9 +4,9 @@ import { Prompt, PromptVersion, PromptStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 export const promptService = {
-  async getPromptById(id: string): Promise<Prompt & { versions: PromptVersion[] }> {
-    logger.debug({ id }, 'Fetching prompt by ID');
-    const prompt = await promptRepository.getById(id);
+  async getPromptById(id: string, workspaceId?: string): Promise<Prompt & { versions: PromptVersion[] }> {
+    logger.debug({ id, workspaceId }, 'Fetching prompt by ID');
+    const prompt = await promptRepository.getById(id, workspaceId);
     if (!prompt) {
       throw new NotFoundError(`Prompt with ID ${id} not found`);
     }

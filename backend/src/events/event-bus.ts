@@ -57,20 +57,22 @@ export async function emitDomainEvent(
   });
 
   // 2. Publish to Valkey Pub/Sub channel
-  try {
-    const valkey = getValkeyInstance();
-    const eventMsg = JSON.stringify({
-      id: domainEvent.id,
-      workspaceId: domainEvent.workspaceId,
-      type: domainEvent.type,
-      payload: domainEvent.payload,
-      jobId: domainEvent.jobId,
-      createdAt: domainEvent.createdAt,
-    });
-    
-    await valkey.publish(VALKEY_EVENT_CHANNEL, eventMsg);
-  } catch (err: any) {
-    logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Valkey Pub/Sub');
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const valkey = getValkeyInstance();
+      const eventMsg = JSON.stringify({
+        id: domainEvent.id,
+        workspaceId: domainEvent.workspaceId,
+        type: domainEvent.type,
+        payload: domainEvent.payload,
+        jobId: domainEvent.jobId,
+        createdAt: domainEvent.createdAt,
+      });
+      
+      await valkey.publish(VALKEY_EVENT_CHANNEL, eventMsg);
+    } catch (err: any) {
+      logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Valkey Pub/Sub');
+    }
   }
 
   // 3. Emit on the local process event bus
@@ -81,7 +83,41 @@ export async function emitDomainEvent(
   return domainEvent;
 }
 
+/**
+ * Broadcasts an already-persisted DomainEvent system-wide using Valkey Pub/Sub and local EventEmitter.
+ * Does NOT persist to PostgreSQL (prevents duplicate DomainEvent rows).
+ */
+export async function broadcastDomainEvent(domainEvent: any): Promise<void> {
+  if (!domainEvent) return;
+
+  // 1. Publish to Valkey Pub/Sub channel
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const valkey = getValkeyInstance();
+      const eventMsg = JSON.stringify({
+        id: domainEvent.id,
+        workspaceId: domainEvent.workspaceId,
+        type: domainEvent.type,
+        payload: domainEvent.payload,
+        jobId: domainEvent.jobId,
+        createdAt: domainEvent.createdAt,
+      });
+      
+      await valkey.publish(VALKEY_EVENT_CHANNEL, eventMsg);
+    } catch (err: any) {
+      logger.error({ err, eventId: domainEvent.id }, 'Failed to publish event to Valkey Pub/Sub');
+    }
+  }
+
+  // 2. Emit on the local process event bus
+  localEventBus.emit(domainEvent.type, domainEvent);
+  localEventBus.emit('*', domainEvent);
+
+  logger.debug({ type: domainEvent.type, eventId: domainEvent.id }, 'Domain Event broadcasted');
+}
+
 export const eventBus = {
+  broadcastDomainEvent,
   /**
    * Initializes the Valkey Pub/Sub connection bridge for subscription.
    */

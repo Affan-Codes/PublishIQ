@@ -19,6 +19,20 @@ export interface PipelineOptions {
   onStageComplete?: (stage: PipelineStage) => Promise<void>;
 }
 
+// LOW-02: In-memory cache for licensed music assets per workspace with 60-second TTL
+const musicAssetCache = new Map<string, { timestamp: number; assets: Asset[] }>();
+
+async function getCachedActiveMusic(workspaceId: string): Promise<Asset[]> {
+  const cached = musicAssetCache.get(workspaceId);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp) < 60000) {
+    return cached.assets;
+  }
+  const allMusic = await assetRepository.list(workspaceId, AssetType.Music);
+  musicAssetCache.set(workspaceId, { timestamp: now, assets: allMusic });
+  return allMusic;
+}
+
 /**
  * Orchestrates a single stage in the content pipeline.
  */
@@ -37,11 +51,19 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
-      const promptVersion = await jobRepository.getPromptVersionById(profile.promptVersionId);
-      const contentType = await contentTypeRepository.getById(profile.contentTypeId);
+      // MED-04: Use configSnapshot's pinned promptVersionId as authoritative
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+      let promptVersionId = snapshot.promptVersionId;
+      if (!promptVersionId) {
+        logger.warn({ jobId }, 'Job configSnapshot missing promptVersionId, falling back to live contentProfile relation');
+        promptVersionId = profile.promptVersionId;
+      }
+
+      const promptVersion = await jobRepository.getPromptVersionById(promptVersionId);
+      const contentType = await contentTypeRepository.getById(profile.contentTypeId, job.workspaceId);
 
       if (!promptVersion) {
-        throw new ValidationError(`Prompt version not found: ${profile.promptVersionId}`);
+        throw new ValidationError(`Prompt version not found: ${promptVersionId}`);
       }
 
       // Generate content via Gemini AI provider
@@ -108,12 +130,20 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         throw new ValidationError('Job is missing a Content Profile snapshot.');
       }
 
+      // MED-04: Use configSnapshot's pinned templateVersionId as authoritative
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+      let templateVersionId = snapshot.templateVersionId;
+      if (!templateVersionId) {
+        logger.warn({ jobId }, 'Job configSnapshot missing templateVersionId, falling back to live contentProfile relation');
+        templateVersionId = profile.templateVersionId;
+      }
+
       // Render vertical PNG via Playwright
       const imageUrl = await renderingService.renderImage(jobId, text, {
         language: profile.language,
         branding: (profile.renderingConfiguration as any)?.branding || 'PUBLISHIQ',
         watermark: (profile.renderingConfiguration as any)?.watermark || '@publishiq',
-        templateVersionId: profile.templateVersionId,
+        templateVersionId,
       });
 
       await jobRepository.transitionJobStage(jobId, stage, {
@@ -135,8 +165,8 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       const mood = selectionRules.mood || 'Inspiring';
       const genre = selectionRules.genre || 'Acoustic';
 
-      // Load all active licensed music assets from the database via repository layer (ARCH-001)
-      const allMusic = await assetRepository.list(job.workspaceId, 'Music');
+      // LOW-02: Load active licensed music assets using TTL cache
+      const allMusic = await getCachedActiveMusic(job.workspaceId);
 
       // Filter candidates using both mood and genre
       const exactMatches = allMusic.filter((asset) => {
@@ -184,7 +214,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
       const snapshot = job.configSnapshot as Record<string, any> || {};
       let musicFilePath = snapshot.selectedMusicFilePath;
       if (!musicFilePath || (!musicFilePath.startsWith('http://') && !musicFilePath.startsWith('https://'))) {
-        const activeMusicAssets = await assetRepository.list(job.workspaceId, AssetType.Music);
+        const activeMusicAssets = await getCachedActiveMusic(job.workspaceId);
         const validCloudinaryTrack = activeMusicAssets.find((a: Asset) => a.filePath && (a.filePath.startsWith('http://') || a.filePath.startsWith('https://')));
         if (validCloudinaryTrack) {
           musicFilePath = validCloudinaryTrack.filePath;
@@ -215,7 +245,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         let captionText = `💡 Daily Wisdom:\n\n"${text}"\n\nFollow for more!`;
 
         if (job.contentProfileId) {
-          const profile = await contentProfileRepository.getById(job.contentProfileId);
+          const profile = await contentProfileRepository.getById(job.contentProfileId, job.workspaceId);
           const captionStrat = profile?.captionStrategy as Record<string, any> | undefined;
           if (captionStrat?.template) {
             captionText = captionStrat.template.replace('{{text}}', text);
@@ -238,7 +268,7 @@ async function processStage(jobId: string, stage: PipelineStage): Promise<void> 
         let hashtagsList = ['wisdom', 'quotes', 'daily', 'motivation'];
 
         if (job.contentProfileId) {
-          const profile = await contentProfileRepository.getById(job.contentProfileId);
+          const profile = await contentProfileRepository.getById(job.contentProfileId, job.workspaceId);
           const hashtagStrat = profile?.hashtagStrategy as Record<string, any> | undefined;
           if (Array.isArray(hashtagStrat?.tags) && hashtagStrat.tags.length > 0) {
             hashtagsList = hashtagStrat.tags;
@@ -315,94 +345,100 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
 
     // 1. Run Generation & Media Rendering Phase (skipped if resuming from Publishing or Completed)
     if (!isPublishingResume && job.pipelineStage !== PipelineStage.Publishing && job.pipelineStage !== PipelineStage.Completed) {
-      for (let i = startIndex; i < generationStages.length; i++) {
-        const stage = generationStages[i]!;
-        if (completedStagesInThisRun.has(stage)) {
-          continue;
-        }
+      let duplicateAttempts = 0;
+      const maxDuplicateRetriesVal = await systemConfigCache.get<number>('retry_limit.duplicate_regeneration');
+      const maxDuplicateRetries = typeof maxDuplicateRetriesVal === 'number' ? maxDuplicateRetriesVal : 5;
 
-        job = await jobRepository.transitionJobStage(job.id, stage, {}, {
-          type: `${stage}Started`,
-          payload: { jobId: job.id, message: `Pipeline stage ${stage} started` },
-        });
+      while (true) {
+        try {
+          for (let i = startIndex; i < generationStages.length; i++) {
+            const stage = generationStages[i]!;
+            if (completedStagesInThisRun.has(stage)) {
+              continue;
+            }
 
-        if (stage === PipelineStage.GeneratingContent) {
-          let attempts = 0;
-          const maxDuplicateRetriesVal = await systemConfigCache.get<number>('retry_limit.duplicate_regeneration');
-          const maxDuplicateRetries = typeof maxDuplicateRetriesVal === 'number' ? maxDuplicateRetriesVal : 5;
+            job = await jobRepository.transitionJobStage(job.id, stage, {}, {
+              type: `${stage}Started`,
+              payload: { jobId: job.id, message: `Pipeline stage ${stage} started` },
+            });
 
-          while (true) {
-            try {
-              await processStage(job.id, PipelineStage.GeneratingContent);
-              await processStage(job.id, PipelineStage.Validating);
-              completedStagesInThisRun.add(PipelineStage.GeneratingContent);
-              completedStagesInThisRun.add(PipelineStage.Validating);
-              break;
-            } catch (err: any) {
-              if (err instanceof ValidationError && err.message.includes('Duplicate content detected')) {
-                attempts++;
-                if (attempts >= maxDuplicateRetries) {
-                  throw new ValidationError(
-                    `Validation failed: Duplicate content detected. Automatically regenerated ${attempts} times but could not produce unique content.`
-                  );
-                }
-                logger.warn({ jobId, attempts }, 'Duplicate content detected. Triggering automatic regeneration...');
-                
-                await jobRepository.transitionJobStage(job.id, PipelineStage.Draft, {
-                  generatedText: null,
-                  caption: null,
-                  hashtags: null,
-                });
-                continue;
-              }
-              throw err;
+            await processStage(job.id, stage);
+            completedStagesInThisRun.add(stage);
+
+            if (options?.onStageComplete) {
+              await options.onStageComplete(stage);
             }
           }
-        } else {
-          await processStage(job.id, stage);
+
+          // Save/persist the generated content preview
+          const finalizedJob = await jobRepository.getById(job.id);
+          if (!finalizedJob) throw new Error('Job not found after pipeline execution');
+
+          const snapshot = (finalizedJob.configSnapshot as Record<string, any>) || {};
+          const promptVersionId = snapshot.promptVersionId || finalizedJob.contentProfile?.promptVersionId || '';
+          const templateVersionId = snapshot.templateVersionId || finalizedJob.contentProfile?.templateVersionId || '';
+
+          let genContent = await generatedContentRepository.findByJobId(finalizedJob.id);
+          const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
+
+          if (!genContent) {
+            genContent = await jobRepository.saveGeneratedContent({
+              workspaceId: finalizedJob.workspaceId,
+              jobId: finalizedJob.id,
+              contentProfileId: finalizedJob.contentProfileId || '',
+              promptVersionId,
+              templateVersionId,
+              language: finalizedJob.contentProfile?.language || 'English',
+              contentTypeId: finalizedJob.contentProfile?.contentTypeId || '',
+              text: finalizedJob.generatedText || '',
+              textHash: normalizedHash,
+              imageUrl: finalizedJob.imageUrl,
+              videoUrl: finalizedJob.videoUrl,
+              caption: finalizedJob.caption,
+              hashtags: finalizedJob.hashtags,
+              publishStatus: PublishStatus.Unpublished,
+            });
+          } else {
+            // Synchronize existing GeneratedContent with updated job fields
+            await generatedContentRepository.update(genContent.id, {
+              text: finalizedJob.generatedText || '',
+              imageUrl: finalizedJob.imageUrl,
+              videoUrl: finalizedJob.videoUrl,
+              caption: finalizedJob.caption,
+              hashtags: (finalizedJob.hashtags as any) ?? undefined,
+              textHash: normalizedHash,
+            });
+          }
+
+          break; // Successfully generated and persisted!
+        } catch (err: any) {
+          // CRIT-05: Handle application-level duplicate check or DB unique constraint race (P2002)
+          const isDuplicate = (err instanceof ValidationError && err.message.includes('Duplicate content detected'))
+            || (err?.code === 'P2002' && (err.meta?.target?.includes('textHash') || JSON.stringify(err).includes('textHash')));
+
+          if (isDuplicate) {
+            duplicateAttempts++;
+            if (duplicateAttempts >= maxDuplicateRetries) {
+              throw new ValidationError(
+                `Validation failed: Duplicate content detected. Automatically regenerated ${duplicateAttempts} times but could not produce unique content.`
+              );
+            }
+            logger.warn({ jobId: job.id, duplicateAttempts }, 'Duplicate content detected. Triggering automatic regeneration...');
+
+            completedStagesInThisRun.clear();
+            startIndex = 0;
+
+            await jobRepository.transitionJobStage(job.id, PipelineStage.Draft, {
+              generatedText: null,
+              imageUrl: null,
+              videoUrl: null,
+              caption: null,
+              hashtags: null,
+            });
+            continue;
+          }
+          throw err;
         }
-
-        if (options?.onStageComplete) {
-          await options.onStageComplete(stage);
-        }
-      }
-
-      // Save/persist the generated content preview
-      const finalizedJob = await jobRepository.getById(job.id);
-      if (!finalizedJob) throw new Error('Job not found after pipeline execution');
-
-      let genContent = await generatedContentRepository.findByJobId(finalizedJob.id);
-      const normalizedHash = getNormalizedHash(finalizedJob.generatedText || '');
-
-      if (!genContent) {
-        genContent = await jobRepository.saveGeneratedContent({
-          workspaceId: finalizedJob.workspaceId,
-          jobId: finalizedJob.id,
-          contentProfileId: finalizedJob.contentProfileId || '',
-          promptVersionId: finalizedJob.contentProfile?.promptVersionId || '',
-          templateVersionId: finalizedJob.contentProfile?.templateVersionId || '',
-          language: finalizedJob.contentProfile?.language || 'English',
-          contentTypeId: finalizedJob.contentProfile?.contentTypeId || '',
-          text: finalizedJob.generatedText || '',
-          imageUrl: finalizedJob.imageUrl,
-          videoUrl: finalizedJob.videoUrl,
-          caption: finalizedJob.caption,
-          hashtags: finalizedJob.hashtags,
-          publishStatus: PublishStatus.Unpublished,
-        });
-
-        // Save normalized hash for duplicate checks
-        await generatedContentRepository.update(genContent.id, { textHash: normalizedHash });
-      } else {
-        // Synchronize existing GeneratedContent with updated job fields
-        await generatedContentRepository.update(genContent.id, {
-          text: finalizedJob.generatedText || '',
-          imageUrl: finalizedJob.imageUrl,
-          videoUrl: finalizedJob.videoUrl,
-          caption: finalizedJob.caption,
-          hashtags: (finalizedJob.hashtags as any) ?? undefined,
-          textHash: normalizedHash,
-        });
       }
     }
 

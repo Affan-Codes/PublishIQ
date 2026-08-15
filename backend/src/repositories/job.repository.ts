@@ -1,6 +1,6 @@
 import { Prisma, Job, JobType, PipelineStage, GeneratedContent, PublishStatus, DomainEvent, Notification, PublishingRecord, PublishRecordStatus, Platform } from '@prisma/client';
 import { prisma } from '../database/db.js';
-import { eventBus } from '../events/event-bus.js';
+import { broadcastDomainEvent, localEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 
 export type JobWithRelations = Prisma.JobGetPayload<{
@@ -35,6 +35,21 @@ export const jobRepository = {
   async getPromptVersionById(id: string) {
     return prisma.promptVersion.findUnique({
       where: { id },
+    });
+  },
+
+  async findByBullJobId(bullJobId: string): Promise<JobWithRelations | null> {
+    return prisma.job.findFirst({
+      where: {
+        configSnapshot: {
+          path: ['bullJobId'],
+          equals: bullJobId,
+        },
+      },
+      include: {
+        channel: true,
+        contentProfile: true,
+      },
     });
   },
 
@@ -113,12 +128,14 @@ export const jobRepository = {
   ): Promise<Job> {
     let retries = 3;
     let lastErr: any;
+    let committedJob: Job | null = null;
+    const postCommitCallbacks: (() => Promise<void>)[] = [];
 
     while (retries > 0) {
-      const postCommitCallbacks: (() => Promise<void>)[] = [];
+      postCommitCallbacks.length = 0; // Clear any callbacks from previous failed attempt
 
       try {
-        const job = await prisma.$transaction(
+        committedJob = await prisma.$transaction(
           async (tx) => {
             const dataUpdate: Record<string, any> = {};
             for (const [key, val] of Object.entries(updates)) {
@@ -147,7 +164,7 @@ export const jobRepository = {
                 || stage === PipelineStage.Failed;
                 
               if (notifyWorthy) {
-                const notificationMessage = eventData.payload.message || `Job transitioned to ${stage}: ${updates.failureReason || ''}`;
+                const notificationMessage = eventData.payload?.message || `Job transitioned to ${stage}: ${updates.failureReason || ''}`;
                 
                 const notification = await tx.notification.create({
                   data: {
@@ -158,12 +175,13 @@ export const jobRepository = {
                 });
 
                 postCommitCallbacks.push(async () => {
-                  await eventBus.emitDomainEvent('NotificationCreated', notification);
+                  localEventBus.emit('NotificationCreated', notification);
                 });
               }
 
+              // HIGH-01 & HIGH-02: Broadcast the already-persisted domainEvent without inserting a duplicate DB row
               postCommitCallbacks.push(async () => {
-                await eventBus.emitDomainEvent(eventData.type, domainEvent);
+                await broadcastDomainEvent(domainEvent);
               });
             }
 
@@ -175,11 +193,7 @@ export const jobRepository = {
           }
         );
 
-        for (const cb of postCommitCallbacks) {
-          await cb();
-        }
-
-        return job;
+        break; // Transaction successfully committed
       } catch (err: any) {
         lastErr = err;
         retries--;
@@ -190,7 +204,20 @@ export const jobRepository = {
       }
     }
 
-    throw lastErr;
+    if (!committedJob) {
+      throw lastErr;
+    }
+
+    // Execute post-commit callbacks outside transaction loop; handle errors gracefully so they don't break the committed job
+    for (const cb of postCommitCallbacks) {
+      try {
+        await cb();
+      } catch (cbErr: any) {
+        logger.error({ jobId, stage, err: cbErr }, 'Error executing post-commit callback in transitionJobStage');
+      }
+    }
+
+    return committedJob;
   },
 
   async saveGeneratedContent(data: {
@@ -202,6 +229,7 @@ export const jobRepository = {
     language: any;
     contentTypeId: string;
     text: string;
+    textHash?: string | null;
     imageUrl?: string | null;
     videoUrl?: string | null;
     caption?: string | null;
@@ -218,6 +246,7 @@ export const jobRepository = {
         language: data.language,
         contentTypeId: data.contentTypeId,
         text: data.text,
+        textHash: data.textHash ?? null,
         imageUrl: data.imageUrl ?? null,
         videoUrl: data.videoUrl ?? null,
         caption: data.caption ?? null,

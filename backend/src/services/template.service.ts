@@ -4,9 +4,9 @@ import { Template, TemplateVersion, PromptStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 export const templateService = {
-  async getTemplateById(id: string): Promise<Template & { versions: TemplateVersion[] }> {
-    logger.debug({ id }, 'Fetching template by ID');
-    const template = await templateRepository.getById(id);
+  async getTemplateById(id: string, workspaceId?: string): Promise<Template & { versions: TemplateVersion[] }> {
+    logger.debug({ id, workspaceId }, 'Fetching template by ID');
+    const template = await templateRepository.getById(id, workspaceId);
     if (!template) {
       throw new NotFoundError(`Template with ID ${id} not found`);
     }

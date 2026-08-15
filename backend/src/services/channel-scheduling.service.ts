@@ -8,7 +8,15 @@ export const channelSchedulingService = {
   /**
    * Evaluates active scheduling channels and inserts a content pipeline job in Draft state.
    */
-  async createScheduledJob(channelId: string): Promise<string | null> {
+  async createScheduledJob(channelId: string, bullJobId?: string): Promise<string | null> {
+    if (bullJobId) {
+      const existingJob = await jobRepository.findByBullJobId(bullJobId);
+      if (existingJob) {
+        logger.info({ channelId, bullJobId, existingJobId: existingJob.id }, 'Existing scheduled DB Job found for BullMQ occurrence');
+        return existingJob.id;
+      }
+    }
+
     const channel = await channelRepository.getById(channelId);
     if (!channel) {
       logger.error({ channelId }, 'Channel not found during scheduled processor run');
@@ -36,6 +44,7 @@ export const channelSchedulingService = {
       configSnapshot: {
         promptVersionId: profile.promptVersionId,
         templateVersionId: profile.templateVersionId,
+        bullJobId: bullJobId || null,
       },
     });
 

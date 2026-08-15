@@ -4,7 +4,7 @@ import contentProfileService from '../services/contentProfile.service.js';
 export const contentProfileController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const profile = await contentProfileService.getProfileById(req.params.id as string);
+      const profile = await contentProfileService.getProfileById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: profile,

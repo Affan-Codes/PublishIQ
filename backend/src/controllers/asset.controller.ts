@@ -19,7 +19,7 @@ function getFolderForAssetType(type: string): string {
 export const assetController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const asset = await assetService.getAssetById(req.params.id as string);
+      const asset = await assetService.getAssetById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: asset,

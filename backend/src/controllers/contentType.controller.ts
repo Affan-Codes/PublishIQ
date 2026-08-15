@@ -4,7 +4,7 @@ import contentTypeService from '../services/contentType.service.js';
 export const contentTypeController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const contentType = await contentTypeService.getContentTypeById(req.params.id as string);
+      const contentType = await contentTypeService.getContentTypeById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: contentType,

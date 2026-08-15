@@ -121,10 +121,13 @@ export const facebookAdapter: PublishingAdapter = {
       }
     } catch (err: any) {
       logger.error({ err }, 'Failed to publish to Facebook');
+      const isAmbiguous = !err.response && (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout'));
       const apiError = err.response?.data?.error?.message || err.message;
+      const errorCode = isAmbiguous ? 'AMBIGUOUS_DELIVERY' : (err.response?.status || err.code || 'FACEBOOK_API_ERROR');
       return {
         success: false,
-        errorMessage: `Facebook API error: ${apiError}`,
+        errorMessage: isAmbiguous ? `AMBIGUOUS_DELIVERY: ${apiError}` : `Facebook API error: ${apiError}`,
+        errorCode,
         platformResponse: err.response?.data,
       };
     }

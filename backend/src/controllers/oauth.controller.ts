@@ -43,8 +43,8 @@ export const oauthController = {
         throw new ValidationError('Authorization code is missing from OAuth callback parameters');
       }
 
-      // Verify HMAC signed state and timestamp expiry (YT-002 fix)
-      const statePayload = oauthService.verifySignedState(stateRaw);
+      // Verify HMAC signed state and timestamp expiry (YT-002 fix & MED-02 single-use)
+      const statePayload = await oauthService.verifySignedState(stateRaw);
       const workspaceId = statePayload.workspaceId;
 
       const connections = await oauthService.handleOAuthCallback(platform, code, workspaceId);

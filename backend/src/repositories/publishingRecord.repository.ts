@@ -2,13 +2,9 @@ import { PublishingRecord, Prisma, PublishRecordStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 
 export const publishingRecordRepository = {
-  async getById(id: string, workspaceId?: string): Promise<any | null> {
-    const where: Prisma.PublishingRecordWhereInput = { id };
-    if (workspaceId) {
-      where.workspaceId = workspaceId;
-    }
-    return prisma.publishingRecord.findUnique({
-      where: { id },
+  async getById(id: string, workspaceId: string): Promise<any | null> {
+    return prisma.publishingRecord.findFirst({
+      where: { id, workspaceId },
       include: {
         channel: true,
         platformConnection: { select: { id: true, scopes: true, healthStatus: true } },
@@ -16,6 +12,29 @@ export const publishingRecordRepository = {
         job: true,
       },
     });
+  },
+
+  async listByJobId(jobId: string): Promise<PublishingRecord[]> {
+    return prisma.publishingRecord.findMany({
+      where: { jobId },
+      include: {
+        platformConnection: true,
+      },
+    });
+  },
+
+  async claimForRetry(id: string, workspaceId: string): Promise<boolean> {
+    const res = await prisma.publishingRecord.updateMany({
+      where: {
+        id,
+        workspaceId,
+        status: { not: PublishRecordStatus.Success },
+      },
+      data: {
+        errorDetails: 'Retrying publish...',
+      },
+    });
+    return res.count > 0;
   },
 
   async findFirst(where: Prisma.PublishingRecordWhereInput): Promise<any | null> {

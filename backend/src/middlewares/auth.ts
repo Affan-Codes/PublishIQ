@@ -44,10 +44,10 @@ export const requireAuth = async (
       signed: true,
     });
 
-    let workspaceId = session.user.workspaceId;
+    const workspaceId = session.user.workspaceId;
     if (!workspaceId) {
-      const workspace = await workspaceRepository.getFirst();
-      workspaceId = workspace?.id ?? null;
+      next(new ForbiddenError('Account is not assigned to a workspace'));
+      return;
     }
 
     req.operator = {
@@ -56,9 +56,7 @@ export const requireAuth = async (
       role: session.user.role,
       workspaceId,
     };
-    if (workspaceId) {
-      req.workspaceId = workspaceId;
-    }
+    req.workspaceId = workspaceId;
 
     next();
   } catch (error) {

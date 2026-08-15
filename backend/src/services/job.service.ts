@@ -15,8 +15,8 @@ export interface JobListFilters {
 }
 
 export const jobService = {
-  async getJobById(id: string): Promise<any> {
-    const job = await jobRepository.getById(id);
+  async getJobById(id: string, workspaceId: string): Promise<any> {
+    const job = await jobRepository.getById(id, workspaceId);
     if (!job) {
       throw new NotFoundError('Job not found');
     }

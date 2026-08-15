@@ -4,7 +4,7 @@ import jobService from '../services/job.service.js';
 export const jobController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const job = await jobService.getJobById(req.params.id as string);
+      const job = await jobService.getJobById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: job,

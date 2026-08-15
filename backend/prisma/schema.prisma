@@ -373,7 +373,7 @@ model GeneratedContent {
 
   @@index([contentProfileId])
   @@index([publishStatus])
-  @@index([textHash])
+  @@unique([workspaceId, textHash])
 }
 
 model DomainEvent {

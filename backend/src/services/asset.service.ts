@@ -21,9 +21,9 @@ function getFolderForAssetType(type: string): string {
 }
 
 export const assetService = {
-  async getAssetById(id: string): Promise<Asset> {
-    logger.debug({ id }, 'Fetching asset by ID');
-    const asset = await assetRepository.getById(id);
+  async getAssetById(id: string, workspaceId?: string): Promise<Asset> {
+    logger.debug({ id, workspaceId }, 'Fetching asset by ID');
+    const asset = await assetRepository.getById(id, workspaceId);
     if (!asset) {
       throw new NotFoundError(`Asset with ID ${id} not found`);
     }

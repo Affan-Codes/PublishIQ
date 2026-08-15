@@ -14,8 +14,8 @@ export const generatedContentService = {
     return generatedContentRepository.list(workspaceId, filters);
   },
 
-  async getGeneratedContentById(id: string): Promise<GeneratedContent> {
-    const content = await generatedContentRepository.getById(id);
+  async getGeneratedContentById(id: string, workspaceId?: string): Promise<GeneratedContent> {
+    const content = await generatedContentRepository.getById(id, workspaceId);
     if (!content) {
       throw new NotFoundError('Generated Content not found');
     }

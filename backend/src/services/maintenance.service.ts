@@ -136,8 +136,24 @@ export async function runRetryPublish(jobId: string): Promise<void> {
     return;
   }
 
-  // Restore pipeline execution
-  await runContentPipeline(jobId);
+  // LOW-03: If failed during publishing, directly retry publishing rather than re-running the full pipeline
+  if (job.failureStage === PipelineStage.Publishing || job.failureStage === 'Publishing') {
+    logger.info({ jobId }, 'Job failed during Publishing stage; retrying publish stage directly');
+    try {
+      await publishingService.publishJobContent(jobId);
+      await jobRepository.transitionJobStage(jobId, PipelineStage.Completed, {});
+    } catch (err: any) {
+      await jobRepository.transitionJobStage(jobId, PipelineStage.Failed, {
+        failedAt: new Date(),
+        failureReason: err.message,
+        failureStage: 'Publishing',
+      });
+      throw err;
+    }
+  } else {
+    // Restore pipeline execution from failure stage
+    await runContentPipeline(jobId);
+  }
 }
 
 export async function runTokenRefresh(): Promise<void> {

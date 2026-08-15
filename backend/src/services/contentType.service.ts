@@ -4,9 +4,9 @@ import { ContentType, ContentTypeStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 
 export const contentTypeService = {
-  async getContentTypeById(id: string): Promise<ContentType> {
-    logger.debug({ id }, 'Fetching ContentType by ID');
-    const contentType = await contentTypeRepository.getById(id);
+  async getContentTypeById(id: string, workspaceId?: string): Promise<ContentType> {
+    logger.debug({ id, workspaceId }, 'Fetching ContentType by ID');
+    const contentType = await contentTypeRepository.getById(id, workspaceId);
     if (!contentType) {
       throw new NotFoundError(`ContentType with ID ${id} not found`);
     }

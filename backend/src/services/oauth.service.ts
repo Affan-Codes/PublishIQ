@@ -6,6 +6,8 @@ import { logger } from '../utils/logger.js';
 import platformConnectionRepository from '../repositories/platformConnection.repository.js';
 import { ValidationError, ExternalProviderError } from '../errors/custom-errors.js';
 
+import { getValkeyInstance } from '../database/valkey.js';
+
 export const oauthService = {
   generateSignedState(platform: Platform, workspaceId: string): string {
     const payloadStr = JSON.stringify({ workspaceId, platform, ts: Date.now() });
@@ -13,7 +15,7 @@ export const oauthService = {
     return Buffer.from(JSON.stringify({ p: payloadStr, sig })).toString('base64url');
   },
 
-  verifySignedState(stateRaw: string): { workspaceId: string; platform: Platform; ts: number } {
+  async verifySignedState(stateRaw: string): Promise<{ workspaceId: string; platform: Platform; ts: number }> {
     if (!stateRaw) {
       throw new ValidationError('OAuth state parameter is missing');
     }
@@ -41,6 +43,20 @@ export const oauthService = {
     const TEN_MINUTES_MS = 10 * 60 * 1000;
     if (Date.now() - payload.ts > TEN_MINUTES_MS) {
       throw new ValidationError('OAuth state has expired. Please initiate authorization again');
+    }
+
+    // MED-02: Single-use state verification using Valkey atomic SET NX
+    try {
+      const sigHash = crypto.createHash('sha256').update(sig).digest('hex');
+      const valkey = getValkeyInstance();
+      const wasSet = await valkey.set(`oauth:state:used:${sigHash}`, '1', 'EX', 600, 'NX');
+      if (!wasSet) {
+        logger.warn({ sigHash }, 'OAuth state token replay attempt detected');
+        throw new ValidationError('OAuth state has already been used. Replay detected');
+      }
+    } catch (err: any) {
+      if (err instanceof ValidationError) throw err;
+      logger.error({ err }, 'Failed to check OAuth state replay in Valkey cache');
     }
 
     return payload;

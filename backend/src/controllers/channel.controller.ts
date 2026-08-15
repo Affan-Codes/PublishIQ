@@ -4,7 +4,7 @@ import channelService from '../services/channel.service.js';
 export const channelController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const channel = await channelService.getChannelById(req.params.id as string);
+      const channel = await channelService.getChannelById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: channel,

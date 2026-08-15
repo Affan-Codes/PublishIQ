@@ -7,9 +7,9 @@ import { logger } from '../utils/logger.js';
 import schedulerService from './scheduler.service.js';
 
 export const channelService = {
-  async getChannelById(id: string) {
-    logger.debug({ id }, 'Fetching channel by ID');
-    const channel = await channelRepository.getById(id);
+  async getChannelById(id: string, workspaceId?: string) {
+    logger.debug({ id, workspaceId }, 'Fetching channel by ID');
+    const channel = await channelRepository.getById(id, workspaceId);
     if (!channel) {
       throw new NotFoundError(`Channel with ID ${id} not found`);
     }

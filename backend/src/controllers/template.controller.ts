@@ -4,7 +4,7 @@ import templateService from '../services/template.service.js';
 export const templateController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const template = await templateService.getTemplateById(req.params.id as string);
+      const template = await templateService.getTemplateById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: template,

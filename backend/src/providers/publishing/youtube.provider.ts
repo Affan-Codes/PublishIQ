@@ -244,11 +244,12 @@ export const youtubeAdapter: PublishingAdapter = {
       const httpStatus = err.response?.status;
       const apiReason = err.response?.data?.error?.errors?.[0]?.reason || err.response?.data?.error?.status;
       const apiMessage = err.response?.data?.error?.message || err.message;
-      const errorCode = apiReason || httpStatus || 'YOUTUBE_API_ERROR';
+      const isAmbiguous = !err.response && (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.message?.includes('timeout'));
+      const errorCode = isAmbiguous ? 'AMBIGUOUS_DELIVERY' : (apiReason || httpStatus || 'YOUTUBE_API_ERROR');
 
       return {
         success: false,
-        errorMessage: `YouTube API error (${errorCode}): ${apiMessage}`,
+        errorMessage: isAmbiguous ? `AMBIGUOUS_DELIVERY: ${apiMessage}` : `YouTube API error (${errorCode}): ${apiMessage}`,
         errorCode,
         platformResponse: err.response?.data,
       };

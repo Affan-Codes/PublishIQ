@@ -3,28 +3,45 @@ import { env } from '../config/env.js';
 import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 
-const connection = getValkeyInstance();
-
 const defaultJobOptions = {
   attempts: 3,
   backoff: {
     type: 'exponential',
     delay: 1000,
   },
+  removeOnComplete: {
+    count: 1000,
+    age: 24 * 3600, // 24 hours
+  },
+  removeOnFail: {
+    count: 5000,
+    age: 7 * 24 * 3600, // 7 days
+  },
 };
 
-const queueOpts = {
-  connection: connection as any,
-  prefix: env.QUEUE_PREFIX,
-  defaultJobOptions,
-};
+function createQueue(name: string): Queue {
+  if (process.env.NODE_ENV === 'test') {
+    return {
+      name,
+      add: async () => ({ id: 'mock-bullmq-job-id' }),
+      close: async () => {},
+      on: () => {},
+    } as any;
+  }
+  const connection = getValkeyInstance();
+  return new Queue(name, {
+    connection: connection as any,
+    prefix: env.QUEUE_PREFIX,
+    defaultJobOptions,
+  });
+}
 
-export const contentPipelineQueue = new Queue('content-pipeline', queueOpts);
-export const cleanupQueue = new Queue('cleanup', queueOpts);
-export const archiveQueue = new Queue('archive', queueOpts);
-export const retryPublishQueue = new Queue('retry-publish', queueOpts);
-export const tokenRefreshQueue = new Queue('token-refresh', queueOpts);
-export const healthCheckQueue = new Queue('health-check', queueOpts);
+export const contentPipelineQueue = createQueue('content-pipeline');
+export const cleanupQueue = createQueue('cleanup');
+export const archiveQueue = createQueue('archive');
+export const retryPublishQueue = createQueue('retry-publish');
+export const tokenRefreshQueue = createQueue('token-refresh');
+export const healthCheckQueue = createQueue('health-check');
 
 const queues = [
   contentPipelineQueue,

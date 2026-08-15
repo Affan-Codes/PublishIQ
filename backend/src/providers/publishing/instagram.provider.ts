@@ -144,7 +144,9 @@ export const instagramAdapter: PublishingAdapter = {
         }
 
         if (!ready) {
-          throw new Error('Timeout waiting for Instagram Reels container processing to finish.');
+          const timeoutErr: any = new Error('Timeout waiting for Instagram Reels container processing to finish: CONTAINER_TIMEOUT');
+          timeoutErr.code = 'CONTAINER_TIMEOUT';
+          throw timeoutErr;
         }
       } else {
         // Image Container
@@ -181,10 +183,14 @@ export const instagramAdapter: PublishingAdapter = {
       };
     } catch (err: any) {
       logger.error({ err }, 'Failed to publish to Instagram');
+      const isContainerTimeout = err.code === 'CONTAINER_TIMEOUT' || err.message?.includes('CONTAINER_TIMEOUT');
+      const isAmbiguous = !err.response && (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || (err.message?.includes('timeout') && !isContainerTimeout));
+      const errorCode = isContainerTimeout ? 'CONTAINER_TIMEOUT' : (isAmbiguous ? 'AMBIGUOUS_DELIVERY' : (err.response?.status || err.code));
       const apiError = err.response?.data?.error?.message || err.message;
       return {
         success: false,
-        errorMessage: `Instagram API error: ${apiError}`,
+        errorMessage: isContainerTimeout ? `Instagram Reels container timeout: CONTAINER_TIMEOUT` : (isAmbiguous ? `AMBIGUOUS_DELIVERY: ${apiError}` : `Instagram API error: ${apiError}`),
+        errorCode,
         platformResponse: err.response?.data,
       };
     }

@@ -4,8 +4,6 @@ import { getValkeyInstance } from '../database/valkey.js';
 import { logger } from '../utils/logger.js';
 import { maintenanceService } from '../services/maintenance.service.js';
 
-const connection = getValkeyInstance();
-
 export const cleanupProcessor = async (job: Job) => {
   logger.info({ job: job.id }, 'Running cleanup job');
   await maintenanceService.runCleanup();
@@ -29,6 +27,7 @@ export const healthCheckProcessor = async (job: Job) => {
 export function startMaintenanceWorkers(): Worker[] {
   logger.info('Starting Maintenance Workers');
 
+  const connection = getValkeyInstance();
   const baseWorkerOpts = {
     connection: connection as any,
     prefix: env.QUEUE_PREFIX,

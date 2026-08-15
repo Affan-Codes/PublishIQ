@@ -31,7 +31,15 @@ export const publishingService = {
       return;
     }
 
-    const generatedContent = await generatedContentRepository.findByJobId(jobId);
+    let generatedContent = await generatedContentRepository.findByJobId(jobId);
+    if (!generatedContent) {
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+      if (snapshot.sourceGeneratedContentId) {
+        generatedContent = await generatedContentRepository.getById(snapshot.sourceGeneratedContentId, job.workspaceId);
+      } else if (snapshot.originalJobId) {
+        generatedContent = await generatedContentRepository.findByJobId(snapshot.originalJobId);
+      }
+    }
 
     if (!generatedContent) {
       throw new ValidationError(`No generated content output found for Job ${jobId}`);
@@ -43,6 +51,14 @@ export const publishingService = {
       return;
     }
 
+    // CRIT-01: Batch-load existing PublishingRecords for jobId and skip already-successful connections
+    const existingRecords = await publishingRecordRepository.listByJobId(job.id);
+    const successfulConnectionIds = new Set(
+      existingRecords
+        .filter(r => r.status === PublishRecordStatus.Success)
+        .map(r => r.platformConnectionId)
+    );
+
     const contentTypeSnapshot = (channel as any).contentProfile?.contentType?.name || 'Unknown';
     const pubConfig = (channel.publishingConfiguration as any) || {};
     const privacyStatus = pubConfig.privacyStatus || pubConfig.youtubePrivacyStatus || 'public';
@@ -52,6 +68,37 @@ export const publishingService = {
     for (const connection of connections) {
       const platform = connection.platform;
       const adapter = getPublishingAdapter(platform);
+
+      // CRIT-01: Idempotency skip
+      if (successfulConnectionIds.has(connection.id)) {
+        logger.info(
+          { jobId, platform, connectionId: connection.id },
+          'Platform connection already successfully published for this job. Skipping.'
+        );
+        continue;
+      }
+
+      // MED-03: Re-fetch connection status to ensure it has not been disabled or removed mid-loop
+      const freshConnection = await platformConnectionRepository.getById(connection.id, job.workspaceId);
+      if (!freshConnection || (freshConnection as any).status === 'Disabled') {
+        const errorMsg = 'Platform connection was disabled or removed prior to publishing.';
+        logger.warn({ jobId, platform, connectionId: connection.id }, errorMsg);
+        await publishingRecordRepository.create({
+          workspaceId: job.workspaceId,
+          jobId: job.id,
+          channelId: channel.id,
+          platformConnectionId: connection.id,
+          contentTypeSnapshot,
+          status: PublishRecordStatus.Failure,
+          publishedAt: new Date(),
+          platform,
+          generatedContentId: generatedContent.id,
+          errorDetails: errorMsg,
+          retries: 0,
+        });
+        anyFailure = true;
+        continue;
+      }
 
       logger.info({ jobId, platform, connectionId: connection.id }, 'Publishing to platform');
 
@@ -89,7 +136,7 @@ export const publishingService = {
 
       // 2. Ensure connection health / Token Validation & Refresh
       try {
-        await this.ensureConnectionHealth(connection);
+        await this.ensureConnectionHealth(freshConnection);
       } catch (err: any) {
         const errorMsg = `Connection health check failed: ${err.message}`;
         logger.error({ connectionId: connection.id, err }, errorMsg);
@@ -113,11 +160,15 @@ export const publishingService = {
       }
 
       // Reload fresh connection tokens (in case refresh occurred)
-      const freshConnection = await platformConnectionRepository.getById(connection.id);
-      if (!freshConnection) throw new Error('Connection lost.');
+      const reloadedConnection = await platformConnectionRepository.getById(connection.id, job.workspaceId);
+      if (!reloadedConnection) throw new Error('Connection lost.');
 
       const startTime = Date.now();
-      let publishRetries = 0;
+      // HIGH-04: Factor existing failure retries into attempt budget
+      const priorFailure = existingRecords.find(
+        r => r.platformConnectionId === connection.id && r.status === PublishRecordStatus.Failure
+      );
+      let publishRetries = priorFailure ? priorFailure.retries : 0;
       let success = false;
       let externalId: string | undefined;
       let platformResponse: any;
@@ -126,7 +177,7 @@ export const publishingService = {
 
       const maxPublishRetries = 3;
 
-      while (!success && publishRetries <= maxPublishRetries) {
+      while (!success && publishRetries < maxPublishRetries) {
         try {
           const res = await adapter.publish(
             {
@@ -138,9 +189,9 @@ export const publishingService = {
               privacyStatus,
             },
             {
-              accessTokenEnc: freshConnection.accessTokenEnc,
-              refreshTokenEnc: freshConnection.refreshTokenEnc,
-              expiresAt: freshConnection.expiresAt,
+              accessTokenEnc: reloadedConnection.accessTokenEnc,
+              refreshTokenEnc: reloadedConnection.refreshTokenEnc,
+              expiresAt: reloadedConnection.expiresAt,
             },
             { privacyStatus }
           );
@@ -237,7 +288,7 @@ export const publishingService = {
       throw new NotFoundError('Generated content not found');
     }
 
-    const channel = await channelRepository.getById(channelId);
+    const channel = await channelRepository.getById(channelId, workspaceId);
 
     if (!channel) {
       throw new NotFoundError('Target channel not found');
@@ -250,7 +301,7 @@ export const publishingService = {
 
     logger.info({ generatedContentId, channelId }, 'Operator triggered manual republish of content');
 
-    // Create a new Job to track this republish attempt
+    // Create a new Job to track this republish attempt (HIGH-03: preserves original GeneratedContent.jobId)
     const republishJob = await jobRepository.createJob({
       workspaceId,
       jobType: 'RetryPublish',
@@ -264,19 +315,16 @@ export const publishingService = {
       hashtags: (generatedContent.hashtags as Prisma.InputJsonValue) || Prisma.JsonNull,
       configSnapshot: {
         originalJobId: generatedContent.jobId,
+        sourceGeneratedContentId: generatedContent.id,
+        promptVersionId: generatedContent.promptVersionId,
+        templateVersionId: generatedContent.templateVersionId,
         republishTrigger: 'manual'
       }
     });
 
-    // Link the generated content to the job
-    await generatedContentRepository.update(generatedContent.id, {
-      jobId: republishJob.id,
-    });
-
-    // Run the publish process using the new Job context
+    // Run the publish process using the new Job context without stealing original jobId ownership
     try {
       await this.publishJobContent(republishJob.id);
-      
       await jobRepository.transitionJobStage(republishJob.id, PipelineStage.Completed, {});
     } catch (err: any) {
       await jobRepository.transitionJobStage(republishJob.id, PipelineStage.Failed, {
@@ -292,13 +340,19 @@ export const publishingService = {
    * Retries a single failed publishing record.
    */
   async retryPublishRecord(publishRecordId: string, workspaceId: string): Promise<void> {
-    const record = await publishingRecordRepository.getById(publishRecordId);
+    const record = await publishingRecordRepository.getById(publishRecordId, workspaceId);
     if (!record || record.workspaceId !== workspaceId) {
       throw new NotFoundError('Publishing record not found');
     }
 
     if (record.status === PublishRecordStatus.Success) {
       throw new ConflictError('This publishing record has already succeeded.');
+    }
+
+    // HIGH-03: Atomic check to prevent concurrent retries from both passing guard
+    const claimed = await publishingRecordRepository.claimForRetry(publishRecordId, workspaceId);
+    if (!claimed) {
+      throw new ConflictError('This publishing record has already succeeded or cannot be retried.');
     }
 
     const generatedContent = record.generatedContent;
@@ -329,7 +383,7 @@ export const publishingService = {
     await this.ensureConnectionHealth(connection);
 
     // Reload connection tokens
-    const freshConnection = await platformConnectionRepository.getById(connection.id);
+    const freshConnection = await platformConnectionRepository.getById(connection.id, workspaceId);
     if (!freshConnection) throw new Error('Connection lost.');
 
     const startTime = Date.now();
@@ -526,6 +580,8 @@ export const publishingService = {
         codeStr === 'file_not_found' ||
         codeStr === 'decryption_error' ||
         codeStr === 'missing_upload_location' ||
+        codeStr === 'container_timeout' ||
+        codeStr === 'ambiguous_delivery' ||
         codeStr === '401' ||
         codeStr === '403'
       ) {
@@ -552,7 +608,9 @@ export const publishingService = {
       lowercase.includes('quotaexceeded') ||
       lowercase.includes('uploadlimitexceeded') ||
       lowercase.includes('invalid_grant') ||
-      lowercase.includes('file not found')
+      lowercase.includes('file not found') ||
+      lowercase.includes('container_timeout') ||
+      lowercase.includes('ambiguous_delivery')
     ) {
       return false;
     }

@@ -4,7 +4,7 @@ import generatedContentService from '../services/generatedContent.service.js';
 export const generatedContentController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const content = await generatedContentService.getGeneratedContentById(req.params.id as string);
+      const content = await generatedContentService.getGeneratedContentById(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: content,
