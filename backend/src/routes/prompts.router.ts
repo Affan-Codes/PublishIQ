@@ -37,6 +37,8 @@ router.use(requireAuth);
 
 router.get('/prompts', promptController.list);
 
+router.get('/prompts/output-contract', promptController.getOutputContract);
+
 router.get(
   '/prompts/:id',
   validateRequest({ params: idParamSchema }),

@@ -2,7 +2,6 @@ import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import axios from 'axios';
 import path from 'path';
 import { Readable } from 'stream';
-import { StorageProvider } from './storage.interface.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../utils/logger.js';
 
@@ -108,7 +107,7 @@ function parseCloudinaryFolderAndId(pathOrUrl: string): { folder: string; filena
   };
 }
 
-export const cloudinaryStorageProvider: StorageProvider = {
+export const cloudinaryStorageProvider = {
   /**
    * Uploads a Buffer to Cloudinary using upload_stream and returns its secure_url.
    */

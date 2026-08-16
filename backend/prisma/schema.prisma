@@ -229,6 +229,7 @@ model ContentProfile {
   workspaceId           String               @db.Uuid
   workspace             Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name                  String
+  notes                 String?              @db.Text
   status                ContentProfileStatus
   contentTypeId         String               @db.Uuid
   contentType           ContentType          @relation(fields: [contentTypeId], references: [id], onDelete: Restrict)

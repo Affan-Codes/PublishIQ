@@ -196,4 +196,70 @@ test('CFG-02 & CFG-06: Prompt Variables & Substitution Tests', async (t) => {
     const withoutCatalog = extractPromptVariables('Prompt with only {{contentType}} and {{tone}}');
     assert.deepEqual(withoutCatalog.sort(), ['contentType', 'tone'].sort());
   });
+
+  await t.test('PCP-02: writingStyle produces specific reserved variable error message instead of generic uncovered error', async () => {
+    const mockWorkspaceId = '00000000-0000-0000-0000-000000000001';
+    const mockContentTypeId = '00000000-0000-0000-0000-000000000002';
+    const mockPromptVersionId = '00000000-0000-0000-0000-000000000003';
+    const mockPromptId = '00000000-0000-0000-0000-000000000004';
+    const mockTemplateVersionId = '00000000-0000-0000-0000-000000000005';
+    const mockTemplateId = '00000000-0000-0000-0000-000000000006';
+
+    const origGetContentType = contentTypeRepository.getById;
+    const origGetPromptVersion = promptRepository.getPromptVersionById;
+    const origGetPrompt = promptRepository.getById;
+    const origGetTemplateVersion = templateRepository.getTemplateVersionById;
+    const origGetTemplate = templateRepository.getById;
+
+    try {
+      contentTypeRepository.getById = async () => ({ id: mockContentTypeId, workspaceId: mockWorkspaceId, name: 'Quote' } as any);
+      promptRepository.getPromptVersionById = async () => ({
+        id: mockPromptVersionId,
+        promptId: mockPromptId,
+        versionNumber: 1,
+        body: 'Generate a {{contentType}} in {{language}} with {{writingStyle}} style',
+      } as any);
+      promptRepository.getById = async () => ({ id: mockPromptId, workspaceId: mockWorkspaceId, name: 'Test Prompt' } as any);
+      templateRepository.getTemplateVersionById = async () => ({ id: mockTemplateVersionId, templateId: mockTemplateId } as any);
+      templateRepository.getById = async () => ({ id: mockTemplateId, workspaceId: mockWorkspaceId } as any);
+
+      await assert.rejects(
+        async () => {
+          await contentProfileService.createProfile({
+            workspaceId: mockWorkspaceId,
+            name: 'WritingStyle Prompt Profile',
+            status: ContentProfileStatus.Active,
+            contentTypeId: mockContentTypeId,
+            promptVersionId: mockPromptVersionId,
+            templateVersionId: mockTemplateVersionId,
+            language: Language.English,
+            tone: 'Inspiring',
+            writingStyle: 'Poetic',
+            promptVariables: {},
+            brandingRules: {},
+            watermarkRules: {},
+            captionStrategy: {},
+            hashtagStrategy: {},
+            musicSelectionRules: {},
+            renderingConfiguration: {},
+            validationRules: {},
+          });
+        },
+        (err: any) => {
+          assert(err instanceof ValidationError, 'Should throw ValidationError');
+          assert.equal(
+            err.message,
+            '"writingStyle" is a reserved name and cannot be used as a prompt variable or a custom variable — use "style" instead'
+          );
+          return true;
+        }
+      );
+    } finally {
+      contentTypeRepository.getById = origGetContentType;
+      promptRepository.getPromptVersionById = origGetPromptVersion;
+      promptRepository.getById = origGetPrompt;
+      templateRepository.getTemplateVersionById = origGetTemplateVersion;
+      templateRepository.getById = origGetTemplate;
+    }
+  });
 });

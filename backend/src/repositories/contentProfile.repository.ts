@@ -50,6 +50,7 @@ export const contentProfileRepository = {
   async create(data: {
     workspaceId: string;
     name: string;
+    notes?: string | null;
     status: ContentProfileStatus;
     contentTypeId: string;
     promptVersionId: string;
@@ -70,6 +71,7 @@ export const contentProfileRepository = {
       data: {
         workspaceId: data.workspaceId,
         name: data.name,
+        notes: data.notes ?? null,
         status: data.status,
         contentTypeId: data.contentTypeId,
         promptVersionId: data.promptVersionId,
@@ -93,6 +95,7 @@ export const contentProfileRepository = {
     id: string,
     data: {
       name?: string;
+      notes?: string | null;
       status?: ContentProfileStatus;
       contentTypeId?: string;
       promptVersionId?: string;
@@ -112,6 +115,7 @@ export const contentProfileRepository = {
   ): Promise<ContentProfile> {
     const updateData: Record<string, any> = {};
     if (data.name !== undefined) updateData.name = data.name;
+    if (data.notes !== undefined) updateData.notes = data.notes;
     if (data.status !== undefined) updateData.status = data.status;
     if (data.contentTypeId !== undefined) updateData.contentTypeId = data.contentTypeId;
     if (data.promptVersionId !== undefined) updateData.promptVersionId = data.promptVersionId;
@@ -138,6 +142,38 @@ export const contentProfileRepository = {
     return prisma.contentProfile.delete({
       where: { id },
     });
+  },
+
+  async countByPromptVersionId(promptVersionId: string, workspaceId?: string): Promise<number> {
+    return prisma.contentProfile.count({
+      where: {
+        promptVersionId,
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+    });
+  },
+
+  async countByPromptVersionIds(promptVersionIds: string[], workspaceId?: string): Promise<Record<string, number>> {
+    if (promptVersionIds.length === 0) return {};
+    const groups = await prisma.contentProfile.groupBy({
+      by: ['promptVersionId'],
+      where: {
+        promptVersionId: { in: promptVersionIds },
+        ...(workspaceId ? { workspaceId } : {}),
+      },
+      _count: {
+        _all: true,
+      },
+    });
+
+    const counts: Record<string, number> = {};
+    for (const id of promptVersionIds) {
+      counts[id] = 0;
+    }
+    for (const g of groups) {
+      counts[g.promptVersionId] = g._count._all;
+    }
+    return counts;
   },
 };
 

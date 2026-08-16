@@ -2,6 +2,19 @@ import { Request, Response, NextFunction } from 'express';
 import promptService from '../services/prompt.service.js';
 
 export const promptController = {
+  async getOutputContract(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const contract = promptService.getOutputContract();
+      res.json({
+        success: true,
+        data: contract,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const prompt = await promptService.getPromptById(req.params.id as string, req.workspaceId!);
@@ -69,7 +82,7 @@ export const promptController = {
 
   async listVersions(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const versions = await promptService.listVersions(req.params.id as string);
+      const versions = await promptService.listVersions(req.params.id as string, req.workspaceId!);
       res.json({
         success: true,
         data: versions,

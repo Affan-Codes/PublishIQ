@@ -20,8 +20,15 @@ function validatePromptVariableCollisions(promptVariables?: Record<string, any>)
 function validatePromptTokenCoverage(promptBody: string, promptVariables?: Record<string, any>) {
   const tokens = extractPromptVariables(promptBody);
   if (tokens.length === 0) return;
+
+  if (tokens.includes('writingStyle')) {
+    throw new ValidationError(
+      '"writingStyle" is a reserved name and cannot be used as a prompt variable or a custom variable — use "style" instead'
+    );
+  }
+
   const customKeys = promptVariables && typeof promptVariables === 'object' ? Object.keys(promptVariables) : [];
-  const allowed = new Set<string>([...SYSTEM_PROMPT_VARIABLES, ...customKeys, 'writingStyle']);
+  const allowed = new Set<string>([...SYSTEM_PROMPT_VARIABLES, ...customKeys]);
   const uncovered = tokens.filter((t) => !allowed.has(t));
   if (uncovered.length > 0) {
     throw new ValidationError(`Prompt version references uncovered variable(s): ${uncovered.join(', ')}`);
@@ -46,6 +53,7 @@ export const contentProfileService = {
   async createProfile(data: {
     workspaceId: string;
     name: string;
+    notes?: string | null;
     status: ContentProfileStatus;
     contentTypeId: string;
     promptVersionId: string;
@@ -104,6 +112,7 @@ export const contentProfileService = {
     workspaceId: string,
     data: {
       name?: string;
+      notes?: string | null;
       status?: ContentProfileStatus;
       contentTypeId?: string;
       promptVersionId?: string;

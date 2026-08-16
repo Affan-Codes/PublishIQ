@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
   AlertCircle,
+  AlertTriangle,
   FileText,
   Music,
   Sliders,
@@ -29,6 +30,7 @@ import {
 
 const contentProfileSchema = z.object({
   name: z.string().min(1, 'Profile name is required').max(100),
+  notes: z.string().max(500).optional().nullable(),
   status: z.enum(['Active', 'Disabled']),
   contentTypeId: z.string().uuid('Invalid ContentType selection'),
   promptVersionId: z.string().uuid('Invalid PromptVersion selection'),
@@ -43,6 +45,7 @@ type ContentProfileBaseFormValues = z.infer<typeof contentProfileSchema>;
 interface ContentProfile {
   id: string;
   name: string;
+  notes?: string | null;
   status: 'Active' | 'Disabled';
   language: 'English' | 'Hindi' | 'Urdu';
   tone: string;
@@ -51,8 +54,8 @@ interface ContentProfile {
   promptVersionId: string;
   templateVersionId: string;
   contentType: { name: string };
-  promptVersion: { versionNumber: number; prompt: { name: string } };
-  templateVersion: { versionNumber: number; template: { name: string } };
+  promptVersion: { id?: string; versionNumber: number; status?: string; prompt: { name: string } };
+  templateVersion: { id?: string; versionNumber: number; status?: string; template: { name: string } };
   promptVariables: Record<string, any>;
   brandingRules: { text?: string; position?: string; color?: string; opacity?: number };
   watermarkRules: { text?: string; position?: string; opacity?: number };
@@ -165,7 +168,7 @@ export const ContentProfilesView: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['templates'] });
   };
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<ContentProfileBaseFormValues>({
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ContentProfileBaseFormValues>({
     resolver: zodResolver(contentProfileSchema),
   });
 
@@ -237,6 +240,7 @@ export const ContentProfilesView: React.FC = () => {
 
     return {
       ...values,
+      notes: values.notes?.trim() || null,
       promptVariables,
       brandingRules,
       watermarkRules,
@@ -344,6 +348,7 @@ export const ContentProfilesView: React.FC = () => {
 
     reset({
       name: '',
+      notes: '',
       status: 'Active',
       language: 'English',
       tone: 'Inspiring',
@@ -401,6 +406,7 @@ export const ContentProfilesView: React.FC = () => {
 
     reset({
       name: profile.name,
+      notes: profile.notes || '',
       status: profile.status,
       contentTypeId: profile.contentTypeId,
       promptVersionId: profile.promptVersionId,
@@ -491,7 +497,19 @@ export const ContentProfilesView: React.FC = () => {
                   <p className="text-xs text-[#9c9cb0] mt-1">
                     Type: {profile.contentType?.name || 'Unassigned'}
                   </p>
+                  {profile.notes && (
+                    <p className="text-xs text-[#6e6e80] italic mt-1 line-clamp-2">
+                      {profile.notes}
+                    </p>
+                  )}
                 </div>
+
+                {profile.promptVersion?.status === 'Deprecated' && (
+                  <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-xs text-amber-300">
+                    <AlertTriangle size={12} className="shrink-0 text-amber-400" />
+                    <span>Uses Deprecated Prompt (v{profile.promptVersion.versionNumber})</span>
+                  </div>
+                )}
 
                 <div className="bg-[#14141e] p-3 rounded-lg space-y-1.5 text-xs">
                   <div className="flex justify-between">
@@ -561,7 +579,7 @@ export const ContentProfilesView: React.FC = () => {
                 loadingText="Deleting..."
                 onClick={() => deleteMutation.mutate(deletingProfileId)}
               >
-                Delete Profile
+                Delete
               </Button>
             </div>
           </div>
@@ -571,15 +589,21 @@ export const ContentProfilesView: React.FC = () => {
       {/* Create / Edit Dialog Modal */}
       {isDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+          <div className="w-full max-w-4xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+            {/* Header */}
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
-                <h3 className="text-lg font-bold text-white">
-                  {editingProfile ? 'Edit Content Profile' : 'Create New Content Profile'}
+                <h3 className="text-xl font-bold text-white">
+                  {editingProfile ? 'Edit Content Profile' : 'Create Content Profile'}
                 </h3>
-                <p className="text-xs text-[#9c9cb0]">Define pipeline behavior, branding overlays, copywriting, audio & validation rules</p>
+                <p className="text-xs text-[#9c9cb0]">
+                  Configure production parameters, AI prompt versions, visual rules, and platform strategy
+                </p>
               </div>
-              <button onClick={closeDialog} className="text-[#6e6e80] hover:text-white cursor-pointer">
+              <button
+                onClick={closeDialog}
+                className="text-[#6e6e80] hover:text-white transition cursor-pointer"
+              >
                 <X size={20} />
               </button>
             </div>
@@ -591,12 +615,12 @@ export const ContentProfilesView: React.FC = () => {
               </div>
             )}
 
-            {/* Navigation Tabs */}
-            <div className="flex border-b border-[#1a1a24] gap-2 pb-1">
+            {/* Sub-form Navigation Tabs */}
+            <div className="flex flex-wrap gap-2 border-b border-[#1a1a24] pb-3">
               {[
                 { id: 'basic', label: '1. General & Variables', icon: Sliders },
                 { id: 'branding', label: '2. Branding & Watermark', icon: Image },
-                { id: 'copy', label: '3. Caption & Hashtags', icon: MessageSquare },
+                { id: 'copy', label: '3. Captions & Hashtags', icon: MessageSquare },
                 { id: 'audio', label: '4. Music Rules', icon: Music },
                 { id: 'rendering', label: '5. Render & Validation', icon: ShieldAlert },
               ].map((tab) => {
@@ -650,6 +674,19 @@ export const ContentProfilesView: React.FC = () => {
                         <option value="Disabled">Disabled</option>
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                      Notes / Description
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Operational profile for daily viral Hindi quotes"
+                      {...register('notes')}
+                      className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                    />
+                    {errors.notes && <p className="mt-1 text-xs text-red-400">{errors.notes.message}</p>}
                   </div>
 
                   <div className="grid grid-cols-3 gap-4">
@@ -720,10 +757,23 @@ export const ContentProfilesView: React.FC = () => {
                       >
                         <option value="">Select Version</option>
                         {promptVersions.map((pv: any) => (
-                          <option key={pv.id} value={pv.id}>Version {pv.versionNumber} ({pv.status})</option>
+                          <option
+                            key={pv.id}
+                            value={pv.id}
+                            className={pv.status === 'Deprecated' ? 'text-[#6e6e80]' : ''}
+                          >
+                            Version {pv.versionNumber} {pv.status === 'Deprecated' ? '(Deprecated)' : '(Active)'}
+                          </option>
                         ))}
                       </select>
                       {errors.promptVersionId && <p className="mt-1 text-xs text-red-400">{errors.promptVersionId.message}</p>}
+
+                      {promptVersions.find((pv: any) => pv.id === watch('promptVersionId'))?.status === 'Deprecated' && (
+                        <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 p-2 text-[11px] text-amber-300">
+                          <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-400" />
+                          <span>This profile uses a deprecated prompt version. It will continue working, but consider upgrading to an Active version.</span>
+                        </div>
+                      )}
                     </div>
 
                     <div>

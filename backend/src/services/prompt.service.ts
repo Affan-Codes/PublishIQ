@@ -1,16 +1,44 @@
 import promptRepository from '../repositories/prompt.repository.js';
+import contentProfileRepository from '../repositories/contentProfile.repository.js';
 import { NotFoundError } from '../errors/custom-errors.js';
 import { Prompt, PromptVersion, PromptStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
+import { geminiResponseSchema } from '../providers/ai/gemini.provider.js';
+
+export type PromptVersionWithUsage = PromptVersion & { usedByProfileCount?: number };
 
 export const promptService = {
-  async getPromptById(id: string, workspaceId?: string): Promise<Prompt & { versions: PromptVersion[] }> {
+  getOutputContract(): Array<{ key: string; type: string; description: string; required: boolean }> {
+    const props = geminiResponseSchema.properties as Record<string, { type: string; description: string }>;
+    const requiredSet = new Set(geminiResponseSchema.required || []);
+    return Object.entries(props).map(([key, value]) => ({
+      key,
+      type: value.type,
+      description: value.description,
+      required: requiredSet.has(key),
+    }));
+  },
+
+  async getPromptById(id: string, workspaceId?: string): Promise<Prompt & { versions: PromptVersionWithUsage[] }> {
     logger.debug({ id, workspaceId }, 'Fetching prompt by ID');
     const prompt = await promptRepository.getById(id, workspaceId);
     if (!prompt) {
       throw new NotFoundError(`Prompt with ID ${id} not found`);
     }
-    return prompt;
+
+    const versionIds = prompt.versions.map((v) => v.id);
+    const targetWorkspaceId = workspaceId || prompt.workspaceId;
+    const counts = await contentProfileRepository.countByPromptVersionIds(versionIds, targetWorkspaceId);
+
+    const versionsWithCount = prompt.versions.map((v) => ({
+      ...v,
+      usedByProfileCount: counts[v.id] || 0,
+    }));
+
+    return {
+      ...prompt,
+      versions: versionsWithCount,
+    };
   },
 
   async listPrompts(workspaceId: string): Promise<Prompt[]> {
@@ -72,10 +100,10 @@ export const promptService = {
     }
   },
 
-  async listVersions(promptId: string): Promise<PromptVersion[]> {
+  async listVersions(promptId: string, workspaceId?: string): Promise<PromptVersionWithUsage[]> {
     logger.debug({ promptId }, 'Listing prompt versions');
-    await this.getPromptById(promptId); // Ensure exists
-    return promptRepository.listVersions(promptId);
+    const prompt = await this.getPromptById(promptId, workspaceId);
+    return prompt.versions;
   },
 
   async getVersionDetails(promptId: string, versionNumber: number): Promise<PromptVersion> {

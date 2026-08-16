@@ -68,6 +68,7 @@ export const ValidationRulesSchema = z
 
 export const ContentProfileCreateSchema = z.object({
   name: z.string().min(1, 'Profile name is required').max(100),
+  notes: z.string().max(500).optional().nullable(),
   status: z.nativeEnum(ContentProfileStatus),
   contentTypeId: z.string().uuid('Invalid ContentType ID format'),
   promptVersionId: z.string().uuid('Invalid PromptVersion ID format'),
@@ -87,6 +88,7 @@ export const ContentProfileCreateSchema = z.object({
 
 export const ContentProfileUpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
+  notes: z.string().max(500).optional().nullable(),
   status: z.nativeEnum(ContentProfileStatus).optional(),
   contentTypeId: z.string().uuid().optional(),
   promptVersionId: z.string().uuid().optional(),

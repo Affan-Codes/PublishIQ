@@ -5,7 +5,6 @@ import { getValkeyInstance } from './database/valkey.js';
 import { eventBus } from './events/event-bus.js';
 import { logger } from './utils/logger.js';
 import { systemConfigCache } from './config/system-config.cache.js';
-import { featureFlagCache } from './config/feature-flag.cache.js';
 import notificationService from './services/notification.service.js';
 import { bootstrapWorkers, shutdownWorkers } from './workers/index.js';
 
@@ -27,7 +26,6 @@ async function main() {
 
   // 4. Initial cache loading
   await systemConfigCache.reload();
-  await featureFlagCache.reload();
 
   // 5. Bootstrap BullMQ background workers
   await bootstrapWorkers();

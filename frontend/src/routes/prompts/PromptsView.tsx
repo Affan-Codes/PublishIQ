@@ -10,7 +10,7 @@ import { SkeletonCard } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
-import { Plus, History, RotateCcw, X, AlertCircle, FileText, Search, Play, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Plus, History, RotateCcw, X, AlertCircle, FileText, Search, Play, Sparkles, CheckCircle2, AlertTriangle, FileCode } from 'lucide-react';
 
 const promptCreateSchema = z.object({
   name: z.string().min(1, 'Prompt name is required').max(100),
@@ -34,6 +34,7 @@ interface PromptVersion {
   status: 'Draft' | 'Active' | 'Deprecated';
   notes: string | null;
   createdAt: string;
+  usedByProfileCount?: number;
 }
 
 interface Prompt {
@@ -42,6 +43,13 @@ interface Prompt {
   status: 'Draft' | 'Active' | 'Deprecated';
   notes: string | null;
   versions?: PromptVersion[];
+}
+
+interface OutputContractField {
+  key: string;
+  type: string;
+  description: string;
+  required: boolean;
 }
 
 function extractVariables(body: string): string[] {
@@ -76,7 +84,16 @@ export const PromptsView: React.FC = () => {
     },
   });
 
-  const { register: regCreate, handleSubmit: subCreate, reset: resetCreate, formState: { errors: errCreate } } = useForm<PromptCreateValues>({
+  const { data: outputContract = [] } = useQuery<OutputContractField[]>({
+    queryKey: ['prompts', 'output-contract'],
+    queryFn: async () => {
+      const res = await apiClient.get('/prompts/output-contract');
+      return res.data.data;
+    },
+    staleTime: Infinity,
+  });
+
+  const { register: regCreate, handleSubmit: subCreate, reset: resetCreate, watch: watchCreate, setValue: setValueCreate, formState: { errors: errCreate } } = useForm<PromptCreateValues>({
     resolver: zodResolver(promptCreateSchema),
   });
 
@@ -311,9 +328,38 @@ export const PromptsView: React.FC = () => {
               </div>
             )}
 
-            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
-              <span className="font-semibold">💡 System Placeholders:</span> You can reference system variables <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{musicCatalog}}'}</code>, or custom variables like <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{author}}'}</code>.
+            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200 space-y-1.5">
+              <div className="font-semibold text-purple-300">💡 System Placeholders (Injected at generation time):</div>
+              <ul className="space-y-1 text-[11px] text-[#b8b8cc]">
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{contentType}}'}</code> &rarr; from Content Profile's Content Type (e.g. Shayari, Quote)</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{language}}'}</code> &rarr; from Content Profile's Language field (English, Hindi, Urdu)</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{tone}}'}</code> &rarr; from Content Profile's Tone field</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{style}}'}</code> &rarr; from Content Profile's Writing Style field</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{musicCatalog}}'}</code> &rarr; auto-populated with eligible background music tracks (optional)</li>
+              </ul>
             </div>
+
+            {outputContract && outputContract.length > 0 && (
+              <div className="rounded-lg bg-[#14141e] border border-[#2b2b3a] p-3 text-xs space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
+                  <FileCode size={14} />
+                  <span>Expected AI Output Contract (Gemini JSON Schema):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  {outputContract.map((field) => (
+                    <div key={field.key} className="bg-[#0e0e12] p-2 rounded border border-[#1a1a24] space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-purple-300 font-semibold">{field.key}</span>
+                        <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${field.required ? 'bg-red-500/20 text-red-300' : 'bg-gray-500/20 text-gray-400'}`}>
+                          {field.required ? 'required' : 'optional'}
+                        </span>
+                      </div>
+                      <p className="text-[#9c9cb0] text-[10px] line-clamp-2">{field.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4 text-sm">
               <div>
@@ -342,9 +388,23 @@ export const PromptsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Prompt Instructions Body
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                    Prompt Instructions Body
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = watchCreate('body');
+                      if (!current || window.confirm('Insert starter template? This will replace any existing text in the prompt body.')) {
+                        setValueCreate('body', `# ROLE\nYou are an expert content creator and poet.\n\n# OBJECTIVE\nGenerate a {{contentType}} in {{language}} with a {{tone}} tone and {{style}} style.\n\n# CONTENT RULES\n- Keep the main quote/content concise, impactful, and authentic.\n- Ensure the tone matches the requested mood.\n\n# OUTPUT\nReturn only the requested structured fields — do not add extra commentary.`);
+                      }
+                    }}
+                    className="text-xs text-purple-400 hover:text-purple-300 underline cursor-pointer"
+                  >
+                    Insert Starter Template
+                  </button>
+                </div>
                 <textarea
                   rows={6}
                   placeholder="You are an expert poet. Generate a 2-line {{contentType}} in {{language}} with a {{tone}} tone..."
@@ -395,14 +455,22 @@ export const PromptsView: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-white">Version {ver.versionNumber}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          ver.status === 'Active'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-gray-500/10 text-gray-400'
-                        }`}
-                      >
-                        {ver.status}
+                      {ver.status === 'Active' ? (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          Active
+                        </span>
+                      ) : (ver.usedByProfileCount ?? 0) > 0 ? (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                          <AlertTriangle size={10} />
+                          Deprecated (In Use)
+                        </span>
+                      ) : (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-500/10 text-gray-400 border border-gray-500/20">
+                          Deprecated
+                        </span>
+                      )}
+                      <span className="text-xs text-[#9c9cb0]">
+                        · Used by {ver.usedByProfileCount ?? 0} {ver.usedByProfileCount === 1 ? 'profile' : 'profiles'}
                       </span>
                     </div>
                     <span className="text-[10px] text-[#6e6e80]">
@@ -471,9 +539,38 @@ export const PromptsView: React.FC = () => {
               </div>
             )}
 
-            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
-              <span className="font-semibold">💡 Placeholders:</span> <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{musicCatalog}}'}</code>.
+            <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200 space-y-1.5">
+              <div className="font-semibold text-purple-300">💡 System Placeholders (Injected at generation time):</div>
+              <ul className="space-y-1 text-[11px] text-[#b8b8cc]">
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{contentType}}'}</code> &rarr; from Content Profile's Content Type (e.g. Shayari, Quote)</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{language}}'}</code> &rarr; from Content Profile's Language field (English, Hindi, Urdu)</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{tone}}'}</code> &rarr; from Content Profile's Tone field</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{style}}'}</code> &rarr; from Content Profile's Writing Style field</li>
+                <li><code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300 font-mono">{'{{musicCatalog}}'}</code> &rarr; auto-populated with eligible background music tracks (optional)</li>
+              </ul>
             </div>
+
+            {outputContract && outputContract.length > 0 && (
+              <div className="rounded-lg bg-[#14141e] border border-[#2b2b3a] p-3 text-xs space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
+                  <FileCode size={14} />
+                  <span>Expected AI Output Contract (Gemini JSON Schema):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  {outputContract.map((field) => (
+                    <div key={field.key} className="bg-[#0e0e12] p-2 rounded border border-[#1a1a24] space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-purple-300 font-semibold">{field.key}</span>
+                        <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${field.required ? 'bg-red-500/20 text-red-300' : 'bg-gray-500/20 text-gray-400'}`}>
+                          {field.required ? 'required' : 'optional'}
+                        </span>
+                      </div>
+                      <p className="text-[#9c9cb0] text-[10px] line-clamp-2">{field.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={subVer((v) => addVersionMutation.mutate(v))} className="space-y-4 text-sm">
               <div>
