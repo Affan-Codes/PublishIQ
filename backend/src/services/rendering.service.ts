@@ -11,6 +11,7 @@ export interface RenderOptions {
   watermark?: string;
   fontFamily?: string;
   templateVersionId?: string;
+  backgroundImageUrl?: string;
 }
 
 let sharedBrowser: Browser | null = null;
@@ -69,6 +70,7 @@ export const renderingService = {
       branding: options.branding,
       watermark: options.watermark,
       fontFamily: options.fontFamily,
+      backgroundImageUrl: options.backgroundImageUrl,
     });
 
     let context;
@@ -92,7 +94,7 @@ export const renderingService = {
       });
 
       const relativePath = `images/${jobId}_render.png`;
-      const mediaUri = await cloudinaryStorageProvider.save(imageBuffer, relativePath);
+      const { url: mediaUri } = await cloudinaryStorageProvider.save(imageBuffer, relativePath);
 
       logger.info({ mediaUri }, 'Image rendered and saved via StorageProvider successfully');
       

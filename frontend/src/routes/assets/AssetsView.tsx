@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Clock,
   Info,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const assetSchema = z.object({
@@ -57,6 +58,14 @@ interface ContentProfile {
     mood?: string;
     genre?: string;
   };
+  backgroundSelectionRules?: {
+    selectionMode?: 'Manual' | 'AI';
+    manualAssetId?: string;
+    mood?: string;
+    style?: string;
+    theme?: string;
+    orientation?: string;
+  };
 }
 
 function formatTime(seconds: number): string {
@@ -79,6 +88,13 @@ export const AssetsView: React.FC = () => {
   // Music Metadata State
   const [assetMood, setAssetMood] = useState<string>('Inspiring');
   const [assetGenre, setAssetGenre] = useState<string>('Acoustic');
+
+  // Background Metadata State
+  const [bgMood, setBgMood] = useState<string>('Calm');
+  const [bgStyle, setBgStyle] = useState<string>('Photo');
+  const [bgTheme, setBgTheme] = useState<string>('Nature');
+  const [bgTags, setBgTags] = useState<string>('');
+  const [bgOrientation, setBgOrientation] = useState<string>('portrait');
 
   // Audio Trimming & Preview State
   const [sourceDuration, setSourceDuration] = useState<number | null>(null);
@@ -178,15 +194,10 @@ export const AssetsView: React.FC = () => {
         tempAudio.src = objectUrl;
         tempAudio.onloadedmetadata = () => {
           const duration = tempAudio.duration;
-          if (duration && !isNaN(duration) && duration > 0) {
-            setSourceDuration(duration);
-            setStartTime(0);
-            setEndTime(Math.min(duration, 15));
-          }
+          setSourceDuration(duration);
+          setStartTime(0);
+          setEndTime(Math.min(15, duration));
         };
-      } else {
-        setSourceDuration(null);
-        setAudioPreviewUrl(null);
       }
     }
   };
@@ -197,41 +208,33 @@ export const AssetsView: React.FC = () => {
       const res = await apiClient.post('/assets', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      return res.data.data;
+      return res.data;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
-      const isMusic = data?.type === 'Music';
-      addToast(
-        isMusic ? 'Music processed successfully' : 'Asset uploaded and registered successfully to Cloudinary',
-        'success'
-      );
+      addToast('Media asset uploaded and saved', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      const isMusic = selectedAssetType === 'Music';
-      const msg = err.response?.data?.error?.message || err.message || 'Failed to process asset';
-      setErrorText(msg);
-      addToast(isMusic ? 'Music processing failed' : 'Asset upload failed', 'error');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to upload asset');
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async (formData: FormData) => {
-      const res = await apiClient.put(`/assets/${editingAsset?.id}`, formData, {
+      if (!editingAsset) return;
+      const res = await apiClient.put(`/assets/${editingAsset.id}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      return res.data.data;
+      return res.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
-      addToast('Asset details updated successfully', 'success');
+      addToast('Media asset updated', 'success');
       closeDialog();
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.error?.message || err.message || 'Failed to update asset';
-      setErrorText(msg);
-      addToast('Update failed', 'error');
+      setErrorText(err.response?.data?.error?.message || err.message || 'Failed to update asset');
     },
   });
 
@@ -263,25 +266,28 @@ export const AssetsView: React.FC = () => {
     }
 
     if (values.type === 'Music') {
-      const metadataPayload = {
-        mood: assetMood,
-        genre: assetGenre,
-      };
+      const metadataPayload = { mood: assetMood, genre: assetGenre };
       formData.append('metadata', JSON.stringify(metadataPayload));
-
-      if (sourceDuration !== null) {
-        if (endTime <= startTime) {
-          setErrorText('End time must be greater than start time.');
-          return;
-        }
-        if (endTime - startTime > 15) {
-          setErrorText('Selected audio segment cannot exceed 15 seconds.');
-          return;
-        }
-      }
-
       formData.append('startTime', String(startTime));
       formData.append('endTime', String(endTime));
+    } else if (values.type === 'Background') {
+      const parsedTags = bgTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      const metadataPayload: Record<string, any> = {
+        mood: bgMood || undefined,
+        style: bgStyle || undefined,
+        theme: bgTheme || undefined,
+        tags: parsedTags.length > 0 ? parsedTags : undefined,
+        orientation: bgOrientation || undefined,
+        ...(editingAsset?.metadata?.width ? { width: editingAsset.metadata.width } : {}),
+        ...(editingAsset?.metadata?.height ? { height: editingAsset.metadata.height } : {}),
+        ...(editingAsset?.metadata?.format ? { format: editingAsset.metadata.format } : {}),
+        ...(editingAsset?.metadata?.bytes ? { bytes: editingAsset.metadata.bytes } : {}),
+      };
+      formData.append('metadata', JSON.stringify(metadataPayload));
     }
 
     if (editingAsset) {
@@ -299,7 +305,12 @@ export const AssetsView: React.FC = () => {
     setAudioPreviewUrl(null);
     setAssetMood('Inspiring');
     setAssetGenre('Acoustic');
-    reset({ name: '', type: 'Music', status: 'Active', filePath: '', licenseStatus: 'Confirmed' });
+    setBgMood('Calm');
+    setBgStyle('Photo');
+    setBgTheme('Nature');
+    setBgTags('');
+    setBgOrientation('portrait');
+    reset({ name: '', type: 'Background', status: 'Active', filePath: '', licenseStatus: 'Confirmed' });
     setIsDialogOpen(true);
   };
 
@@ -312,6 +323,11 @@ export const AssetsView: React.FC = () => {
     setEndTime(asset.metadata?.endTime || 15);
     setAssetMood(asset.metadata?.mood || 'Inspiring');
     setAssetGenre(asset.metadata?.genre || 'Acoustic');
+    setBgMood(asset.metadata?.mood || 'Calm');
+    setBgStyle(asset.metadata?.style || 'Photo');
+    setBgTheme(asset.metadata?.theme || 'Nature');
+    setBgTags(Array.isArray(asset.metadata?.tags) ? asset.metadata.tags.join(', ') : '');
+    setBgOrientation(asset.metadata?.orientation || 'portrait');
     setAudioPreviewUrl(asset.filePath);
     reset({
       name: asset.name,
@@ -324,16 +340,33 @@ export const AssetsView: React.FC = () => {
   };
 
   const getMatchingProfiles = (asset: Asset): ContentProfile[] => {
-    if (asset.type !== 'Music') return [];
-    const metaMood = asset.metadata?.mood || 'Inspiring';
-    const metaGenre = asset.metadata?.genre || 'Acoustic';
-    return contentProfiles.filter((p) => {
-      if (p.status !== 'Active') return false;
-      const rules = p.musicSelectionRules || {};
-      const targetMood = rules.mood || 'Inspiring';
-      const targetGenre = rules.genre || 'Acoustic';
-      return (targetMood === metaMood && targetGenre === metaGenre) || (targetMood === metaMood);
-    });
+    if (asset.type === 'Music') {
+      const metaMood = asset.metadata?.mood || 'Inspiring';
+      const metaGenre = asset.metadata?.genre || 'Acoustic';
+      return contentProfiles.filter((p) => {
+        if (p.status !== 'Active') return false;
+        const rules = p.musicSelectionRules || {};
+        const targetMood = rules.mood || 'Inspiring';
+        const targetGenre = rules.genre || 'Acoustic';
+        return (targetMood === metaMood && targetGenre === metaGenre) || (targetMood === metaMood);
+      });
+    }
+
+    if (asset.type === 'Background') {
+      return contentProfiles.filter((p) => {
+        if (p.status !== 'Active') return false;
+        const rules = p.backgroundSelectionRules || {};
+        if (rules.selectionMode === 'Manual' && rules.manualAssetId === asset.id) return true;
+        if (rules.selectionMode === 'AI') {
+          if (rules.mood && asset.metadata?.mood && rules.mood.toLowerCase() === asset.metadata.mood.toLowerCase()) return true;
+          if (rules.theme && asset.metadata?.theme && rules.theme.toLowerCase() === asset.metadata.theme.toLowerCase()) return true;
+          return !rules.mood && !rules.theme;
+        }
+        return false;
+      });
+    }
+
+    return [];
   };
 
   if (isError) {
@@ -342,7 +375,7 @@ export const AssetsView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
-            <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets stored on Cloudinary</p>
+            <p className="text-sm text-[#9c9cb0]">Manage backgrounds, audio, fonts, logos, and rendering assets stored on Cloudinary</p>
           </div>
           <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
         </div>
@@ -364,7 +397,7 @@ export const AssetsView: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Media Assets</h2>
-          <p className="text-sm text-[#9c9cb0]">Manage audio, fonts, logos, and rendering assets backed by Cloudinary</p>
+          <p className="text-sm text-[#9c9cb0]">Manage backgrounds, audio, fonts, logos, and rendering assets backed by Cloudinary</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -377,7 +410,7 @@ export const AssetsView: React.FC = () => {
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[#1a1a24] pb-4">
-        {['ALL', 'Music', 'Background', 'Font', 'Logo', 'Watermark', 'Animation', 'Icon'].map((filter) => (
+        {['ALL', 'Background', 'Music', 'Font', 'Logo', 'Watermark', 'Animation', 'Icon'].map((filter) => (
           <button
             key={filter}
             onClick={() => setSelectedFilterType(filter)}
@@ -401,9 +434,9 @@ export const AssetsView: React.FC = () => {
         </div>
       ) : assets.length === 0 ? (
         <EmptyState
-          icon={Music}
+          icon={ImageIcon}
           title="No Media Assets Found"
-          description="Upload music tracks, fonts, or logos to use in video content pipelines."
+          description="Upload background images, music tracks, fonts, or logos to use in video content pipelines."
           actionLabel="Upload First Asset"
           onAction={openCreateDialog}
         />
@@ -412,6 +445,7 @@ export const AssetsView: React.FC = () => {
           {assets.map((asset) => {
             const matchingProfiles = getMatchingProfiles(asset);
             const isMusic = asset.type === 'Music';
+            const isBackground = asset.type === 'Background';
 
             return (
               <div
@@ -419,10 +453,34 @@ export const AssetsView: React.FC = () => {
                 className="group relative rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-5 shadow-lg transition hover:border-purple-500/30 flex flex-col justify-between"
               >
                 <div>
+                  {/* Thumbnail / Header */}
+                  {isBackground && asset.filePath && (
+                    <div className="relative mb-4 h-36 w-full overflow-hidden rounded-lg border border-[#1a1a24] bg-black/40">
+                      <img
+                        src={asset.filePath}
+                        alt={asset.name}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      {asset.metadata?.dimensions || (asset.metadata?.width && asset.metadata?.height) ? (
+                        <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-0.5 font-mono text-[10px] text-zinc-300 backdrop-blur-sm">
+                          {asset.metadata.width}x{asset.metadata.height}
+                        </span>
+                      ) : null}
+                      {asset.metadata?.orientation && (
+                        <span className="absolute top-2 left-2 rounded bg-purple-950/80 border border-purple-500/30 px-2 py-0.5 uppercase font-bold text-[9px] text-purple-300 backdrop-blur-sm">
+                          {asset.metadata.orientation}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400">
-                        <Music size={20} />
+                        {isBackground ? <ImageIcon size={20} /> : isMusic ? <Music size={20} /> : <FileText size={20} />}
                       </div>
                       <div>
                         <h3 className="font-semibold text-white text-sm tracking-tight">{asset.name}</h3>
@@ -442,16 +500,16 @@ export const AssetsView: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* CFG-05: Non-music Deferred Asset Label */}
-                  {!isMusic && (
+                  {/* Deferred Asset Label for Other Types */}
+                  {!isMusic && !isBackground && (
                     <div className="mt-3 rounded-lg bg-amber-500/10 border border-amber-500/20 p-2.5 text-[11px] text-amber-300 flex items-start gap-1.5">
                       <Clock size={14} className="shrink-0 mt-0.5 text-amber-400" />
                       <span>Stored for future use — does not yet affect generated content.</span>
                     </div>
                   )}
 
-                  {/* CFG-19: Music Asset Eligibility Indicator */}
-                  {isMusic && (
+                  {/* Eligibility Indicator */}
+                  {(isMusic || isBackground) && (
                     <div className="mt-3">
                       {asset.status === 'Active' && asset.licenseStatus === 'Confirmed' ? (
                         matchingProfiles.length > 0 ? (
@@ -464,7 +522,7 @@ export const AssetsView: React.FC = () => {
                         ) : (
                           <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/30 p-2 text-[11px] text-zinc-400 flex items-center gap-1.5">
                             <Info size={13} className="shrink-0 text-zinc-500" />
-                            <span>No active profile matches mood & genre.</span>
+                            <span>No active profile currently uses this asset.</span>
                           </div>
                         )
                       ) : (
@@ -478,6 +536,32 @@ export const AssetsView: React.FC = () => {
 
                   {/* Metadata Details */}
                   <div className="mt-4 space-y-1.5 text-xs text-[#9c9cb0]">
+                    {isBackground && (
+                      <>
+                        <div className="flex justify-between text-[11px]">
+                          <span>Mood / Style:</span>
+                          <span className="font-semibold text-purple-300">
+                            {asset.metadata?.mood || 'Default'} / {asset.metadata?.style || 'Photo'}
+                          </span>
+                        </div>
+                        {asset.metadata?.theme && (
+                          <div className="flex justify-between text-[11px]">
+                            <span>Theme:</span>
+                            <span className="text-zinc-300">{asset.metadata.theme}</span>
+                          </div>
+                        )}
+                        {Array.isArray(asset.metadata?.tags) && asset.metadata.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {asset.metadata.tags.map((t: string) => (
+                              <span key={t} className="rounded bg-[#1a1a24] px-1.5 py-0.5 text-[10px] text-zinc-400">
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
                     {isMusic && (
                       <>
                         <div className="flex justify-between text-[11px]">
@@ -486,12 +570,6 @@ export const AssetsView: React.FC = () => {
                             {asset.metadata?.mood || 'Inspiring'} / {asset.metadata?.genre || 'Acoustic'}
                           </span>
                         </div>
-                        {asset.metadata?.trimmedDuration && (
-                          <div className="flex justify-between">
-                            <span>Clip Duration:</span>
-                            <span className="font-mono text-purple-300 font-semibold">{formatTime(asset.metadata.trimmedDuration)} ({asset.metadata.trimmedDuration}s)</span>
-                          </div>
-                        )}
                         {asset.metadata?.sourceDuration && (
                           <div className="flex justify-between text-[11px] text-[#6e6e80]">
                             <span>Source / Range:</span>
@@ -500,6 +578,7 @@ export const AssetsView: React.FC = () => {
                         )}
                       </>
                     )}
+
                     <div className="flex justify-between text-[11px] text-[#6e6e80]">
                       <span>License Status:</span>
                       <span className={asset.licenseStatus === 'Confirmed' ? 'text-emerald-400' : 'text-amber-400 font-semibold'}>
@@ -568,11 +647,11 @@ export const AssetsView: React.FC = () => {
 
       {/* Dialog for Upload and Edit */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-lg rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
+          <div className="w-full max-w-lg rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div className="flex items-center gap-2">
-                <Music className="text-purple-400" size={20} />
+                {selectedAssetType === 'Background' ? <ImageIcon className="text-purple-400" size={20} /> : <Music className="text-purple-400" size={20} />}
                 <h3 className="text-lg font-bold text-white">
                   {editingAsset ? 'Edit Media Asset' : 'Upload Asset to Cloudinary'}
                 </h3>
@@ -589,8 +668,8 @@ export const AssetsView: React.FC = () => {
               </div>
             )}
 
-            {/* CFG-05: Informational guidance on deferred non-music asset types */}
-            {selectedAssetType !== 'Music' && (
+            {/* Informational guidance on deferred asset types */}
+            {selectedAssetType !== 'Music' && selectedAssetType !== 'Background' && (
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-300 flex items-start gap-2">
                 <Info size={16} className="shrink-0 mt-0.5 text-amber-400" />
                 <span>
@@ -689,6 +768,106 @@ export const AssetsView: React.FC = () => {
                       <option value="Lo-Fi">Lo-Fi</option>
                     </select>
                   </div>
+                </div>
+              )}
+
+              {/* Background Metadata selectors */}
+              {selectedAssetType === 'Background' && (
+                <div className="space-y-3 rounded-xl border border-purple-500/20 bg-purple-950/10 p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Mood
+                      </label>
+                      <select
+                        value={bgMood}
+                        onChange={(e) => setBgMood(e.target.value)}
+                        disabled={isProcessing}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                      >
+                        <option value="Calm">Calm</option>
+                        <option value="Inspiring">Inspiring</option>
+                        <option value="Dark">Dark</option>
+                        <option value="Dramatic">Dramatic</option>
+                        <option value="Vibrant">Vibrant</option>
+                        <option value="Minimalist">Minimalist</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Style
+                      </label>
+                      <select
+                        value={bgStyle}
+                        onChange={(e) => setBgStyle(e.target.value)}
+                        disabled={isProcessing}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                      >
+                        <option value="Photo">Photo</option>
+                        <option value="Illustration">Illustration</option>
+                        <option value="Gradient">Gradient</option>
+                        <option value="Texture">Texture</option>
+                        <option value="3D">3D Render</option>
+                        <option value="Abstract">Abstract</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Theme
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Nature, Urban, Space"
+                        value={bgTheme}
+                        onChange={(e) => setBgTheme(e.target.value)}
+                        disabled={isProcessing}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Orientation
+                      </label>
+                      <select
+                        value={bgOrientation}
+                        onChange={(e) => setBgOrientation(e.target.value)}
+                        disabled={isProcessing}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                      >
+                        <option value="portrait">Portrait (9:16)</option>
+                        <option value="landscape">Landscape (16:9)</option>
+                        <option value="square">Square (1:1)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                      Tags (Comma-Separated)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. sunset, mountains, peaceful"
+                      value={bgTags}
+                      onChange={(e) => setBgTags(e.target.value)}
+                      disabled={isProcessing}
+                      className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  {editingAsset?.metadata?.width && editingAsset?.metadata?.height && (
+                    <div className="flex items-center justify-between rounded bg-[#161620] px-3 py-1.5 text-xs text-[#9c9cb0]">
+                      <span>Detected Dimensions:</span>
+                      <span className="font-mono text-white font-semibold">
+                        {editingAsset.metadata.width} x {editingAsset.metadata.height} ({editingAsset.metadata.orientation || 'auto'})
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 

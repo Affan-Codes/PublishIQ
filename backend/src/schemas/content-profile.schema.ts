@@ -48,6 +48,22 @@ export const MusicSelectionRulesSchema = z
   })
   .strict();
 
+export const BackgroundSelectionRulesSchema = z
+  .object({
+    selectionMode: z.enum(['Manual', 'AI']).optional(),
+    manualAssetId: z.string().uuid('Invalid manualAssetId UUID format').optional(),
+    mood: z.string().min(1).max(50).optional(),
+    style: z.string().min(1).max(50).optional(),
+    theme: z.string().min(1).max(50).optional(),
+    tags: z.array(z.string().min(1).max(30)).max(20).optional(),
+    orientation: z.enum(['portrait', 'landscape', 'square']).optional(),
+  })
+  .strict()
+  .refine(
+    (val) => val.selectionMode !== 'Manual' || !!val.manualAssetId,
+    { message: 'manualAssetId is required when selectionMode is Manual' }
+  );
+
 export const RenderingConfigurationSchema = z
   .object({
     branding: z.string().max(100).optional(),
@@ -82,6 +98,7 @@ export const ContentProfileCreateSchema = z.object({
   captionStrategy: CaptionStrategySchema.default({}),
   hashtagStrategy: HashtagStrategySchema.default({}),
   musicSelectionRules: MusicSelectionRulesSchema.default({}),
+  backgroundSelectionRules: BackgroundSelectionRulesSchema.default({}),
   renderingConfiguration: RenderingConfigurationSchema.default({}),
   validationRules: ValidationRulesSchema.default({}),
 });
@@ -102,6 +119,7 @@ export const ContentProfileUpdateSchema = z.object({
   captionStrategy: CaptionStrategySchema.optional(),
   hashtagStrategy: HashtagStrategySchema.optional(),
   musicSelectionRules: MusicSelectionRulesSchema.optional(),
+  backgroundSelectionRules: BackgroundSelectionRulesSchema.optional(),
   renderingConfiguration: RenderingConfigurationSchema.optional(),
   validationRules: ValidationRulesSchema.optional(),
 });

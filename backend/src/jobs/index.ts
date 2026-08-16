@@ -39,7 +39,6 @@ function createQueue(name: string): Queue {
 
 export const contentPipelineQueue = createQueue('content-pipeline');
 export const cleanupQueue = createQueue('cleanup');
-export const archiveQueue = createQueue('archive');
 export const retryPublishQueue = createQueue('retry-publish');
 export const tokenRefreshQueue = createQueue('token-refresh');
 export const healthCheckQueue = createQueue('health-check');
@@ -47,7 +46,6 @@ export const healthCheckQueue = createQueue('health-check');
 const queues = [
   contentPipelineQueue,
   cleanupQueue,
-  archiveQueue,
   retryPublishQueue,
   tokenRefreshQueue,
   healthCheckQueue,

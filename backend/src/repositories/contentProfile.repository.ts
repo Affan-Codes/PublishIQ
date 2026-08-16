@@ -64,6 +64,7 @@ export const contentProfileRepository = {
     captionStrategy: any;
     hashtagStrategy: any;
     musicSelectionRules: any;
+    backgroundSelectionRules?: any;
     renderingConfiguration: any;
     validationRules: any;
   }): Promise<ContentProfile> {
@@ -85,6 +86,7 @@ export const contentProfileRepository = {
         captionStrategy: data.captionStrategy ?? {},
         hashtagStrategy: data.hashtagStrategy ?? {},
         musicSelectionRules: data.musicSelectionRules ?? {},
+        backgroundSelectionRules: data.backgroundSelectionRules ?? {},
         renderingConfiguration: data.renderingConfiguration ?? {},
         validationRules: data.validationRules ?? {},
       },
@@ -109,6 +111,7 @@ export const contentProfileRepository = {
       captionStrategy?: any;
       hashtagStrategy?: any;
       musicSelectionRules?: any;
+      backgroundSelectionRules?: any;
       renderingConfiguration?: any;
       validationRules?: any;
     }
@@ -129,6 +132,7 @@ export const contentProfileRepository = {
     if (data.captionStrategy !== undefined) updateData.captionStrategy = data.captionStrategy;
     if (data.hashtagStrategy !== undefined) updateData.hashtagStrategy = data.hashtagStrategy;
     if (data.musicSelectionRules !== undefined) updateData.musicSelectionRules = data.musicSelectionRules;
+    if (data.backgroundSelectionRules !== undefined) updateData.backgroundSelectionRules = data.backgroundSelectionRules;
     if (data.renderingConfiguration !== undefined) updateData.renderingConfiguration = data.renderingConfiguration;
     if (data.validationRules !== undefined) updateData.validationRules = data.validationRules;
 

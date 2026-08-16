@@ -120,7 +120,7 @@ export const videoService = {
       logger.info({ tempOutputPath }, 'FFmpeg video compilation successful. Uploading compiled video to Cloudinary...');
       const videoBuffer = fs.readFileSync(tempOutputPath);
       const relativePath = `videos/${jobId}_render.mp4`;
-      const secureUrl = await cloudinaryStorageProvider.save(videoBuffer, relativePath);
+      const { url: secureUrl } = await cloudinaryStorageProvider.save(videoBuffer, relativePath);
 
       logger.info({ jobId, secureUrl }, 'Video compiled and stored on Cloudinary successfully');
       return secureUrl;

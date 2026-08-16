@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import apiClient from '../../lib/api-client.js';
-import { useChannels } from '../../hooks/queries/useChannels.js';
 import { useNotifications } from '../../context/NotificationContext.js';
 import { RefreshButton } from '../../components/ui/RefreshButton.js';
 import { SkeletonCard } from '../../components/ui/Skeleton.js';
@@ -69,7 +68,13 @@ export const ChannelsView: React.FC = () => {
   const [errorText, setErrorText] = useState<string | null>(null);
 
   // Queries
-  const { data: channels = [], isLoading: isChannelsLoading, isFetching, isError, error, refetch } = useChannels();
+  const { data: channels = [], isLoading: isChannelsLoading, isFetching, isError, error, refetch } = useQuery<Channel[]>({
+    queryKey: ['channels'],
+    queryFn: async () => {
+      const res = await apiClient.get('/channels');
+      return res.data.data;
+    },
+  });
 
   const { data: contentProfiles = [] } = useQuery<ContentProfile[]>({
     queryKey: ['content-profiles'],
@@ -542,8 +547,8 @@ export const ChannelsView: React.FC = () => {
 
       {/* Create / Edit Dialog Modal */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
+          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <h3 className="text-lg font-bold text-white">
                 {editingChannel ? 'Edit Channel Configuration' : 'Create New Channel'}

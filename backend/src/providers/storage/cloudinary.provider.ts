@@ -109,15 +109,15 @@ function parseCloudinaryFolderAndId(pathOrUrl: string): { folder: string; filena
 
 export const cloudinaryStorageProvider = {
   /**
-   * Uploads a Buffer to Cloudinary using upload_stream and returns its secure_url.
+   * Uploads a Buffer to Cloudinary using upload_stream and returns its secure_url and metadata.
    */
-  async save(buffer: Buffer, relativePath: string): Promise<string> {
+  async save(buffer: Buffer, relativePath: string): Promise<{ url: string; width?: number; height?: number; format?: string; bytes?: number }> {
     const resourceType = inferResourceType(relativePath);
     const { folder, filenameId, fullPublicId } = parseCloudinaryFolderAndId(relativePath);
 
     logger.debug({ relativePath, folder, filenameId, fullPublicId, resourceType }, 'Uploading buffer to Cloudinary storage');
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<{ url: string; width?: number; height?: number; format?: string; bytes?: number }>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: folder,
@@ -147,8 +147,14 @@ export const cloudinaryStorageProvider = {
             return reject(new Error('Cloudinary response missing secure_url.'));
           }
 
-          logger.info({ publicId: fullPublicId, secureUrl: result.secure_url, format: result.format, bytes: result.bytes }, 'Uploaded file to Cloudinary successfully');
-          resolve(result.secure_url);
+          logger.info({ publicId: fullPublicId, secureUrl: result.secure_url, format: result.format, bytes: result.bytes, width: result.width, height: result.height }, 'Uploaded file to Cloudinary successfully');
+          resolve({
+            url: result.secure_url,
+            width: result.width,
+            height: result.height,
+            format: result.format,
+            bytes: result.bytes,
+          });
         }
       );
 

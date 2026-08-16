@@ -42,6 +42,133 @@ async function getCachedActiveMusic(workspaceId: string): Promise<Asset[]> {
 }
 
 /**
+ * In-memory cache for background assets per workspace with 60-second TTL.
+ */
+const backgroundAssetCache = new Map<string, { timestamp: number; assets: Asset[] }>();
+
+export function clearBackgroundAssetCache(): void {
+  backgroundAssetCache.clear();
+}
+
+async function getCachedActiveBackgrounds(workspaceId: string): Promise<Asset[]> {
+  const cached = backgroundAssetCache.get(workspaceId);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp) < 60000) {
+    return cached.assets;
+  }
+  const allBackgrounds = await assetRepository.list(workspaceId, AssetType.Background);
+  backgroundAssetCache.set(workspaceId, { timestamp: now, assets: allBackgrounds });
+  return allBackgrounds;
+}
+
+/**
+ * Validates that the asset filePath is hosted on trusted Cloudinary delivery domain (BG-12).
+ */
+export function isTrustedCloudinaryUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith('https://res.cloudinary.com/') || url.startsWith('http://res.cloudinary.com/');
+}
+
+export interface BackgroundSelectionFilterRules {
+  mood?: string;
+  style?: string;
+  theme?: string;
+  tags?: string[];
+  orientation?: 'portrait' | 'landscape' | 'square';
+}
+
+/**
+ * Filters active, license-confirmed background assets matching optional rules.
+ */
+export function selectEligibleBackgroundCandidates(
+  allBackgrounds: Asset[],
+  rules?: BackgroundSelectionFilterRules
+): Asset[] {
+  // 1. Base eligibility filter
+  const baseEligible = allBackgrounds.filter((asset) => {
+    if (asset.type !== AssetType.Background) return false;
+    if (asset.status !== 'Active' || asset.licenseStatus !== 'Confirmed') return false;
+    if (!asset.filePath || !isTrustedCloudinaryUrl(asset.filePath)) return false;
+    return true;
+  });
+
+  if (!rules || Object.keys(rules).length === 0) {
+    return baseEligible;
+  }
+
+  // 2. Filter by metadata rules (mood, style, theme, tags)
+  const filtered = baseEligible.filter((asset) => {
+    const meta = (asset.metadata as Record<string, any>) || {};
+
+    if (rules.mood && meta.mood && meta.mood.toLowerCase() !== rules.mood.toLowerCase()) {
+      return false;
+    }
+    if (rules.style && meta.style && meta.style.toLowerCase() !== rules.style.toLowerCase()) {
+      return false;
+    }
+    if (rules.theme && meta.theme && meta.theme.toLowerCase() !== rules.theme.toLowerCase()) {
+      return false;
+    }
+    if (Array.isArray(rules.tags) && rules.tags.length > 0) {
+      const assetTags = Array.isArray(meta.tags) ? meta.tags.map((t: string) => String(t).toLowerCase()) : [];
+      const hasOverlap = rules.tags.some((tag) => assetTags.includes(tag.toLowerCase()));
+      if (!hasOverlap) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const candidatesToConsider = filtered.length > 0 ? filtered : baseEligible;
+
+  // 3. Soft orientation preference
+  if (rules.orientation) {
+    const orientationMatches = candidatesToConsider.filter((asset) => {
+      const meta = (asset.metadata as Record<string, any>) || {};
+      return meta.orientation === rules.orientation;
+    });
+    if (orientationMatches.length > 0) {
+      return orientationMatches;
+    }
+  }
+
+  return candidatesToConsider;
+}
+
+export function buildTruncatedBackgroundCatalog(
+  candidates: Asset[],
+  maxSize: number = 40
+): { truncatedCandidates: Asset[]; catalogPayload: Array<{ id: string; name: string; mood?: string; style?: string; theme?: string; orientation?: string; tags?: string[] }> } {
+  const sorted = [...candidates].sort((a, b) => a.id.localeCompare(b.id));
+  const truncated = sorted.slice(0, maxSize);
+  if (sorted.length > maxSize) {
+    logger.warn({ total: sorted.length, max: maxSize }, 'Background candidates truncated to maximum catalog size');
+  }
+  const catalogPayload = truncated.map((c) => {
+    const meta = (c.metadata as Record<string, any>) || {};
+    const item: {
+      id: string;
+      name: string;
+      mood?: string;
+      style?: string;
+      theme?: string;
+      orientation?: string;
+      tags?: string[];
+    } = {
+      id: c.id,
+      name: c.name,
+    };
+    if (meta.mood) item.mood = String(meta.mood);
+    if (meta.style) item.style = String(meta.style);
+    if (meta.theme) item.theme = String(meta.theme);
+    if (meta.orientation) item.orientation = String(meta.orientation);
+    if (Array.isArray(meta.tags)) item.tags = meta.tags.map(String);
+    return item;
+  });
+  return { truncatedCandidates: truncated, catalogPayload };
+}
+
+/**
  * Filters active, license-confirmed music assets matching mood and genre.
  * Falls back to mood-only matching if no exact mood+genre match is found.
  */
@@ -128,6 +255,26 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
         };
       });
 
+      // BG-04: Compute eligible background catalog if AI mode is enabled
+      const bgSelectionRules = (snapshot.backgroundSelectionRules !== undefined ? snapshot.backgroundSelectionRules : profile.backgroundSelectionRules) as Record<string, any> || {};
+      let backgroundCatalogPayload: Array<{ id: string; name: string; mood?: string; style?: string; theme?: string; orientation?: string; tags?: string[] }> = [];
+
+      if (bgSelectionRules.selectionMode === 'AI') {
+        const allBackgrounds = await getCachedActiveBackgrounds(job.workspaceId);
+        const eligibleBgCandidates = selectEligibleBackgroundCandidates(allBackgrounds, {
+          mood: bgSelectionRules.mood,
+          style: bgSelectionRules.style,
+          theme: bgSelectionRules.theme,
+          tags: bgSelectionRules.tags,
+          orientation: bgSelectionRules.orientation,
+        });
+
+        const maxSizeVal = await systemConfigCache.get<number>('background_catalog.max_size');
+        const maxSize = typeof maxSizeVal === 'number' ? maxSizeVal : 40;
+        const truncated = buildTruncatedBackgroundCatalog(eligibleBgCandidates, maxSize);
+        backgroundCatalogPayload = truncated.catalogPayload;
+      }
+
       // Generate content via Gemini AI provider
       const aiResponse = await geminiProvider.generate(
         {
@@ -140,15 +287,18 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
           tone,
           style,
           musicCatalog: JSON.stringify(musicCatalogPayload),
+          backgroundCatalog: JSON.stringify(backgroundCatalogPayload),
           ...variables,
         }
       );
 
-      // Persist AI-selected music asset id in configSnapshot
+      // Persist AI-selected music and background asset ids in configSnapshot
       const aiSelectedMusicAssetId = aiResponse.metadata?.selectedMusicAssetId || null;
+      const aiSelectedBackgroundAssetId = aiResponse.metadata?.selectedBackgroundAssetId || null;
       const updatedSnapshot = {
         ...snapshot,
         aiSelectedMusicAssetId,
+        aiSelectedBackgroundAssetId,
       };
 
       // Store generated text in job record
@@ -208,6 +358,163 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       break;
     }
 
+    case PipelineStage.ResolvingBackground: {
+      const profile = job.contentProfile;
+      if (!profile) {
+        throw new ValidationError('Job is missing a Content Profile snapshot.');
+      }
+
+      const snapshot = (job.configSnapshot as Record<string, any>) || {};
+
+      // BG-08 / Idempotency guard for stage re-entry/retry on the same job
+      if (snapshot.selectedBackgroundAssetId || snapshot.backgroundSelectionMethod === 'none') {
+        logger.info({ jobId, assetId: snapshot.selectedBackgroundAssetId, method: snapshot.backgroundSelectionMethod }, 'Background already resolved for this job; skipping re-selection');
+        await jobRepository.transitionJobStage(jobId, stage, {
+          configSnapshot: snapshot,
+        });
+        break;
+      }
+
+      const backgroundRules = (snapshot.backgroundSelectionRules !== undefined ? snapshot.backgroundSelectionRules : profile.backgroundSelectionRules) as Record<string, any> || {};
+      const selectionMode = backgroundRules.selectionMode;
+
+      // BG-05: Feature-off Short-Circuit
+      if (!selectionMode || selectionMode === 'Off' || selectionMode === 'none') {
+        logger.info({ jobId }, 'Background selection is not configured or Off for this profile; skipping');
+        const updatedSnapshot = {
+          ...snapshot,
+          backgroundSelectionMethod: 'none',
+          selectedBackgroundAssetId: null,
+          selectedBackgroundFilePath: null,
+        };
+        await jobRepository.transitionJobStage(jobId, stage, {
+          configSnapshot: updatedSnapshot,
+        });
+        break;
+      }
+
+      if (selectionMode === 'Manual') {
+        const manualAssetId = backgroundRules.manualAssetId;
+        if (!manualAssetId) {
+          throw new ValidationError('Manual background selection mode requires manualAssetId');
+        }
+
+        // Re-validate manual asset fresh from repository (BG-06)
+        const asset = await assetRepository.getById(manualAssetId, job.workspaceId);
+        if (!asset || asset.workspaceId !== job.workspaceId) {
+          throw new ValidationError(`Manual background asset ${manualAssetId} was not found in this workspace`);
+        }
+        if (asset.type !== AssetType.Background) {
+          throw new ValidationError(`Manual asset ${manualAssetId} is not a Background asset (found: ${asset.type})`);
+        }
+        if (asset.status !== 'Active') {
+          throw new ValidationError(`Manual background asset ${manualAssetId} is not Active (found: ${asset.status})`);
+        }
+        if (asset.licenseStatus !== 'Confirmed') {
+          throw new ValidationError(`Manual background asset ${manualAssetId} does not have Confirmed license status (found: ${asset.licenseStatus})`);
+        }
+        if (!asset.filePath || !isTrustedCloudinaryUrl(asset.filePath)) {
+          throw new ValidationError(`Manual background asset ${manualAssetId} does not have a trusted Cloudinary file path`);
+        }
+
+        const updatedSnapshot = {
+          ...snapshot,
+          selectedBackgroundAssetId: asset.id,
+          selectedBackgroundFilePath: asset.filePath,
+          backgroundSelectionMethod: 'manual',
+        };
+
+        logger.info({ jobId, assetId: asset.id }, 'Manual background asset resolved successfully');
+        await jobRepository.transitionJobStage(jobId, stage, {
+          configSnapshot: updatedSnapshot,
+        });
+        break;
+      }
+
+      if (selectionMode === 'AI') {
+        const allBackgrounds = await getCachedActiveBackgrounds(job.workspaceId);
+        const eligibleCandidates = selectEligibleBackgroundCandidates(allBackgrounds, {
+          mood: backgroundRules.mood,
+          style: backgroundRules.style,
+          theme: backgroundRules.theme,
+          tags: backgroundRules.tags,
+          orientation: backgroundRules.orientation,
+        });
+
+        if (eligibleCandidates.length === 0) {
+          throw new ValidationError(`No eligible background assets match the configured selection rules: ${JSON.stringify(backgroundRules)}`);
+        }
+
+        const maxSizeVal = await systemConfigCache.get<number>('background_catalog.max_size');
+        const maxSize = typeof maxSizeVal === 'number' ? maxSizeVal : 40;
+        const { truncatedCandidates, catalogPayload } = buildTruncatedBackgroundCatalog(eligibleCandidates, maxSize);
+
+        let chosenAsset: Asset | null = null;
+
+        // Check if GeneratingContent stage previously selected a valid ID (BG-07)
+        const initialSelectedId = snapshot.aiSelectedBackgroundAssetId;
+        if (typeof initialSelectedId === 'string' && initialSelectedId.trim().length > 0) {
+          const trimmed = initialSelectedId.trim();
+          const match = truncatedCandidates.find((c) => c.id === trimmed);
+          if (match) {
+            chosenAsset = match;
+            logger.info({ jobId, assetId: match.id }, 'AI-selected background asset from generation stage matched eligible catalog');
+          } else {
+            logger.warn({ jobId, initialSelectedId: trimmed }, 'AI-selected background asset ID is not in eligible candidates set; triggering bounded recovery');
+          }
+        }
+
+        // Bounded retry recovery loop if initial selection was missing or invalid (BG-07)
+        if (!chosenAsset) {
+          const retryLimitVal = await systemConfigCache.get<number>('retry_limit.background_ai_selection');
+          const maxRetries = typeof retryLimitVal === 'number' ? retryLimitVal : 2;
+
+          let recoveryAttempts = 0;
+          while (!chosenAsset && recoveryAttempts < maxRetries) {
+            recoveryAttempts++;
+            logger.info({ jobId, recoveryAttempts, maxRetries }, 'Executing bounded AI recovery attempt for background selection');
+
+            const recoverySelectedId = await geminiProvider.selectBestBackgroundMatch?.(catalogPayload, {
+              quote: job.generatedText || '',
+              language: snapshot.language || profile.language,
+              tone: snapshot.tone || profile.tone,
+              style: snapshot.writingStyle || profile.writingStyle,
+            });
+
+            if (recoverySelectedId) {
+              const match = truncatedCandidates.find((c) => c.id === recoverySelectedId);
+              if (match) {
+                chosenAsset = match;
+                logger.info({ jobId, assetId: match.id, recoveryAttempts }, 'Bounded recovery AI background selection succeeded');
+                break;
+              }
+            }
+          }
+
+          if (!chosenAsset) {
+            throw new ValidationError(
+              `AI background selection failed after ${recoveryAttempts} recovery attempt(s) — no valid asset was selected from ${truncatedCandidates.length} eligible candidate(s)`
+            );
+          }
+        }
+
+        const updatedSnapshot = {
+          ...snapshot,
+          selectedBackgroundAssetId: chosenAsset.id,
+          selectedBackgroundFilePath: chosenAsset.filePath,
+          backgroundSelectionMethod: 'ai',
+        };
+
+        logger.info({ jobId, assetId: chosenAsset.id, method: 'ai' }, 'AI background asset resolved successfully');
+        await jobRepository.transitionJobStage(jobId, stage, {
+          configSnapshot: updatedSnapshot,
+        });
+        break;
+      }
+
+      throw new ValidationError(`Unknown background selection mode: ${selectionMode}`);
+    }
+
     case PipelineStage.RenderingImage: {
       const text = job.generatedText || '';
       const profile = job.contentProfile;
@@ -231,12 +538,13 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
       const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
 
-      // Render vertical PNG via Playwright
+      // Render vertical PNG via Playwright (passing selectedBackgroundFilePath if resolved)
       const imageUrl = await renderingService.renderImage(jobId, text, {
         language: snapshot.language || profile.language,
         branding: brandingText,
         watermark: watermarkText,
         templateVersionId,
+        backgroundImageUrl: snapshot.selectedBackgroundFilePath || undefined,
       });
 
       await jobRepository.transitionJobStage(jobId, stage, {
@@ -465,6 +773,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
   const generationStages: PipelineStage[] = [
     PipelineStage.GeneratingContent,
     PipelineStage.Validating,
+    PipelineStage.ResolvingBackground,
     PipelineStage.RenderingImage,
     PipelineStage.AttachingMusic,
     PipelineStage.RenderingVideo,

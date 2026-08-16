@@ -9,6 +9,7 @@ export const AIContentResponseSchema = z.object({
   language: z.string().min(1, 'Language must not be empty'),
   contentType: z.string().min(1, 'ContentType must not be empty'),
   selectedMusicAssetId: z.string().optional(),
+  selectedBackgroundAssetId: z.string().optional(),
 });
 
 export type AIContentResponse = z.infer<typeof AIContentResponseSchema>;

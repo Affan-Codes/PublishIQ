@@ -87,6 +87,7 @@ enum PipelineStage {
   Running
   GeneratingContent
   Validating
+  ResolvingBackground
   RenderingImage
   AttachingMusic
   RenderingVideo
@@ -246,6 +247,7 @@ model ContentProfile {
   captionStrategy       Json
   hashtagStrategy       Json
   musicSelectionRules   Json
+  backgroundSelectionRules Json @default("{}")
   renderingConfiguration Json
   validationRules       Json
   createdAt             DateTime             @default(now())

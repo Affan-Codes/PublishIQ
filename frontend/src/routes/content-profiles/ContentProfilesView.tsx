@@ -26,6 +26,7 @@ import {
   Sparkles,
   Layers,
   Image,
+  Check,
 } from 'lucide-react';
 
 const contentProfileSchema = z.object({
@@ -62,6 +63,15 @@ interface ContentProfile {
   captionStrategy: { template?: string; prefix?: string; suffix?: string };
   hashtagStrategy: { tags?: string[]; mode?: string };
   musicSelectionRules: { mood?: string; genre?: string; minDurationSeconds?: number; maxDurationSeconds?: number };
+  backgroundSelectionRules?: {
+    selectionMode?: 'Off' | 'Manual' | 'AI';
+    manualAssetId?: string;
+    mood?: string;
+    style?: string;
+    theme?: string;
+    tags?: string[];
+    orientation?: 'portrait' | 'landscape' | 'square';
+  };
   renderingConfiguration: { resolution?: string; fps?: number; branding?: string; watermark?: string };
   validationRules: { bannedWords?: string[]; maxLength?: number; minLength?: number; strictProfanity?: boolean };
 }
@@ -73,7 +83,7 @@ export const ContentProfilesView: React.FC = () => {
   const [editingProfile, setEditingProfile] = useState<ContentProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'basic' | 'branding' | 'copy' | 'audio' | 'rendering'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'branding' | 'background' | 'copy' | 'audio' | 'rendering'>('basic');
 
   // Structured Sub-Forms State
   const [promptVariablesList, setPromptVariablesList] = useState<{ key: string; value: string }[]>([]);
@@ -85,6 +95,15 @@ export const ContentProfilesView: React.FC = () => {
   const [watermarkText, setWatermarkText] = useState('');
   const [watermarkPosition, setWatermarkPosition] = useState<'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'>('bottom-right');
   const [watermarkOpacity, setWatermarkOpacity] = useState(0.6);
+
+  // Background Selection State
+  const [bgSelectionMode, setBgSelectionMode] = useState<'Off' | 'Manual' | 'AI'>('Off');
+  const [bgManualAssetId, setBgManualAssetId] = useState<string>('');
+  const [bgMood, setBgMood] = useState<string>('');
+  const [bgStyle, setBgStyle] = useState<string>('');
+  const [bgTheme, setBgTheme] = useState<string>('');
+  const [bgTagsInput, setBgTagsInput] = useState<string>('');
+  const [bgOrientation, setBgOrientation] = useState<'portrait' | 'landscape' | 'square'>('portrait');
 
   const [captionTemplate, setCaptionTemplate] = useState('{{text}}');
   const [captionPrefix, setCaptionPrefix] = useState('');
@@ -111,6 +130,14 @@ export const ContentProfilesView: React.FC = () => {
     queryKey: ['content-profiles'],
     queryFn: async () => {
       const res = await apiClient.get('/content-profiles');
+      return res.data.data;
+    },
+  });
+
+  const { data: backgroundAssets = [] } = useQuery<any[]>({
+    queryKey: ['background-assets'],
+    queryFn: async () => {
+      const res = await apiClient.get('/assets?type=Background');
       return res.data.data;
     },
   });
@@ -238,6 +265,24 @@ export const ContentProfilesView: React.FC = () => {
       .filter(Boolean);
     if (banned.length > 0) validationRules.bannedWords = banned;
 
+    let backgroundSelectionRules: any = {};
+    if (bgSelectionMode === 'Manual') {
+      backgroundSelectionRules = {
+        selectionMode: 'Manual',
+        manualAssetId: bgManualAssetId || undefined,
+      };
+    } else if (bgSelectionMode === 'AI') {
+      const bgTags = bgTagsInput.split(',').map((t) => t.trim().replace(/^#/, '')).filter(Boolean);
+      backgroundSelectionRules = {
+        selectionMode: 'AI',
+        mood: bgMood.trim() || undefined,
+        style: bgStyle.trim() || undefined,
+        theme: bgTheme.trim() || undefined,
+        tags: bgTags.length > 0 ? bgTags : undefined,
+        orientation: bgOrientation || undefined,
+      };
+    }
+
     return {
       ...values,
       notes: values.notes?.trim() || null,
@@ -247,6 +292,7 @@ export const ContentProfilesView: React.FC = () => {
       captionStrategy,
       hashtagStrategy,
       musicSelectionRules,
+      backgroundSelectionRules,
       renderingConfiguration,
       validationRules,
     };
@@ -300,6 +346,11 @@ export const ContentProfilesView: React.FC = () => {
 
   const onSubmit = (values: ContentProfileBaseFormValues) => {
     setErrorText(null);
+    if (bgSelectionMode === 'Manual' && !bgManualAssetId) {
+      setErrorText('Manual background mode requires selecting a background asset.');
+      setActiveTab('background');
+      return;
+    }
     const payload = buildStructuredPayload(values);
     if (editingProfile) {
       updateMutation.mutate(payload);
@@ -325,6 +376,15 @@ export const ContentProfilesView: React.FC = () => {
     setWatermarkText('');
     setWatermarkPosition('bottom-right');
     setWatermarkOpacity(0.6);
+
+    // Reset background state
+    setBgSelectionMode('Off');
+    setBgManualAssetId('');
+    setBgMood('');
+    setBgStyle('');
+    setBgTheme('');
+    setBgTagsInput('');
+    setBgOrientation('portrait');
 
     setCaptionTemplate('{{text}}');
     setCaptionPrefix('');
@@ -383,6 +443,16 @@ export const ContentProfilesView: React.FC = () => {
     setWatermarkText(profile.watermarkRules?.text || '');
     setWatermarkPosition((profile.watermarkRules?.position as any) || 'bottom-right');
     setWatermarkOpacity(profile.watermarkRules?.opacity ?? 0.6);
+
+    // Populate background state
+    const bgRules = profile.backgroundSelectionRules || {};
+    setBgSelectionMode((bgRules.selectionMode as any) || 'Off');
+    setBgManualAssetId(bgRules.manualAssetId || '');
+    setBgMood(bgRules.mood || '');
+    setBgStyle(bgRules.style || '');
+    setBgTheme(bgRules.theme || '');
+    setBgTagsInput(Array.isArray(bgRules.tags) ? bgRules.tags.join(', ') : '');
+    setBgOrientation((bgRules.orientation as any) || 'portrait');
 
     setCaptionTemplate(profile.captionStrategy?.template || '{{text}}');
     setCaptionPrefix(profile.captionStrategy?.prefix || '');
@@ -528,6 +598,16 @@ export const ContentProfilesView: React.FC = () => {
                     <span>Music: {profile.musicSelectionRules?.mood || 'Inspiring'} / {profile.musicSelectionRules?.genre || 'Acoustic'}</span>
                     <span>{profile.renderingConfiguration?.resolution || '1080x1920'}</span>
                   </div>
+                  <div className="flex justify-between text-[11px] text-[#6e6e80] pt-1 border-t border-[#1a1a24]">
+                    <span>Background:</span>
+                    <span className="font-semibold text-purple-300">
+                      {profile.backgroundSelectionRules?.selectionMode === 'Manual'
+                        ? 'Manual (Pinned)'
+                        : profile.backgroundSelectionRules?.selectionMode === 'AI'
+                        ? `AI (${profile.backgroundSelectionRules.mood || 'Dynamic'})`
+                        : 'Off (Black Canvas)'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -588,8 +668,8 @@ export const ContentProfilesView: React.FC = () => {
 
       {/* Create / Edit Dialog Modal */}
       {isDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-4xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
+          <div className="w-full max-w-4xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
@@ -619,10 +699,11 @@ export const ContentProfilesView: React.FC = () => {
             <div className="flex flex-wrap gap-2 border-b border-[#1a1a24] pb-3">
               {[
                 { id: 'basic', label: '1. General & Variables', icon: Sliders },
-                { id: 'branding', label: '2. Branding & Watermark', icon: Image },
-                { id: 'copy', label: '3. Captions & Hashtags', icon: MessageSquare },
-                { id: 'audio', label: '4. Music Rules', icon: Music },
-                { id: 'rendering', label: '5. Render & Validation', icon: ShieldAlert },
+                { id: 'branding', label: '2. Branding & Watermark', icon: Layers },
+                { id: 'background', label: '3. Background Rules', icon: Image },
+                { id: 'copy', label: '4. Captions & Hashtags', icon: MessageSquare },
+                { id: 'audio', label: '5. Music Rules', icon: Music },
+                { id: 'rendering', label: '6. Render & Validation', icon: ShieldAlert },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const active = activeTab === tab.id;
@@ -984,6 +1065,218 @@ export const ContentProfilesView: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* TAB 3: Background Rules */}
+              {activeTab === 'background' && (
+                <div className="space-y-6">
+                  {/* Selection Mode Switch */}
+                  <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                        <Image size={14} className="text-purple-400" />
+                        Background Image Strategy
+                      </h4>
+                      <p className="text-[11px] text-[#6e6e80] mt-0.5">
+                        Choose whether generated quotes use plain black, a pinned asset, or dynamic AI background matching.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setBgSelectionMode('Off')}
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          bgSelectionMode === 'Off'
+                            ? 'bg-purple-950/20 border-purple-500/50 text-white shadow-lg'
+                            : 'bg-[#161620] border-[#1a1a24] text-[#9c9cb0] hover:text-white hover:border-[#2b2b3a]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className="font-bold text-xs">Off (Solid Black)</span>
+                          {bgSelectionMode === 'Off' && <Check size={14} className="text-purple-400" />}
+                        </div>
+                        <span className="text-[10px] text-[#6e6e80]">Standard dark high-contrast backdrop</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBgSelectionMode('Manual')}
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          bgSelectionMode === 'Manual'
+                            ? 'bg-purple-950/20 border-purple-500/50 text-white shadow-lg'
+                            : 'bg-[#161620] border-[#1a1a24] text-[#9c9cb0] hover:text-white hover:border-[#2b2b3a]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className="font-bold text-xs">Manual (Pinned Asset)</span>
+                          {bgSelectionMode === 'Manual' && <Check size={14} className="text-purple-400" />}
+                        </div>
+                        <span className="text-[10px] text-[#6e6e80]">Pin a specific background image asset</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setBgSelectionMode('AI')}
+                        className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                          bgSelectionMode === 'AI'
+                            ? 'bg-purple-950/20 border-purple-500/50 text-white shadow-lg'
+                            : 'bg-[#161620] border-[#1a1a24] text-[#9c9cb0] hover:text-white hover:border-[#2b2b3a]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className="font-bold text-xs">AI Selection</span>
+                          {bgSelectionMode === 'AI' && <Check size={14} className="text-purple-400" />}
+                        </div>
+                        <span className="text-[10px] text-[#6e6e80]">Gemini selects best matching asset dynamically</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual Mode Asset Picker */}
+                  {bgSelectionMode === 'Manual' && (
+                    <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Select Pinned Background</h4>
+                          <p className="text-[11px] text-[#6e6e80]">Choose an active confirmed background asset</p>
+                        </div>
+                        <span className="text-[11px] text-[#9c9cb0]">
+                          {backgroundAssets.filter((a: any) => a.status === 'Active' && a.licenseStatus === 'Confirmed').length} available
+                        </span>
+                      </div>
+
+                      {backgroundAssets.length === 0 ? (
+                        <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-300">
+                          No background assets found. Upload images in the Media Assets tab first.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-60 overflow-y-auto pr-1">
+                          {backgroundAssets.map((asset: any) => {
+                            const isSelected = bgManualAssetId === asset.id;
+                            const isEligible = asset.status === 'Active' && asset.licenseStatus === 'Confirmed';
+
+                            return (
+                              <div
+                                key={asset.id}
+                                onClick={() => {
+                                  if (isEligible) setBgManualAssetId(asset.id);
+                                }}
+                                className={`group relative rounded-lg border overflow-hidden transition cursor-pointer flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'border-purple-500 bg-purple-950/30 ring-2 ring-purple-500/50'
+                                    : isEligible
+                                    ? 'border-[#1a1a24] bg-[#161620] hover:border-purple-500/40'
+                                    : 'border-zinc-800/40 bg-zinc-900/40 opacity-50 cursor-not-allowed'
+                                }`}
+                              >
+                                <div className="relative h-20 w-full bg-black/40">
+                                  <img
+                                    src={asset.filePath}
+                                    alt={asset.name}
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                  {isSelected && (
+                                    <div className="absolute inset-0 bg-purple-600/30 flex items-center justify-center">
+                                      <div className="rounded-full bg-purple-500 p-1 text-white shadow-md">
+                                        <Check size={14} />
+                                      </div>
+                                    </div>
+                                  )}
+                                  {asset.metadata?.orientation && (
+                                    <span className="absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[8px] uppercase font-bold text-purple-300">
+                                      {asset.metadata.orientation}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="p-2">
+                                  <p className="text-[11px] font-semibold text-white truncate">{asset.name}</p>
+                                  <p className="text-[10px] text-[#6e6e80] truncate">
+                                    {asset.metadata?.mood || 'Default'} • {asset.metadata?.style || 'Photo'}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* AI Mode Rules Configuration */}
+                  {bgSelectionMode === 'AI' && (
+                    <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-4">
+                      <div className="rounded-lg bg-purple-950/20 border border-purple-500/20 p-3 text-xs text-purple-300 flex items-start gap-2">
+                        <Sparkles size={16} className="shrink-0 text-purple-400 mt-0.5" />
+                        <div>
+                          <strong>Dynamic Content-Aware Selection:</strong> Gemini analyzes the generated quote and chooses the best candidate from your workspace background catalog during pipeline execution.
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs text-[#9c9cb0] mb-1">Preferred Mood</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Calm, Inspiring, Dark"
+                            value={bgMood}
+                            onChange={(e) => setBgMood(e.target.value)}
+                            className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-[#9c9cb0] mb-1">Preferred Style</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Photo, Gradient, Minimalist"
+                            value={bgStyle}
+                            onChange={(e) => setBgStyle(e.target.value)}
+                            className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-[#9c9cb0] mb-1">Theme Filter</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Nature, Urban, Abstract"
+                            value={bgTheme}
+                            onChange={(e) => setBgTheme(e.target.value)}
+                            className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-[#9c9cb0] mb-1">Preferred Orientation</label>
+                          <select
+                            value={bgOrientation}
+                            onChange={(e) => setBgOrientation(e.target.value as any)}
+                            className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                          >
+                            <option value="portrait">Portrait (9:16)</option>
+                            <option value="landscape">Landscape (16:9)</option>
+                            <option value="square">Square (1:1)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-[#9c9cb0] mb-1">Target Tags (Comma-Separated)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. sunset, mountains, serene, night"
+                          value={bgTagsInput}
+                          onChange={(e) => setBgTagsInput(e.target.value)}
+                          className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

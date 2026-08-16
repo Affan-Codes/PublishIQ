@@ -20,6 +20,7 @@ export function createContentProfileSnapshot(
     captionStrategy: profile.captionStrategy ?? {},
     hashtagStrategy: profile.hashtagStrategy ?? {},
     musicSelectionRules: profile.musicSelectionRules ?? {},
+    backgroundSelectionRules: profile.backgroundSelectionRules ?? {},
     renderingConfiguration: profile.renderingConfiguration ?? {},
     validationRules: profile.validationRules ?? {},
     ...extra,

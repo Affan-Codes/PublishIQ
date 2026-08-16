@@ -1,4 +1,4 @@
-export const SYSTEM_PROMPT_VARIABLES = ['contentType', 'language', 'tone', 'style', 'musicCatalog'] as const;
+export const SYSTEM_PROMPT_VARIABLES = ['contentType', 'language', 'tone', 'style', 'musicCatalog', 'backgroundCatalog'] as const;
 export type SystemPromptVariable = typeof SYSTEM_PROMPT_VARIABLES[number];
 
 /**

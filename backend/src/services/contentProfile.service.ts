@@ -2,8 +2,9 @@ import contentProfileRepository from '../repositories/contentProfile.repository.
 import contentTypeRepository from '../repositories/contentType.repository.js';
 import promptRepository from '../repositories/prompt.repository.js';
 import templateRepository from '../repositories/template.repository.js';
+import { assetRepository } from '../repositories/asset.repository.js';
 import { NotFoundError, ValidationError } from '../errors/custom-errors.js';
-import { ContentProfile, ContentProfileStatus, Language } from '@prisma/client';
+import { ContentProfile, ContentProfileStatus, Language, AssetType, AssetStatus, LicenseStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 import { SYSTEM_PROMPT_VARIABLES, extractPromptVariables } from '../constants/prompt-variables.js';
 
@@ -32,6 +33,29 @@ function validatePromptTokenCoverage(promptBody: string, promptVariables?: Recor
   const uncovered = tokens.filter((t) => !allowed.has(t));
   if (uncovered.length > 0) {
     throw new ValidationError(`Prompt version references uncovered variable(s): ${uncovered.join(', ')}`);
+  }
+}
+
+async function validateBackgroundSelectionRules(workspaceId: string, backgroundSelectionRules?: any) {
+  if (!backgroundSelectionRules || typeof backgroundSelectionRules !== 'object') return;
+  if (backgroundSelectionRules.selectionMode === 'Manual') {
+    const assetId = backgroundSelectionRules.manualAssetId;
+    if (!assetId) {
+      throw new ValidationError('manualAssetId is required when selectionMode is Manual');
+    }
+    const asset = await assetRepository.getById(assetId, workspaceId);
+    if (!asset || asset.workspaceId !== workspaceId) {
+      throw new ValidationError(`Manual background asset ID ${assetId} does not exist or does not belong to this workspace`);
+    }
+    if (asset.type !== AssetType.Background) {
+      throw new ValidationError(`Manual background asset must have type Background, but got ${asset.type}`);
+    }
+    if (asset.status === AssetStatus.Disabled) {
+      logger.warn({ assetId, workspaceId }, 'Manual background asset is currently Disabled');
+    }
+    if (asset.licenseStatus !== LicenseStatus.Confirmed) {
+      logger.warn({ assetId, workspaceId }, 'Manual background asset has Unconfirmed license status');
+    }
   }
 }
 
@@ -67,6 +91,7 @@ export const contentProfileService = {
     captionStrategy: any;
     hashtagStrategy: any;
     musicSelectionRules: any;
+    backgroundSelectionRules?: any;
     renderingConfiguration: any;
     validationRules: any;
   }): Promise<ContentProfile> {
@@ -74,6 +99,9 @@ export const contentProfileService = {
 
     // CFG-06: Check for reserved system variable collision
     validatePromptVariableCollisions(data.promptVariables);
+
+    // BG-01: Validate background selection rules if Manual
+    await validateBackgroundSelectionRules(data.workspaceId, data.backgroundSelectionRules);
 
     // 1. Verify ContentType exists and belongs to the workspace
     const contentType = await contentTypeRepository.getById(data.contentTypeId);
@@ -126,6 +154,7 @@ export const contentProfileService = {
       captionStrategy?: any;
       hashtagStrategy?: any;
       musicSelectionRules?: any;
+      backgroundSelectionRules?: any;
       renderingConfiguration?: any;
       validationRules?: any;
     }
@@ -135,6 +164,10 @@ export const contentProfileService = {
 
     if (data.promptVariables !== undefined) {
       validatePromptVariableCollisions(data.promptVariables);
+    }
+
+    if (data.backgroundSelectionRules !== undefined) {
+      await validateBackgroundSelectionRules(workspaceId, data.backgroundSelectionRules);
     }
 
     if (data.contentTypeId) {

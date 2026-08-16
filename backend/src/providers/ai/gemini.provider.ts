@@ -18,6 +18,7 @@ export const geminiResponseSchema = {
     language: { type: 'STRING', description: 'The language code or name of the output text (English, Hindi, or Urdu)' },
     contentType: { type: 'STRING', description: 'The type of the content (e.g. Shayari, Motivational Quote, etc.)' },
     selectedMusicAssetId: { type: 'STRING', description: 'The id of the single best-matching music asset from the provided catalog, or omit if none fit well' },
+    selectedBackgroundAssetId: { type: 'STRING', description: 'The id of the single best-matching background asset from the provided catalog, or omit if none fit well' },
   },
   required: ['title', 'quote', 'caption', 'hashtags', 'language', 'contentType']
 };
@@ -150,6 +151,7 @@ export const geminiProvider: AIProviderAdapter = {
           language: result.language.trim(),
           contentType: result.contentType.trim(),
           selectedMusicAssetId: result.selectedMusicAssetId ? result.selectedMusicAssetId.trim() : undefined,
+          selectedBackgroundAssetId: result.selectedBackgroundAssetId ? result.selectedBackgroundAssetId.trim() : undefined,
           generationMetadata: result.metadata,
           model: modelName,
           promptVersion: prompt.versionNumber,
@@ -164,6 +166,87 @@ export const geminiProvider: AIProviderAdapter = {
     } catch (err: any) {
       logger.error({ err }, 'Gemini API generation failed after all retries');
       throw new ExternalProviderError('Gemini', err.message, err);
+    }
+  },
+
+  async selectBestBackgroundMatch(
+    catalog: Array<{ id: string; name: string; mood?: string; style?: string; theme?: string; orientation?: string; tags?: string[] }>,
+    contentContext: { quote: string; language: string; tone: string; style: string }
+  ): Promise<string | null> {
+    const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new ExternalProviderError(
+        'Gemini',
+        'Gemini API key is not configured. Set GEMINI_API_KEY in your environment.'
+      );
+    }
+
+    const sysModel = await systemConfigCache.get<string>('ai.gemini_model');
+    const modelName = sysModel || env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+    const selectionSchema = {
+      type: 'OBJECT',
+      properties: {
+        selectedBackgroundAssetId: {
+          type: 'STRING',
+          description: 'The id of the single best-matching background image asset from the provided catalog',
+        },
+      },
+      required: ['selectedBackgroundAssetId'],
+    };
+
+    const promptText = `You are selecting the best background image for the following social media post:
+Quote: "${contentContext.quote}"
+Language: ${contentContext.language}
+Tone: ${contentContext.tone}
+Style: ${contentContext.style}
+
+Available Background Image Candidates (JSON):
+${JSON.stringify(catalog, null, 2)}
+
+Select the single best background image asset ID from the available candidates. Return valid JSON matching the schema.`;
+
+    const executeCall = async (): Promise<string | null> => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: selectionSchema,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Gemini API error (HTTP ${response.status}): ${errorText}`);
+      }
+
+      const data = (await response.json()) as any;
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) return null;
+
+      try {
+        const parsed = JSON.parse(rawText.trim());
+        if (typeof parsed?.selectedBackgroundAssetId === 'string' && parsed.selectedBackgroundAssetId.trim().length > 0) {
+          return parsed.selectedBackgroundAssetId.trim();
+        }
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Failed to parse Gemini background selection response');
+      }
+      return null;
+    };
+
+    try {
+      return await retryWithBackoff(executeCall, 2, 800, 2);
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Gemini background selection recovery call failed');
+      return null;
     }
   },
 };

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import { env } from '../config/env.js';
 import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
 import { getAudioDurationInSeconds, trimAudioSegment } from '../utils/audio.utils.js';
+import { BackgroundMetadataSchema } from '../schemas/asset.schema.js';
 
 function getFolderForAssetType(type: string): string {
   const t = (type || '').toLowerCase();
@@ -51,7 +52,7 @@ export const assetService = {
     logger.info({ name: data.name, type: data.type }, 'Creating new asset');
 
     let finalFilePath = data.filePath;
-    let enrichedMetadata = data.metadata || {};
+    let enrichedMetadata = data.metadata ? { ...data.metadata } : {};
     const folder = getFolderForAssetType(data.type);
 
     // Handle File Upload
@@ -110,8 +111,9 @@ export const assetService = {
 
           // 5. Upload ONLY the trimmed clip to Cloudinary
           const relativePath = `${folder}/${uniqueId}_${baseName}`;
-          uploadedCloudinaryUrl = await cloudinaryStorageProvider.save(trimmedBuffer, relativePath);
-          finalFilePath = uploadedCloudinaryUrl;
+          const uploadRes = await cloudinaryStorageProvider.save(trimmedBuffer, relativePath);
+          uploadedCloudinaryUrl = uploadRes.url;
+          finalFilePath = uploadRes.url;
 
           // 6. Enrich metadata
           enrichedMetadata = {
@@ -154,12 +156,41 @@ export const assetService = {
       } else {
         // Non-music media asset uploads
         const relativePath = `${folder}/${Date.now()}_${data.originalName || 'file'}`;
-        finalFilePath = await cloudinaryStorageProvider.save(data.fileBuffer, relativePath);
+        const uploadRes = await cloudinaryStorageProvider.save(data.fileBuffer, relativePath);
+        finalFilePath = uploadRes.url;
+
+        // BG-02 / BG-03: Capture dimensions and infer orientation for Background assets
+        if (data.type === AssetType.Background) {
+          const width = uploadRes.width;
+          const height = uploadRes.height;
+          let orientation = enrichedMetadata?.orientation;
+          if (!orientation && width && height) {
+            if (height > width) orientation = 'portrait';
+            else if (width > height) orientation = 'landscape';
+            else orientation = 'square';
+          }
+          enrichedMetadata = {
+            ...enrichedMetadata,
+            ...(width !== undefined ? { width } : {}),
+            ...(height !== undefined ? { height } : {}),
+            ...(uploadRes.format ? { format: uploadRes.format } : {}),
+            ...(uploadRes.bytes !== undefined ? { bytes: uploadRes.bytes } : {}),
+            ...(orientation ? { orientation } : {}),
+          };
+        }
       }
     }
 
     if (!finalFilePath) {
       throw new ValidationError('Either a file upload or a valid filePath string is required.');
+    }
+
+    // BG-03: Validate Background asset metadata against schema
+    if (data.type === AssetType.Background && enrichedMetadata && Object.keys(enrichedMetadata).length > 0) {
+      const parseResult = BackgroundMetadataSchema.safeParse(enrichedMetadata);
+      if (!parseResult.success) {
+        throw new ValidationError(`Invalid background asset metadata: ${JSON.stringify(parseResult.error.format())}`);
+      }
     }
 
     return assetRepository.create({
@@ -188,14 +219,14 @@ export const assetService = {
     }
   ): Promise<Asset> {
     logger.info({ id, name: data.name }, 'Updating asset');
-    const existingAsset = await this.getAssetById(id);
+    const existing = await this.getAssetById(id);
 
-    let finalFilePath = data.filePath;
-    let enrichedMetadata = data.metadata !== undefined ? data.metadata : existingAsset.metadata;
-    const folder = getFolderForAssetType(existingAsset.type);
+    let finalFilePath = data.filePath !== undefined ? data.filePath : existing.filePath;
+    let enrichedMetadata = data.metadata !== undefined ? { ...data.metadata } : (existing.metadata as any || {});
+    const folder = getFolderForAssetType(existing.type);
 
     if (data.fileBuffer && data.fileBuffer.length > 0) {
-      if (existingAsset.type === AssetType.Music) {
+      if (existing.type === AssetType.Music) {
         const scratchDir = env.TEMP_RENDER_DIR;
         if (!fs.existsSync(scratchDir)) {
           fs.mkdirSync(scratchDir, { recursive: true });
@@ -238,7 +269,8 @@ export const assetService = {
           const trimmedBuffer = fs.readFileSync(tempTrimmedPath);
 
           const relativePath = `${folder}/${uniqueId}_${baseName}`;
-          finalFilePath = await cloudinaryStorageProvider.save(trimmedBuffer, relativePath);
+          const uploadRes = await cloudinaryStorageProvider.save(trimmedBuffer, relativePath);
+          finalFilePath = uploadRes.url;
 
           enrichedMetadata = {
             ...(enrichedMetadata || {}),
@@ -259,7 +291,34 @@ export const assetService = {
         }
       } else {
         const relativePath = `${folder}/${Date.now()}_${data.originalName || 'file'}`;
-        finalFilePath = await cloudinaryStorageProvider.save(data.fileBuffer, relativePath);
+        const uploadRes = await cloudinaryStorageProvider.save(data.fileBuffer, relativePath);
+        finalFilePath = uploadRes.url;
+
+        if (existing.type === AssetType.Background) {
+          const width = uploadRes.width;
+          const height = uploadRes.height;
+          let orientation = enrichedMetadata?.orientation;
+          if (!orientation && width && height) {
+            if (height > width) orientation = 'portrait';
+            else if (width > height) orientation = 'landscape';
+            else orientation = 'square';
+          }
+          enrichedMetadata = {
+            ...enrichedMetadata,
+            ...(width !== undefined ? { width } : {}),
+            ...(height !== undefined ? { height } : {}),
+            ...(uploadRes.format ? { format: uploadRes.format } : {}),
+            ...(uploadRes.bytes !== undefined ? { bytes: uploadRes.bytes } : {}),
+            ...(orientation ? { orientation } : {}),
+          };
+        }
+      }
+    }
+
+    if (existing.type === AssetType.Background && enrichedMetadata && Object.keys(enrichedMetadata).length > 0) {
+      const parseResult = BackgroundMetadataSchema.safeParse(enrichedMetadata);
+      if (!parseResult.success) {
+        throw new ValidationError(`Invalid background asset metadata: ${JSON.stringify(parseResult.error.format())}`);
       }
     }
 

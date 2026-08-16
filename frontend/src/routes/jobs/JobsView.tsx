@@ -6,7 +6,7 @@ import { z } from 'zod';
 import apiClient from '../../lib/api-client.js';
 import { useNotifications } from '../../context/NotificationContext.js';
 import { RefreshButton } from '../../components/ui/RefreshButton.js';
-import { SkeletonTable, SkeletonCard } from '../../components/ui/Skeleton.js';
+import { SkeletonTable, SkeletonContentCard } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
@@ -558,9 +558,12 @@ export const JobsView: React.FC = () => {
             />
           ) : isGcLoading ? (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
+              <SkeletonContentCard />
+              <SkeletonContentCard />
+              <SkeletonContentCard />
+              <SkeletonContentCard />
+              <SkeletonContentCard />
+              <SkeletonContentCard />
             </div>
           ) : gcData.data.length === 0 ? (
             <EmptyState
@@ -716,8 +719,8 @@ export const JobsView: React.FC = () => {
 
       {/* Monitor Pipeline Drawer */}
       {selectedJobId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
+          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <div>
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -747,9 +750,10 @@ export const JobsView: React.FC = () => {
                       'Draft',
                       'GeneratingContent',
                       'Validating',
-                      'GeneratingImage',
-                      'SelectingMusic',
-                      'GeneratingVideo',
+                      'ResolvingBackground',
+                      'RenderingImage',
+                      'AttachingMusic',
+                      'RenderingVideo',
                       'GeneratingCaption',
                       'GeneratingHashtags',
                       'Queued',
@@ -783,7 +787,6 @@ export const JobsView: React.FC = () => {
                     </p>
                   </div>
                 )}
-
                 {/* Media Preview Artifacts */}
                 <div className="grid grid-cols-2 gap-4 border-t border-[#1a1a24] pt-4">
                   <div>
@@ -876,8 +879,8 @@ export const JobsView: React.FC = () => {
 
       {/* Preview Content Modal */}
       {previewContentId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-8">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
+          <div className="w-full max-w-xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
               <h3 className="text-lg font-bold text-white">Content Preview Inspector</h3>
               <button onClick={() => setPreviewContentId(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">

@@ -47,6 +47,8 @@ async function main() {
     { key: 'log_retention_days', value: 30 },
     { key: 'default_fonts', value: ['Inter', 'Roboto'] },
     { key: 'storage_provider', value: 'cloudinary' },
+    { key: 'background_catalog.max_size', value: 40 },
+    { key: 'retry_limit.background_ai_selection', value: 2 },
   ];
 
   for (const config of systemConfigs) {

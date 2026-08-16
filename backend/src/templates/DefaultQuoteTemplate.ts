@@ -5,6 +5,7 @@ export interface TemplateRenderData {
   watermark?: string | undefined;
   fontFamily?: string | undefined;
   theme?: 'dark' | 'light' | 'gradient' | undefined;
+  backgroundImageUrl?: string | undefined;
 }
 
 function escapeHtml(unsafe: string): string {
@@ -14,6 +15,10 @@ function escapeHtml(unsafe: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function escapeCssUrl(url: string): string {
+  return url.replace(/['"\\()]/g, '\\$&');
 }
 
 export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
@@ -27,6 +32,8 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
   const brandingText = data.branding || 'PUBLISHIQ';
   const watermarkText = data.watermark || '@publishiq';
   const fontFamily = data.fontFamily ? `'${data.fontFamily}', 'Poppins', sans-serif` : "'Poppins', sans-serif";
+  const hasBackground = !!(data.backgroundImageUrl && data.backgroundImageUrl.trim().length > 0);
+  const escapedBgUrl = hasBackground ? escapeCssUrl(data.backgroundImageUrl!.trim()) : '';
 
   return `
 <!DOCTYPE html>
@@ -37,19 +44,65 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
   <style>
-    body {
+    * {
+      box-sizing: border-box;
+    }
+    
+    html, body {
       margin: 0;
       padding: 0;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
       background-color: #000000;
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+    }
+
+    ${hasBackground ? `
+    /* Layer 1: Background Image */
+    .background-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1080px;
+      height: 1920px;
+      background-image: url('${escapedBgUrl}');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      z-index: 1;
+    }
+
+    /* Layer 2: Overlay Scrim */
+    .overlay-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1080px;
+      height: 1920px;
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.45) 50%, rgba(0, 0, 0, 0.75) 100%);
+      z-index: 2;
+    }
+    ` : ''}
+
+    /* Layer 3: Foreground Content */
+    .content-layer {
+      position: relative;
+      z-index: 3;
+      width: 1080px;
+      height: 1920px;
       color: #ffffff;
       font-family: ${fontFamily};
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       align-items: center;
-      width: 1080px;
-      height: 1920px;
-      box-sizing: border-box;
       padding: 150px 80px;
       text-align: center;
     }
@@ -70,7 +123,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       max-width: 900px;
       word-wrap: break-word;
       color: #ffffff;
-      text-shadow: 0px 4px 20px rgba(255, 255, 255, 0.2);
+      text-shadow: 0px 4px 24px rgba(0, 0, 0, 0.8), 0px 2px 8px rgba(0, 0, 0, 0.6);
     }
 
     .lang-urdu {
@@ -88,28 +141,35 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
 
     .branding-container {
       font-size: 32px;
-      color: #9c9cb0;
-      font-weight: 500;
+      color: #e2e8f0;
+      font-weight: 600;
       letter-spacing: 2px;
       text-transform: uppercase;
+      text-shadow: 0px 2px 10px rgba(0, 0, 0, 0.7);
     }
 
     .watermark-container {
       font-size: 28px;
-      color: rgba(255, 255, 255, 0.4);
+      color: rgba(255, 255, 255, 0.65);
       font-weight: 400;
       letter-spacing: 1px;
+      text-shadow: 0px 2px 10px rgba(0, 0, 0, 0.7);
     }
   </style>
 </head>
 <body>
-  <div class="branding-container">${escapeHtml(brandingText)}</div>
-  
-  <div class="content-container">
-    <div class="quote-text ${langClass}">${escapeHtml(data.text)}</div>
+  <div class="canvas-container">
+    ${hasBackground ? `<div class="background-layer"></div><div class="overlay-layer"></div>` : ''}
+    <div class="content-layer">
+      <div class="branding-container">${escapeHtml(brandingText)}</div>
+      
+      <div class="content-container">
+        <div class="quote-text ${langClass}">${escapeHtml(data.text)}</div>
+      </div>
+      
+      <div class="watermark-container">${escapeHtml(watermarkText)}</div>
+    </div>
   </div>
-  
-  <div class="watermark-container">${escapeHtml(watermarkText)}</div>
 </body>
 </html>
   `;
