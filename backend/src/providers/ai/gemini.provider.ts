@@ -7,7 +7,7 @@ import { systemConfigCache } from '../../config/system-config.cache.js';
 import { extractPromptVariables } from '../../constants/prompt-variables.js';
 
 // JSON schema definition to send to Gemini API for structured JSON response format
-const geminiResponseSchema = {
+export const geminiResponseSchema = {
   type: 'OBJECT',
   properties: {
     title: { type: 'STRING', description: 'A short headline or title for the generated content (MUST NOT exceed 100 characters)' },
@@ -16,7 +16,8 @@ const geminiResponseSchema = {
     hashtags: { type: 'ARRAY', items: { type: 'STRING' }, description: 'At least 3 relevant hashtags' },
     metadata: { type: 'OBJECT', description: 'Any extra generation metadata or settings' },
     language: { type: 'STRING', description: 'The language code or name of the output text (English, Hindi, or Urdu)' },
-    contentType: { type: 'STRING', description: 'The type of the content (e.g. Shayari, Motivational Quote, etc.)' }
+    contentType: { type: 'STRING', description: 'The type of the content (e.g. Shayari, Motivational Quote, etc.)' },
+    selectedMusicAssetId: { type: 'STRING', description: 'The id of the single best-matching music asset from the provided catalog, or omit if none fit well' },
   },
   required: ['title', 'quote', 'caption', 'hashtags', 'language', 'contentType']
 };
@@ -148,6 +149,7 @@ export const geminiProvider: AIProviderAdapter = {
           hashtags: result.hashtags,
           language: result.language.trim(),
           contentType: result.contentType.trim(),
+          selectedMusicAssetId: result.selectedMusicAssetId ? result.selectedMusicAssetId.trim() : undefined,
           generationMetadata: result.metadata,
           model: modelName,
           promptVersion: prompt.versionNumber,

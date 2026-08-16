@@ -61,7 +61,7 @@ Per `03-technical-requirements.md` and `PROJECT_DECISIONS.md` Section 18, there 
 
 | Queue | Job Type | Concurrency | Notes |
 |---|---|---|---|
-| `content-pipeline` | Content Pipeline Job (Section 18.1) | From System Configuration (default 2, matching Section 7.1's render-concurrency guidance) | The only queue whose jobs pass through the 13-state machine (Section 19). |
+| `content-pipeline` | Content Pipeline Job (Section 18.1) | From System Configuration (default 2, matching Section 7.1's render-concurrency guidance) | The only queue whose jobs pass through the 14-state machine (Section 19). |
 | `cleanup` | Cleanup | 1 | Housekeeping, not latency-sensitive. |
 | `archive` | Archive | 1 | Same. |
 | `retry-publish` | Retry Publish | 2 | Independent of the pipeline queue so a publish retry storm never starves new content generation. |
@@ -72,18 +72,18 @@ Per `03-technical-requirements.md` and `PROJECT_DECISIONS.md` Section 18, there 
 
 ### 2.1 Content Pipeline Job execution model
 
-One BullMQ job = one Content Pipeline Job record = one pass through all 13 states (`PROJECT_DECISIONS.md` Section 19). The worker's processor function is a single sequential function, not a state-machine library — each stage is a plain `async` step:
+One BullMQ job = one Content Pipeline Job record = one pass through all 14 states (`PROJECT_DECISIONS.md` Section 19). The worker's processor function is a single sequential function, not a state-machine library — each stage is a plain `async` step:
 
 ```
 processContentPipelineJob(job):
   1. loadJobAndChannelConfig(job.data.jobId)
   2. if resuming (see 2.2) → skip to first incomplete stage
-  3. for each stage in [Generating Content ... Publishing]:
+  3. for each stage in [GeneratingContent ... Publishing]:
        a. update Job.pipelineStage = stage, persist, emit Domain Event
        b. run the stage's actual work (call a Service, never inline business logic in the worker — Section 25)
        c. persist the stage's output onto the Job / GeneratedContent record (see 05-database-design.md)
        d. on failure: record Stage/Reason/RetryCount/Timestamp, set status Failed, emit Domain Event, stop
-  4. mark Published, emit Domain Event
+  4. mark Completed, emit Domain Event
 ```
 
 This is exactly the "no saga/coordinator layer" design `PROJECT_DECISIONS.md` Section 18.1 calls for: BullMQ's own retry/backoff handles job-level retry; stage-level progression is plain sequential code inside one job's execution, not a second orchestration layer on top of BullMQ.

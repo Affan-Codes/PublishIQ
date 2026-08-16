@@ -1,8 +1,8 @@
 # PROJECT_DECISIONS.md
 
 **Status:** FROZEN — FINAL
-**Version:** 2.3
-**Last revised:** 2026-07-18
+**Version:** 2.4
+**Last revised:** 2026-08-16
 
 This document is the constitution of the project. Every future document, diagram, schema, and line of code must conform to the decisions recorded here. No future document may contradict this file. Any change to a decision listed here requires explicit, written approval from the project owner before it takes effect — no exceptions, no silent drift.
 
@@ -16,6 +16,7 @@ This document is the constitution of the project. Every future document, diagram
 - **v2.1** — Froze Prompt/Template version pinning: Content Profiles must always reference a specific, pinned version and never "latest"; resolved the corresponding open item. Introduced the mandatory `docs/00-glossary.md` requirement governing all future documentation. Final consistency audit performed — no contradictions, duplicate concepts, or terminology drift found at that time.
 - **v2.2 (final)** — Consistency audit ahead of documentation generation surfaced two defects in v2.1: (1) Section 18 listed "Generate Content," "Generate Image," "Generate Video," and "Publish" as four independent Job Types while simultaneously describing Section 19's state machine as belonging to one single, unnamed job — an internal contradiction, since four independently-queued jobs cannot also be the discrete internal states of one job's lifecycle; (2) Section 18's narrative text miscounted Section 19's state diagram as having 12 states when it has 13. Both corrected. **Decision (approved by project owner): Option C.** The system uses a single BullMQ Job Type, the **Content Pipeline Job**, which progresses through the 13 internal stages defined in Section 19. Generate Content / Generate Image / Generate Video / Publish are internal pipeline stages, not independent Job Types. Cleanup, Archive, Retry Publish remain independent Job Types; **Token Refresh** and **Health Check** are added as new independent Job Types. Documentation generation order reconfirmed unchanged: `docs/00-glossary.md` remains the first documentation file, per Section 35, generated before `01-vision-and-scope.md` and every other document. Final consistency audit performed post-correction — no remaining contradictions, duplicate concepts, or terminology drift found.
 - **v2.3 (audit remediation)** — Resolved pipeline state count discrepancies: updated Section 19's state machine to 14 states (incorporating the `Running` state and clean names matching code) and removed dead stages (`GeneratingImage`, `GeneratingVideo`, `SelectingMusic`, `Published`) from the database schema. Documented single hardcoded React layout as the primary v1 rendering path (Section 7.1/13.1), utilizing `TemplateVersion` tracking for future extensibility. Formally approved multi-user roles (`Owner`, `Administrator`, `User`) and authorization middleware scope adjustments (Section 1). Registered Facebook Page publishing as a fully integrated platform connection channel (Section 24). Registered Node.js native test runner (`node:test`) and `tsx` execution as the validated tech stack choice (Section 31).
+- **v2.4 (Prompt, Asset & AI Music Selection Remediation)** — Formally approved dual-phase music selection architecture (Section 9.1): sanitized eligible catalog injection during content generation, optional AI asset selection via `selectedMusicAssetId`, authoritative backend candidate validation, and persistent round-robin ring rotation (`MusicSelectionState`) as the deterministic fallback. Formally recorded Content Profile behavioral configuration snapshotting into `Job.configSnapshot` at creation time (Section 11). Formally added `musicCatalog` to the reserved system prompt variables (Section 12).
 
 ---
 
@@ -144,11 +145,13 @@ React templates are chosen over manual SVG/Sharp text rendering because browser 
 ### 9.1 Music
 - Sourced only from a local library. No platform music APIs.
 - Every track's metadata: Mood, Language, Genre, Duration, License, Enabled/Disabled.
-- Selection is rule-based, configurable per Content Profile.
-- Tracks without confirmed licensing must not be selectable.
+- Tracks without confirmed licensing must not be selectable (`status === 'Active'` and `licenseStatus === 'Confirmed'`).
+- **Eligibility Filter:** Assets must belong to the workspace, have `AssetType.Music`, `status: Active`, `licenseStatus: Confirmed`, and match profile mood/genre rules (or mood-only fallback).
+- **Primary Selection (AI-Driven):** A sanitized eligible catalog (`id`, `name`, `mood`, `genre` only) is provided to Gemini during generation (`{{musicCatalog}}`). The model selects the most appropriate asset ID via optional `selectedMusicAssetId`. The backend authoritatively validates the returned ID against the freshly recomputed eligible candidate set before assignment.
+- **Fallback Selection (Deterministic Rotation):** If the AI's selection is absent, invalid, or outside the eligible candidate set, the backend selects tracks via deterministic round-robin ring rotation persisted per `(workspaceId, mood, genre)` in `MusicSelectionState`.
 
 ### 9.2 Asset Library
-Assets are first-class entities: Backgrounds, Fonts, Music, Logos, Watermarks, Animations, Icons, future types. Every asset type carries a metadata record plus Enabled/Disabled, and is referenced (never duplicated) by Content Profiles.
+Assets are first-class entities: Backgrounds, Fonts, Music, Logos, Watermarks, Animations, Icons, future types. Every asset type carries a metadata record plus Enabled/Disabled, and is referenced (never duplicated) by Content Profiles. (Non-music asset types are stored for future use and explicitly labeled in the UI as deferred).
 
 ---
 
@@ -166,21 +169,23 @@ Assets are first-class entities: Backgrounds, Fonts, Music, Logos, Watermarks, A
 A Content Profile owns:
 
 - Prompt (referenced from the Prompt Library — Section 12) — **references a specific, pinned Prompt Version. Never "latest."**
-- Prompt Variables
+- Prompt Variables (custom key-value pairs; cannot collide with reserved system variable names)
 - Language
 - **Content Type** (reference — Section 10; supersedes the v1.1 free-text Category field)
 - Tone
 - Writing Style
 - Image Template (referenced — Section 13) — **references a specific, pinned Template Version. Never "latest."**
-- Branding Rules
-- Watermark Rules
-- Caption Strategy
-- Hashtag Strategy
-- Music Selection Rules
-- Rendering Configuration
-- Validation Rules (additive constraints only — Section 6.2)
+- Branding Rules (structured visual overlay text, position, opacity)
+- Watermark Rules (structured visual watermark text, position, opacity)
+- Caption Strategy (template body, prefix, suffix)
+- Hashtag Strategy (fixed tags, placement mode)
+- Music Selection Rules (preferred mood, genre, duration limits)
+- Rendering Configuration (fallback branding/watermark, resolution, FPS)
+- Validation Rules (additive constraints only — Section 6.2; max length, banned words)
 
-**Relationship to Channels:** A Channel references exactly one Content Profile. Multiple channels may reference the same profile; profile updates propagate to every referencing channel on next run. No per-channel override or fork of a profile in v1.
+**Job Execution Determinism:** All eleven behavioral configuration fields above, along with pinned `promptVersionId` and `templateVersionId`, are **snapshotted into `Job.configSnapshot`** at Job creation time. Every pipeline execution stage reads authoritatively from this snapshot, guaranteeing that subsequent modifications to a Content Profile cannot mutate in-flight or historical Jobs.
+
+**Relationship to Channels:** A Channel references exactly one Content Profile. Multiple channels may reference the same profile; profile updates propagate to newly scheduled jobs. No per-channel override or fork of a profile in v1.
 
 ---
 
@@ -188,7 +193,17 @@ A Content Profile owns:
 
 Prompts are reusable, first-class resources referenced by Content Profiles — never duplicated across profiles. Every prompt supports Version, Created Date, Modified Date, Status, Notes, and Rollback to any previous version.
 
-### 12.1 Version pinning — FROZEN (v2.1; resolves the previously open item)
+### 12.1 System Prompt Variables
+The system reserves and automatically supplies five standard system prompt variables:
+- `{{contentType}}` — Name of the associated Content Type
+- `{{language}}` — Target language code or name (English, Hindi, Urdu)
+- `{{tone}}` — Desired tone (e.g. Inspiring, Reflective, Dramatic)
+- `{{style}}` / `{{writingStyle}}` — Poetic, philosophical, conversational, etc.
+- `{{musicCatalog}}` — Sanitized JSON catalog of eligible background music tracks for AI selection (optional to reference)
+
+Custom variables defined in a Content Profile's `promptVariables` must not collide with these reserved names. Prompt variable token coverage is strictly validated at Content Profile save time.
+
+### 12.2 Version pinning — FROZEN (v2.1; resolves the previously open item)
 Updating a Prompt creates a **new version**; existing versions are never mutated in place. A Content Profile **must always reference a specific Prompt Version** — it must never automatically track "latest." When a Prompt is updated, every Content Profile currently pinned to an older version keeps using that exact version until someone explicitly repoints it to the new one. "Rollback" at the Prompt Library level (marking an older version as current) governs only what new profiles are offered by default going forward — it has no effect on already-pinned profiles, which never move on their own. This guarantees deterministic behavior, reproducibility, rollback capability at the profile level, auditing, and predictable deployments.
 
 ---

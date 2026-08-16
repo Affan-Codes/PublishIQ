@@ -184,4 +184,16 @@ test('CFG-02 & CFG-06: Prompt Variables & Substitution Tests', async (t) => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  await t.test('PAS-01: musicCatalog is recognized in SYSTEM_PROMPT_VARIABLES and is optional in prompts', () => {
+    assert.ok(SYSTEM_PROMPT_VARIABLES.includes('musicCatalog'), 'musicCatalog must be in SYSTEM_PROMPT_VARIABLES');
+
+    // Prompt containing musicCatalog
+    const withCatalog = extractPromptVariables('Prompt with {{contentType}} and {{musicCatalog}}');
+    assert.deepEqual(withCatalog.sort(), ['contentType', 'musicCatalog'].sort());
+
+    // Prompt omitting musicCatalog is also valid
+    const withoutCatalog = extractPromptVariables('Prompt with only {{contentType}} and {{tone}}');
+    assert.deepEqual(withoutCatalog.sort(), ['contentType', 'tone'].sort());
+  });
 });

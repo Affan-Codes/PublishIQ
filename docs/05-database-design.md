@@ -186,7 +186,7 @@ workspaceId             FK -> Workspace
 jobType                 Enum(ContentPipeline, Cleanup, Archive, RetryPublish, TokenRefresh, HealthCheck)
 channelId               FK -> Channel NULL          // NULL for non-pipeline maintenance jobs not tied to a Channel
 contentProfileId        FK -> ContentProfile NULL
-configSnapshot          JSONB NULL                  // {promptVersionId, templateVersionId} captured at Draft time — resolves A-13 restart consistency check
+configSnapshot          JSONB NULL                  // Complete ContentProfile behavioral snapshot (promptVersionId, templateVersionId, language, tone, writingStyle, promptVariables, brandingRules, watermarkRules, captionStrategy, hashtagStrategy, musicSelectionRules, renderingConfiguration, validationRules, music runtime state) captured at creation time for execution determinism
 pipelineStage           Enum(Draft, Queued, Running, GeneratingContent, Validating, RenderingImage, AttachingMusic, RenderingVideo, GeneratingCaption, GeneratingHashtags, Publishing, Completed, Failed, Archived) NULL   // NULL for non-pipeline Job Types
 maintenanceState        String NULL                 // simple state for Independent Job Types (Section 18.2), own smaller enum per type
 failureStage            String NULL
@@ -292,6 +292,17 @@ createdAt    DateTime
 ```
 Populated by the log-drain described in `04-system-architecture.md`; indexed on `(createdAt)` and a `tsvector` generated column on `message` for Global Search (FR-NAV-04) if/when `LIKE` queries stop being fast enough (`03-technical-requirements.md`, Section 3.1).
 
+### 6.4 `MusicSelectionState`
+```
+id                    UUID PK
+workspaceId           FK -> Workspace
+mood                  String
+genre                 String
+lastSelectedAssetId   String
+updatedAt             DateTime
+```
+Unique composite constraint: `@@unique([workspaceId, mood, genre])`. Tracks deterministic round-robin ring rotation state for music selection per workspace, mood, and genre bucket.
+
 ---
 
 ## 7. Indexing Notes
@@ -299,6 +310,8 @@ Populated by the log-drain described in `04-system-architecture.md`; indexed on 
 - `Job(workspaceId, jobType, pipelineStage)` — composite index; every Queue/Job dashboard view (FR-QUE-01–04) filters on exactly this shape.
 - `Job(channelId, createdAt)` — Channel-scoped Job history.
 - `GeneratedContent(contentProfileId)`, `GeneratedContent(publishStatus)` — FR-GC-01's filter dimensions.
+- `GeneratedContent(workspaceId, textHash)` — unique constraint for race-safe exact duplicate detection.
+- `MusicSelectionState(workspaceId, mood, genre)` — unique constraint for persistent deterministic music rotation.
 - `PublishingRecord(channelId, publishedAt)`, `PublishingRecord(status)`, `PublishingRecord(contentTypeSnapshot)` — the five FR-PUB-03 filter dimensions (Platform and Date Range are covered by `platformConnectionId`/`publishedAt` already present).
 - `DomainEvent(jobId, createdAt)`, `Notification(readAt)` — Notification unread-count and Job timeline queries.
 

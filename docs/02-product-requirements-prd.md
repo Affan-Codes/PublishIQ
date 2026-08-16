@@ -357,7 +357,7 @@ Domain groups (and their Dashboard Module home — `PROJECT_DECISIONS.md`, Secti
 ## 13. Job Monitoring, Notifications & Logs (MON)
 
 ### FR-MON-01 — View Job status and pipeline stage
-**Description:** The operator can see every Job's current state (one of the 13 states in the Job State Machine) and, for a Failed Job, its Stage, Reason, Retry Count, and Timestamp.
+**Description:** The operator can see every Job's current state (one of the 14 states in the Job State Machine) and, for a Failed Job, its Stage, Reason, Retry Count, and Timestamp.
 **Trace:** Goal G5; MVP (implied by Dashboard Modules "Jobs" and "Queue"); `PROJECT_DECISIONS.md` Section 19.
 **Acceptance Criteria:** Every Failed Job displayed in the dashboard shows all four attribution fields — none is ever blank for a Failed Job.
 **Edge Cases:** None beyond the zero-tolerance requirement above.
@@ -441,10 +441,10 @@ Domain groups (and their Dashboard Module home — `PROJECT_DECISIONS.md`, Secti
 **Relationship to Section 13 (Job Monitoring):** Section 13 (MON) is *read-only visibility*. This section is *operator-initiated action* on a Job. Both operate on the same underlying Job entity (`00-glossary.md` Job) and are presented together in the Jobs Dashboard Module (`PROJECT_DECISIONS.md` Section 30); they are split into two PRD sections only to separate "what the operator can see" from "what the operator can do."
 
 ### FR-JOB-01 — View Job Details
-**Description:** The operator can open a single Job and see its full detail: Job Type, current pipeline stage (for a Content Pipeline Job, one of the 13 states — `PROJECT_DECISIONS.md` Section 19), owning Channel, owning Content Profile, timestamps for each stage transition it has passed through, and — if Failed — Stage, Reason, Retry Count, and Timestamp (FR-MON-01).
+**Description:** The operator can open a single Job and see its full detail: Job Type, current pipeline stage (for a Content Pipeline Job, one of the 14 states — `PROJECT_DECISIONS.md` Section 19), owning Channel, owning Content Profile, timestamps for each stage transition it has passed through, and — if Failed — Stage, Reason, Retry Count, and Timestamp (FR-MON-01).
 **Trace:** Goal G5; `PROJECT_DECISIONS.md` Section 19, Section 23 (stage transition history is the product-visible face of Domain Events).
 **Acceptance Criteria:** Every field listed above is visible on the Job Detail view for every Job, regardless of Job Type.
-**Edge Cases:** An Independent Job Type (Cleanup, Archive, Retry Publish, Token Refresh, Health Check — `PROJECT_DECISIONS.md` Section 18.2) does not have the 13-state Content Pipeline lifecycle; its Job Detail view shows its own simpler state machine, not a forced fit into the 13 states.
+**Edge Cases:** An Independent Job Type (Cleanup, Archive, Retry Publish, Token Refresh, Health Check — `PROJECT_DECISIONS.md` Section 18.2) does not have the 14-state Content Pipeline lifecycle; its Job Detail view shows its own simpler state machine, not a forced fit into the 14 states.
 **Assumptions:** None.
 
 ### FR-JOB-02 — Retry a Failed Job

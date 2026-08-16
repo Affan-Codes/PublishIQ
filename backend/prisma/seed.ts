@@ -138,7 +138,9 @@ async function main() {
   });
 
   const promptBody = `You are an expert quote generator. Based on the Content Type: {{contentType}}, Language: {{language}}, and Tone: {{tone}}, generate a beautiful quote or Shayari.
+Available background music catalog: {{musicCatalog}}
 CRITICAL CONSTRAINT: Both "title" and "caption" MUST NOT exceed 100 characters in length.
+If the music catalog contains a suitable track for this content's mood and theme, set "selectedMusicAssetId" to that track's exact "id". If none fit or the catalog is empty, omit "selectedMusicAssetId".
 Response MUST be in structured JSON format matching this exact schema:
 {
   "title": "A short descriptive title for the quote (maximum 100 characters)",
@@ -147,7 +149,8 @@ Response MUST be in structured JSON format matching this exact schema:
   "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
   "metadata": {},
   "language": "{{language}}",
-  "contentType": "{{contentType}}"
+  "contentType": "{{contentType}}",
+  "selectedMusicAssetId": "optional-id-from-music-catalog"
 }
 Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON string.`;
 

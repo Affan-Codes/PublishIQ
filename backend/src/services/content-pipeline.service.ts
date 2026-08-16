@@ -111,6 +111,23 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const style = snapshot.writingStyle || profile.writingStyle;
       const variables = (snapshot.promptVariables !== undefined ? snapshot.promptVariables : profile.promptVariables) as Record<string, any> || {};
 
+      // PAS-01: Compute eligible music catalog to provide to Gemini
+      const selectionRules = (snapshot.musicSelectionRules !== undefined ? snapshot.musicSelectionRules : profile.musicSelectionRules) as Record<string, any> || {};
+      const mood = selectionRules.mood || 'Inspiring';
+      const genre = selectionRules.genre || 'Acoustic';
+
+      const allMusic = await getCachedActiveMusic(job.workspaceId);
+      const eligibleCandidates = selectEligibleMusicCandidates(allMusic, mood, genre);
+      const musicCatalogPayload = eligibleCandidates.map((c) => {
+        const meta = (c.metadata as Record<string, any>) || {};
+        return {
+          id: c.id,
+          name: c.name,
+          mood: meta.mood || mood,
+          genre: meta.genre || genre,
+        };
+      });
+
       // Generate content via Gemini AI provider
       const aiResponse = await geminiProvider.generate(
         {
@@ -122,15 +139,24 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
           language,
           tone,
           style,
+          musicCatalog: JSON.stringify(musicCatalogPayload),
           ...variables,
         }
       );
+
+      // Persist AI-selected music asset id in configSnapshot
+      const aiSelectedMusicAssetId = aiResponse.metadata?.selectedMusicAssetId || null;
+      const updatedSnapshot = {
+        ...snapshot,
+        aiSelectedMusicAssetId,
+      };
 
       // Store generated text in job record
       await jobRepository.transitionJobStage(jobId, stage, {
         generatedText: aiResponse.text,
         caption: aiResponse.metadata?.caption || '',
         hashtags: aiResponse.metadata?.hashtags || [],
+        configSnapshot: updatedSnapshot,
       });
       break;
     }
@@ -229,6 +255,16 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       }
 
       const snapshot = (job.configSnapshot as Record<string, any>) || {};
+
+      // PAS-02: Idempotency guard for stage re-entry/retry on the same job
+      if (snapshot.selectedMusicAssetId && snapshot.selectedMusicFilePath) {
+        logger.info({ jobId, assetId: snapshot.selectedMusicAssetId }, 'Music track already attached for this job; skipping re-selection');
+        await jobRepository.transitionJobStage(jobId, stage, {
+          configSnapshot: snapshot,
+        });
+        break;
+      }
+
       const selectionRules = (snapshot.musicSelectionRules !== undefined ? snapshot.musicSelectionRules : profile.musicSelectionRules) as Record<string, any> || {};
       const mood = selectionRules.mood || 'Inspiring';
       const genre = selectionRules.genre || 'Acoustic';
@@ -243,32 +279,62 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
         throw new ValidationError(`No music track matches profile selection rules: ${JSON.stringify(selectionRules)}`);
       }
 
-      // CFG-03: Deterministic rotation across eligible candidates
       const sortedCandidates = [...candidates].sort((a, b) => a.id.localeCompare(b.id));
-      let selectedAsset = sortedCandidates[0]!;
 
-      try {
-        const lastState = await musicSelectionStateRepository.getLastSelected(job.workspaceId, mood, genre);
-        if (lastState && lastState.lastSelectedAssetId) {
-          const lastIdx = sortedCandidates.findIndex((c) => c.id === lastState.lastSelectedAssetId);
-          if (lastIdx !== -1) {
-            selectedAsset = sortedCandidates[(lastIdx + 1) % sortedCandidates.length]!;
+      // PAS-01: AI-driven selection with backend candidate validation
+      const aiSelectedId = snapshot.aiSelectedMusicAssetId;
+      let selectedAsset: Asset | null = null;
+      let selectionMethod: 'ai' | 'rotation' = 'rotation';
+
+      if (typeof aiSelectedId === 'string' && aiSelectedId.trim().length > 0) {
+        const trimmedId = aiSelectedId.trim();
+        const matched = sortedCandidates.find((c) => c.id === trimmedId);
+        if (matched) {
+          selectedAsset = matched;
+          selectionMethod = 'ai';
+          logger.info({ jobId, assetId: matched.id, mood, genre }, 'AI-selected music track matched eligible catalog and was assigned');
+          try {
+            await musicSelectionStateRepository.upsertLastSelected(job.workspaceId, mood, genre, selectedAsset.id);
+          } catch (err: any) {
+            logger.warn({ jobId, err: err.message }, 'Failed to record AI music selection state');
           }
+        } else {
+          logger.warn(
+            { jobId, aiSelectedId: trimmedId, mood, genre },
+            'AI-selected music asset ID is not present in current eligible candidate set; falling back to deterministic rotation'
+          );
         }
-        await musicSelectionStateRepository.upsertLastSelected(job.workspaceId, mood, genre, selectedAsset.id);
-      } catch (err: any) {
-        logger.warn({ jobId, err: err.message }, 'Failed to load/update music selection state; falling back to first candidate');
       }
 
-      logger.info({ jobId, assetId: selectedAsset.id, mood, genre }, 'Music track selected successfully via deterministic rotation');
+      // Fallback: Deterministic rotation across eligible candidates
+      if (!selectedAsset) {
+        let rotationAsset = sortedCandidates[0]!;
+        try {
+          const lastState = await musicSelectionStateRepository.getLastSelected(job.workspaceId, mood, genre);
+          if (lastState && lastState.lastSelectedAssetId) {
+            const lastIdx = sortedCandidates.findIndex((c) => c.id === lastState.lastSelectedAssetId);
+            if (lastIdx !== -1) {
+              rotationAsset = sortedCandidates[(lastIdx + 1) % sortedCandidates.length]!;
+            }
+          }
+          await musicSelectionStateRepository.upsertLastSelected(job.workspaceId, mood, genre, rotationAsset.id);
+        } catch (err: any) {
+          logger.warn({ jobId, err: err.message }, 'Failed to load/update music selection state; falling back to first candidate');
+        }
+        selectedAsset = rotationAsset;
+        if (!aiSelectedId) {
+          logger.info({ jobId, assetId: selectedAsset.id, mood, genre }, 'Music track selected successfully via deterministic rotation');
+        }
+      }
 
       // Store the selected music asset file path in configSnapshot (since no direct music column exists)
       const updatedSnapshot = {
-        ...(job.configSnapshot as Record<string, any> || {}),
+        ...snapshot,
         selectedMusicAssetId: selectedAsset.id,
         selectedMusicFilePath: selectedAsset.filePath,
         selectedMusicMood: mood,
         selectedMusicGenre: genre,
+        musicSelectionMethod: selectionMethod,
       };
 
       await jobRepository.transitionJobStage(jobId, stage, {

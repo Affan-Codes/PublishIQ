@@ -101,6 +101,18 @@ A Provider is the adapter-layer abstraction for any external integration the pla
 The fixed sequence that turns generated text into a final video file: a React Template is rendered by headless Chromium via Playwright into a PNG, then FFmpeg converts that PNG into a short vertical video with lightweight animation and attached music. This sequence is frozen and does not vary by Content Type.
 *Defined in: PROJECT_DECISIONS.md, Section 7, Section 7.1.*
 
+### Music Catalog Injection
+The mechanism by which a sanitized, ID-bearing list of eligible background music tracks (`id`, `name`, `mood`, `genre` only) is constructed by the backend and passed into the prompt as `{{musicCatalog}}` during content generation, enabling the AI model to select the best-matching track via `selectedMusicAssetId`.
+*Defined in: PROJECT_DECISIONS.md, Section 9.1, Section 12.1.*
+
+### MusicSelectionState
+A database record keyed by `(workspaceId, mood, genre)` tracking the last-selected music asset ID to provide persistent, deterministic round-robin ring rotation as a fallback when AI-driven selection is absent, invalid, or outside the eligible candidate set.
+*Defined in: PROJECT_DECISIONS.md, Section 9.1; 05-database-design.md, Section 6.4.*
+
+### Job Config Snapshot
+An immutable JSON snapshot captured on the `Job` record at creation time containing all eleven behavioral `ContentProfile` configuration fields and pinned version IDs, ensuring that subsequent profile edits never alter in-flight or historical pipeline job executions.
+*Defined in: PROJECT_DECISIONS.md, Section 11.*
+
 ### Storage Provider
 The abstraction layer behind which the platform's file storage backend sits. Local disk is the only implemented Storage Provider in v1; migration to Cloudflare R2 or S3 requires only a new provider behind the existing interface, no application-level rewrite. Storage Provider selection is a System Configuration value.
 *Defined in: PROJECT_DECISIONS.md, Section 21, Section 27.*
@@ -118,11 +130,11 @@ The classification of what kind of work a Job performs. v1 recognizes exactly tw
 *Defined in: PROJECT_DECISIONS.md, Section 18.*
 
 ### Content Pipeline Job
-The single BullMQ Job Type that carries out the full generate-through-publish workflow as one job record, progressing through the 13-state machine defined under "Job State Machine" below. It does not fan out into separate jobs for content generation, image generation, video generation, or publishing — those are internal stages of this one Job Type, not independent Job Types.
+The single BullMQ Job Type that carries out the full generate-through-publish workflow as one job record, progressing through the 14-state machine defined under "Job State Machine" below. It does not fan out into separate jobs for content generation, image generation, video generation, or publishing — those are internal stages of this one Job Type, not independent Job Types.
 *Defined in: PROJECT_DECISIONS.md, Section 18.1.*
 
 ### Independent Job Type
-Any Job Type other than the Content Pipeline Job: Cleanup, Archive, Retry Publish, Token Refresh, Health Check, or a future maintenance job. Each Independent Job Type is separately queued, separately retried, and governed by its own simpler state machine — none require the Content Pipeline Job's 13 states.
+Any Job Type other than the Content Pipeline Job: Cleanup, Archive, Retry Publish, Token Refresh, Health Check, or a future maintenance job. Each Independent Job Type is separately queued, separately retried, and governed by its own simpler state machine — none require the Content Pipeline Job's 14 states.
 - **Retry Publish** — a standalone re-attempt of the Publishing stage, invoked outside the main Content Pipeline Job. Distinct from a Content Pipeline Job's own internal retry of its Publishing state.
 - **Token Refresh** — refreshes a Platform Connection's Access/Refresh Token ahead of, or upon, expiry.
 - **Health Check** — periodic verification of Platform Connection health status and AI Provider adapter availability.
@@ -130,7 +142,7 @@ Any Job Type other than the Content Pipeline Job: Cleanup, Archive, Retry Publis
 *Defined in: PROJECT_DECISIONS.md, Section 18.2.*
 
 ### Job State Machine
-The 13-state lifecycle scoped exclusively to the Content Pipeline Job Type: Draft, Generating Content, Validating, Generating Image, Generating Video, Selecting Music, Generating Caption, Generating Hashtags, Queued, Publishing, Published, Failed, Archived. Independent Job Types do not use this state machine.
+The 14-state lifecycle scoped exclusively to the Content Pipeline Job Type: Draft, Queued, Running, GeneratingContent, Validating, RenderingImage, AttachingMusic, RenderingVideo, GeneratingCaption, GeneratingHashtags, Publishing, Completed, Failed, Archived. Independent Job Types do not use this state machine.
 *Defined in: PROJECT_DECISIONS.md, Section 19.*
 
 ---

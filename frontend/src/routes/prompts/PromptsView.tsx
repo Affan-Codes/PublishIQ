@@ -312,7 +312,7 @@ export const PromptsView: React.FC = () => {
             )}
 
             <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
-              <span className="font-semibold">💡 System Placeholders:</span> You can reference system variables <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, or custom variables like <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{author}}'}</code>.
+              <span className="font-semibold">💡 System Placeholders:</span> You can reference system variables <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{musicCatalog}}'}</code>, or custom variables like <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{author}}'}</code>.
             </div>
 
             <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4 text-sm">
@@ -472,7 +472,7 @@ export const PromptsView: React.FC = () => {
             )}
 
             <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-3 text-xs text-purple-200">
-              <span className="font-semibold">💡 Placeholders:</span> <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>.
+              <span className="font-semibold">💡 Placeholders:</span> <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{contentType}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{language}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{tone}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{style}}'}</code>, <code className="bg-[#161620] px-1 py-0.5 rounded text-purple-300">{'{{musicCatalog}}'}</code>.
             </div>
 
             <form onSubmit={subVer((v) => addVersionMutation.mutate(v))} className="space-y-4 text-sm">

@@ -13,15 +13,15 @@ test('CFG-03 & CFG-04: Music Deterministic Rotation and Compliant Fallback Tests
   const mockWorkspaceId = '00000000-0000-0000-0000-000000000001';
   const mockJobId = '00000000-0000-0000-0000-000000000002';
 
-  const origGetSystemConfig = systemConfigCache.getSystemConfig;
+  const origGet = systemConfigCache.get;
 
   t.beforeEach(() => {
     clearMusicAssetCache();
-    systemConfigCache.getSystemConfig = (async () => ({ defaultWatermark: '@publishiq' })) as any;
+    systemConfigCache.get = (async () => ({ defaultWatermark: '@publishiq' })) as any;
   });
 
   t.afterEach(() => {
-    systemConfigCache.getSystemConfig = origGetSystemConfig;
+    systemConfigCache.get = origGet;
   });
 
   const mockMusicAssets = [
