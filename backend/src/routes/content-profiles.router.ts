@@ -18,6 +18,8 @@ router.use(requireAuth);
 
 router.get('/content-profiles', contentProfileController.list);
 
+router.get('/content-profiles/animation-previews', contentProfileController.getAnimationPreviews);
+
 router.get(
   '/content-profiles/:id',
   validateRequest({ params: idParamSchema }),

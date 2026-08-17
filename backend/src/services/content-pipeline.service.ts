@@ -346,6 +346,18 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
         throw new ValidationError('Generated text contains filtered profanity words.');
       }
 
+      // AQL-16: Unicode script range check for Romanized languages
+      const targetLanguage = snapshot.language || job.contentProfile?.language;
+      if (targetLanguage === 'HindiRoman' || targetLanguage === 'UrduRoman') {
+        const hasDevanagari = /[\u0900-\u097F]/.test(text);
+        const hasArabicUrdu = /[\u0600-\u06FF\u0750-\u077F]/.test(text);
+        if (hasDevanagari || hasArabicUrdu) {
+          throw new ValidationError(
+            `Roman language text (${targetLanguage}) contains native script characters which violates Latin-script requirements.`
+          );
+        }
+      }
+
       // Normalized Hash duplicate check
       const normalizedHash = getNormalizedHash(text);
       const duplicateContent = await generatedContentRepository.findByTextHash(job.workspaceId, normalizedHash);
@@ -538,20 +550,27 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
       const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
 
-      // Render vertical PNG via Playwright (passing selectedBackgroundFilePath if resolved)
-      const imageUrl = await renderingService.renderImage(jobId, text, {
+      // Render vertical PNG(s) via Playwright (passing selectedBackgroundFilePath and animationPreset if configured)
+      const renderResult = await renderingService.renderImage(jobId, text, {
         language: snapshot.language || profile.language,
         branding: brandingText,
         watermark: watermarkText,
         templateVersionId,
         backgroundImageUrl: snapshot.selectedBackgroundFilePath || undefined,
+        animationPreset: renderingConfiguration.animation?.preset,
       });
 
+      const updatedSnapshot = {
+        ...snapshot,
+        foregroundImageUrl: renderResult.foregroundImageUrl || null,
+      };
+
       await jobRepository.transitionJobStage(jobId, stage, {
-        imageUrl,
+        imageUrl: renderResult.imageUrl,
+        configSnapshot: updatedSnapshot,
       }, {
         type: 'ImageGenerated',
-        payload: { jobId, imageUrl },
+        payload: { jobId, imageUrl: renderResult.imageUrl },
       });
       break;
     }
@@ -690,8 +709,14 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const durationVal = await systemConfigCache.get<number>('default_video_duration_seconds');
       const duration = typeof durationVal === 'number' ? durationVal : 15;
 
-      // Render the video using FFmpeg
-      const videoUrl = await videoService.renderVideo(jobId, job.imageUrl, musicFilePath, duration);
+      const renderingConfig = (snapshot.renderingConfiguration !== undefined ? snapshot.renderingConfiguration : job.contentProfile?.renderingConfiguration) as Record<string, any> || {};
+      const animationPreset = renderingConfig.animation?.preset;
+
+      // Render the video using FFmpeg (two-plate layered mode if foregroundImageUrl exists)
+      const videoUrl = await videoService.renderVideo(jobId, job.imageUrl, musicFilePath, duration, {
+        foregroundImagePathOrUrl: snapshot.foregroundImageUrl || undefined,
+        animationPreset,
+      });
 
       await jobRepository.transitionJobStage(jobId, stage, {
         videoUrl,

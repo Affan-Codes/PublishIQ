@@ -31,7 +31,7 @@ import {
 
 const assetSchema = z.object({
   name: z.string().min(1, 'Asset name is required').max(100),
-  type: z.enum(['Background', 'Font', 'Music', 'Logo', 'Watermark', 'Animation', 'Icon']),
+  type: z.enum(['Background', 'Font', 'Music', 'Logo', 'Watermark', 'Icon']),
   status: z.enum(['Active', 'Disabled']),
   filePath: z.string().optional(),
   licenseStatus: z.enum(['Confirmed', 'Unconfirmed']),
@@ -42,7 +42,7 @@ type AssetFormValues = z.infer<typeof assetSchema>;
 interface Asset {
   id: string;
   name: string;
-  type: 'Background' | 'Font' | 'Music' | 'Logo' | 'Watermark' | 'Animation' | 'Icon';
+  type: 'Background' | 'Font' | 'Music' | 'Logo' | 'Watermark' | 'Icon';
   status: 'Active' | 'Disabled';
   filePath: string;
   licenseStatus: 'Confirmed' | 'Unconfirmed';
@@ -410,7 +410,7 @@ export const AssetsView: React.FC = () => {
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[#1a1a24] pb-4">
-        {['ALL', 'Background', 'Music', 'Font', 'Logo', 'Watermark', 'Animation', 'Icon'].map((filter) => (
+        {['ALL', 'Background', 'Music', 'Font', 'Logo', 'Watermark', 'Icon'].map((filter) => (
           <button
             key={filter}
             onClick={() => setSelectedFilterType(filter)}
@@ -708,7 +708,6 @@ export const AssetsView: React.FC = () => {
                     <option value="Font">Font</option>
                     <option value="Logo">Logo</option>
                     <option value="Watermark">Watermark</option>
-                    <option value="Animation">Animation</option>
                     <option value="Icon">Icon</option>
                   </select>
                 </div>

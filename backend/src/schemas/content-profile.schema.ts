@@ -70,6 +70,22 @@ export const RenderingConfigurationSchema = z
     watermark: z.string().max(100).optional(),
     resolution: z.enum(['1080x1920', '1920x1080', '1080x1080', '720x1280']).optional(),
     fps: z.number().min(1).max(60).optional(),
+    animation: z
+      .object({
+        preset: z
+          .enum([
+            'None',
+            'SlowZoomIn',
+            'SlowZoomOut',
+            'PanLeft',
+            'PanRight',
+            'PanUp',
+            'PanDown',
+          ])
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

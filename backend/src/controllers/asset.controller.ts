@@ -11,7 +11,6 @@ function getFolderForAssetType(type: string): string {
   if (t === 'font') return 'fonts';
   if (t === 'logo') return 'logos';
   if (t === 'watermark') return 'watermarks';
-  if (t === 'animation') return 'animations';
   if (t === 'icon') return 'icons';
   return `${t}s`;
 }

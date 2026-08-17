@@ -47,7 +47,7 @@ test('CFG-01: Content Profile Branding, Watermark & Validation Rules Tests', asy
 
       renderingService.renderImage = async (id: string, text: string, options: any) => {
         capturedOptions = options;
-        return 'https://cloudinary.com/rendered.png';
+        return { imageUrl: 'https://cloudinary.com/rendered.png' };
       };
 
       await processStage(mockJobId, PipelineStage.RenderingImage);

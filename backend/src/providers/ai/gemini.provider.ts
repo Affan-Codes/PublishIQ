@@ -6,6 +6,14 @@ import { AIContentResponseSchema } from '../../schemas/ai-response.schema.js';
 import { systemConfigCache } from '../../config/system-config.cache.js';
 import { extractPromptVariables } from '../../constants/prompt-variables.js';
 
+export const LANGUAGE_SCRIPT_INSTRUCTIONS: Record<string, string> = {
+  English: 'Write the output in English.',
+  Hindi: 'Write the output in Hindi using Devanagari script (हिंदी में देवनागरी लिपि का प्रयोग करें). Do not use Latin/Roman characters.',
+  Urdu: 'Write the output in Urdu using Arabic/Nastaliq script (اردو میں نستعلیق رسم الخط کا استعمال کریں). Do not use Latin/Roman characters.',
+  HindiRoman: 'Write the output in Hindi language, but using ONLY Latin/Roman alphabet characters (a-z, A-Z) — this is Hindi written in Roman transliteration, NOT Devanagari script. Do not use any Devanagari characters.',
+  UrduRoman: 'Write the output in Urdu language, but using ONLY Latin/Roman alphabet characters (a-z, A-Z) — this is Urdu written in Roman transliteration, NOT Arabic/Nastaliq script. Do not use any Arabic or Urdu script characters.',
+};
+
 // JSON schema definition to send to Gemini API for structured JSON response format
 export const geminiResponseSchema = {
   type: 'OBJECT',
@@ -15,7 +23,7 @@ export const geminiResponseSchema = {
     caption: { type: 'STRING', description: 'A descriptive caption for social media posts (MUST NOT exceed 100 characters)' },
     hashtags: { type: 'ARRAY', items: { type: 'STRING' }, description: 'At least 3 relevant hashtags' },
     metadata: { type: 'OBJECT', description: 'Any extra generation metadata or settings' },
-    language: { type: 'STRING', description: 'The language code or name of the output text (English, Hindi, or Urdu)' },
+    language: { type: 'STRING', description: 'The language code or name of the output text (English, Hindi, Urdu, HindiRoman, or UrduRoman)' },
     contentType: { type: 'STRING', description: 'The type of the content (e.g. Shayari, Motivational Quote, etc.)' },
     selectedMusicAssetId: { type: 'STRING', description: 'The id of the single best-matching music asset from the provided catalog, or omit if none fit well' },
     selectedBackgroundAssetId: { type: 'STRING', description: 'The id of the single best-matching background asset from the provided catalog, or omit if none fit well' },
@@ -67,6 +75,11 @@ export const geminiProvider: AIProviderAdapter = {
         `Unmatched prompt placeholder(s) detected: ${remainingTokens.map((t) => `{{${t}}}`).join(', ')}`
       );
     }
+
+    // AQL-20: Append authoritative Language Script Instruction
+    const langKey = String(variables.language || 'English');
+    const scriptInstruction = LANGUAGE_SCRIPT_INSTRUCTIONS[langKey] || LANGUAGE_SCRIPT_INSTRUCTIONS.English;
+    finalPrompt = `${finalPrompt}\n\nLanguage & Script Instruction: ${scriptInstruction}`;
 
     const apiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {

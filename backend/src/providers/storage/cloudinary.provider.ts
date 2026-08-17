@@ -77,7 +77,6 @@ function derivePublicId(pathOrUrl: string): string {
     .replace(/^font\//, 'fonts/')
     .replace(/^logo\//, 'logos/')
     .replace(/^watermark\//, 'watermarks/')
-    .replace(/^animation\//, 'animations/')
     .replace(/^icon\//, 'icons/');
 
   if (!clean.startsWith('publishiq/')) {

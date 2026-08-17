@@ -1,11 +1,13 @@
 export interface TemplateRenderData {
   text: string;
-  language: 'English' | 'Hindi' | 'Urdu';
+  language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman';
   branding?: string | undefined;
   watermark?: string | undefined;
   fontFamily?: string | undefined;
   theme?: 'dark' | 'light' | 'gradient' | undefined;
   backgroundImageUrl?: string | undefined;
+  layer?: 'full' | 'background' | 'foreground' | undefined;
+  animationPreset?: 'None' | 'SlowZoomIn' | 'SlowZoomOut' | 'PanLeft' | 'PanRight' | 'PanUp' | 'PanDown' | undefined;
 }
 
 function escapeHtml(unsafe: string): string {
@@ -28,12 +30,22 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
   } else if (data.language === 'Hindi') {
     langClass = 'lang-hindi';
   }
+  // HindiRoman and UrduRoman leave langClass empty, falling through to default Poppins and LTR
 
+  const layer = data.layer || 'full';
   const brandingText = data.branding || 'PUBLISHIQ';
   const watermarkText = data.watermark || '@publishiq';
   const fontFamily = data.fontFamily ? `'${data.fontFamily}', 'Poppins', sans-serif` : "'Poppins', sans-serif";
   const hasBackground = !!(data.backgroundImageUrl && data.backgroundImageUrl.trim().length > 0);
   const escapedBgUrl = hasBackground ? escapeCssUrl(data.backgroundImageUrl!.trim()) : '';
+
+  const isPanPreset = ['PanLeft', 'PanRight', 'PanUp', 'PanDown'].includes(data.animationPreset || '');
+  const bgSize = isPanPreset ? '130%' : 'cover';
+
+  const isForegroundOnly = layer === 'foreground';
+  const isBackgroundOnly = layer === 'background';
+
+  const bodyBg = isForegroundOnly ? 'transparent' : '#000000';
 
   return `
 <!DOCTYPE html>
@@ -54,7 +66,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       width: 1080px;
       height: 1920px;
       overflow: hidden;
-      background-color: #000000;
+      background-color: ${bodyBg};
     }
 
     .canvas-container {
@@ -64,7 +76,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       overflow: hidden;
     }
 
-    ${hasBackground ? `
+    ${hasBackground && !isForegroundOnly ? `
     /* Layer 1: Background Image */
     .background-layer {
       position: absolute;
@@ -73,7 +85,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       width: 1080px;
       height: 1920px;
       background-image: url('${escapedBgUrl}');
-      background-size: cover;
+      background-size: ${bgSize};
       background-position: center;
       background-repeat: no-repeat;
       z-index: 1;
@@ -91,6 +103,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
     }
     ` : ''}
 
+    ${!isBackgroundOnly ? `
     /* Layer 3: Foreground Content */
     .content-layer {
       position: relative;
@@ -155,11 +168,13 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       letter-spacing: 1px;
       text-shadow: 0px 2px 10px rgba(0, 0, 0, 0.7);
     }
+    ` : ''}
   </style>
 </head>
 <body>
   <div class="canvas-container">
-    ${hasBackground ? `<div class="background-layer"></div><div class="overlay-layer"></div>` : ''}
+    ${hasBackground && !isForegroundOnly ? `<div class="background-layer"></div><div class="overlay-layer"></div>` : ''}
+    ${!isBackgroundOnly ? `
     <div class="content-layer">
       <div class="branding-container">${escapeHtml(brandingText)}</div>
       
@@ -169,6 +184,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       
       <div class="watermark-container">${escapeHtml(watermarkText)}</div>
     </div>
+    ` : ''}
   </div>
 </body>
 </html>

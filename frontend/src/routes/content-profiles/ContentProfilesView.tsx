@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -27,6 +27,7 @@ import {
   Layers,
   Image,
   Check,
+  Film,
 } from 'lucide-react';
 
 const contentProfileSchema = z.object({
@@ -36,7 +37,7 @@ const contentProfileSchema = z.object({
   contentTypeId: z.string().uuid('Invalid ContentType selection'),
   promptVersionId: z.string().uuid('Invalid PromptVersion selection'),
   templateVersionId: z.string().uuid('Invalid TemplateVersion selection'),
-  language: z.enum(['English', 'Hindi', 'Urdu']),
+  language: z.enum(['English', 'Hindi', 'Urdu', 'HindiRoman', 'UrduRoman']),
   tone: z.string().min(1, 'Tone is required'),
   writingStyle: z.string().min(1, 'Writing style is required'),
 });
@@ -48,7 +49,7 @@ interface ContentProfile {
   name: string;
   notes?: string | null;
   status: 'Active' | 'Disabled';
-  language: 'English' | 'Hindi' | 'Urdu';
+  language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman';
   tone: string;
   writingStyle: string;
   contentTypeId: string;
@@ -72,8 +73,152 @@ interface ContentProfile {
     tags?: string[];
     orientation?: 'portrait' | 'landscape' | 'square';
   };
-  renderingConfiguration: { resolution?: string; fps?: number; branding?: string; watermark?: string };
+  renderingConfiguration: { resolution?: string; fps?: number; branding?: string; watermark?: string; animation?: { preset?: string } };
   validationRules: { bannedWords?: string[]; maxLength?: number; minLength?: number; strictProfanity?: boolean };
+}
+
+const ANIMATION_PRESET_OPTIONS = [
+  {
+    key: 'None',
+    label: 'None (Static)',
+    description: 'Static image without zoom or pan motion',
+    badge: 'Static',
+  },
+  {
+    key: 'SlowZoomIn',
+    label: 'Slow Zoom In',
+    description: 'Cinematic forward zoom from 1.0x to 1.10x',
+    badge: '1.0x → 1.10x',
+  },
+  {
+    key: 'SlowZoomOut',
+    label: 'Slow Zoom Out',
+    description: 'Gentle pullback zoom from 1.10x to 1.0x',
+    badge: '1.10x → 1.0x',
+  },
+  {
+    key: 'PanLeft',
+    label: 'Pan Left',
+    description: 'Horizontal sweep from right to left',
+    badge: 'Right → Left',
+  },
+  {
+    key: 'PanRight',
+    label: 'Pan Right',
+    description: 'Horizontal sweep from left to right',
+    badge: 'Left → Right',
+  },
+  {
+    key: 'PanUp',
+    label: 'Pan Up',
+    description: 'Vertical sweep from bottom to top',
+    badge: 'Bottom → Top',
+  },
+  {
+    key: 'PanDown',
+    label: 'Pan Down',
+    description: 'Vertical sweep from top to bottom',
+    badge: 'Top → Bottom',
+  },
+];
+
+function AnimationPresetCard({
+  option,
+  isSelected,
+  previewUrl,
+  onSelect,
+}: {
+  option: typeof ANIMATION_PRESET_OPTIONS[0];
+  isSelected: boolean;
+  previewUrl?: string;
+  onSelect: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isHovered || isSelected) {
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => setIsPlaying(true))
+          .catch(() => setIsPlaying(false));
+      }
+    } else {
+      video.pause();
+      video.currentTime = 0;
+      setIsPlaying(false);
+    }
+  }, [isHovered, isSelected]);
+
+  return (
+    <div
+      onClick={onSelect}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={`group relative flex flex-col justify-between overflow-hidden rounded-xl border p-2.5 cursor-pointer transition-all duration-200 ${
+        isSelected
+          ? 'border-purple-500 bg-purple-950/25 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500'
+          : 'border-[#1a1a24] bg-[#14141e] hover:border-[#2a2a3e] hover:bg-[#181826]'
+      }`}
+    >
+      <div className="relative aspect-[9/16] w-full min-h-[140px] max-h-48 overflow-hidden rounded-lg bg-black/70 border border-[#222232] flex items-center justify-center">
+        {option.key === 'None' || !previewUrl ? (
+          <div className="flex flex-col items-center justify-center p-3 text-center text-[#6e6e80]">
+            <Image size={24} className="mb-1.5 opacity-50 text-zinc-400" />
+            <span className="text-[11px] font-semibold text-zinc-300">Static Image</span>
+            <span className="text-[9px] text-[#555566]">No Camera Motion</span>
+          </div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              src={previewUrl}
+              muted
+              loop
+              playsInline
+              preload="auto"
+              className="h-full w-full object-cover"
+            />
+            {/* Real Animation Motion Indicator Badge */}
+            <div className="absolute top-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[8px] font-semibold text-purple-300 backdrop-blur-sm border border-purple-500/30">
+              {option.badge}
+            </div>
+
+            {/* Live Playback State Indicator */}
+            {isPlaying ? (
+              <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded bg-purple-950/90 border border-purple-500/40 px-1.5 py-0.5 text-[8px] font-medium text-purple-200 backdrop-blur-sm animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-400"></span>
+                Motion Playing
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <span className="rounded-full bg-black/60 p-2 text-white/80">
+                  <Film size={16} />
+                </span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="mt-2.5 space-y-0.5">
+        <div className="flex items-center justify-between">
+          <span className={`text-xs font-semibold ${isSelected ? 'text-purple-300' : 'text-white'}`}>
+            {option.label}
+          </span>
+          {isSelected && <Check size={13} className="text-purple-400 shrink-0" />}
+        </div>
+        <p className="text-[10px] text-[#6e6e80] line-clamp-2 leading-tight">
+          {option.description}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export const ContentProfilesView: React.FC = () => {
@@ -119,6 +264,7 @@ export const ContentProfilesView: React.FC = () => {
 
   const [renderResolution, setRenderResolution] = useState('1080x1920');
   const [renderFps, setRenderFps] = useState(30);
+  const [renderAnimationPreset, setRenderAnimationPreset] = useState<string>('None');
 
   const [bannedWordsInput, setBannedWordsInput] = useState('');
   const [valMaxLength, setValMaxLength] = useState(300);
@@ -138,6 +284,14 @@ export const ContentProfilesView: React.FC = () => {
     queryKey: ['background-assets'],
     queryFn: async () => {
       const res = await apiClient.get('/assets?type=Background');
+      return res.data.data;
+    },
+  });
+
+  const { data: animationPreviews = {} } = useQuery<Record<string, string>>({
+    queryKey: ['animation-previews'],
+    queryFn: async () => {
+      const res = await apiClient.get('/content-profiles/animation-previews');
       return res.data.data;
     },
   });
@@ -250,6 +404,9 @@ export const ContentProfilesView: React.FC = () => {
     const renderingConfiguration: any = {
       resolution: renderResolution,
       fps: Number(renderFps) || 30,
+      animation: {
+        preset: renderAnimationPreset || 'None',
+      },
     };
     if (brandingText.trim()) renderingConfiguration.branding = brandingText.trim();
     if (watermarkText.trim()) renderingConfiguration.watermark = watermarkText.trim();
@@ -400,6 +557,7 @@ export const ContentProfilesView: React.FC = () => {
 
     setRenderResolution('1080x1920');
     setRenderFps(30);
+    setRenderAnimationPreset('None');
 
     setBannedWordsInput('');
     setValMaxLength(300);
@@ -468,6 +626,7 @@ export const ContentProfilesView: React.FC = () => {
 
     setRenderResolution(profile.renderingConfiguration?.resolution || '1080x1920');
     setRenderFps(profile.renderingConfiguration?.fps ?? 30);
+    setRenderAnimationPreset(profile.renderingConfiguration?.animation?.preset || 'None');
 
     setBannedWordsInput((profile.validationRules?.bannedWords || []).join(', '));
     setValMaxLength(profile.validationRules?.maxLength ?? 300);
@@ -797,7 +956,9 @@ export const ContentProfilesView: React.FC = () => {
                       >
                         <option value="English">English</option>
                         <option value="Hindi">Hindi</option>
+                        <option value="HindiRoman">Hindi (Roman)</option>
                         <option value="Urdu">Urdu</option>
+                        <option value="UrduRoman">Urdu (Roman)</option>
                       </select>
                     </div>
 
@@ -1458,6 +1619,36 @@ export const ContentProfilesView: React.FC = () => {
                           <option value={60}>60 FPS</option>
                         </select>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Motion & Animation Preset Visual Selector */}
+                  <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
+                          <Film size={14} className="text-purple-400" />
+                          Motion & Animation Preset
+                        </h4>
+                        <p className="text-[11px] text-[#6e6e80]">
+                          Cinematic camera motion applied to the background plate. Hover or select to preview real motion.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono font-medium text-purple-300 bg-purple-950/80 border border-purple-800/40 px-2 py-0.5 rounded-md">
+                        Selected: {ANIMATION_PRESET_OPTIONS.find((p) => p.key === renderAnimationPreset)?.label || renderAnimationPreset}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-1">
+                      {ANIMATION_PRESET_OPTIONS.map((option) => (
+                        <AnimationPresetCard
+                          key={option.key}
+                          option={option}
+                          isSelected={renderAnimationPreset === option.key}
+                          previewUrl={animationPreviews[option.key]}
+                          onSelect={() => setRenderAnimationPreset(option.key)}
+                        />
+                      ))}
                     </div>
                   </div>
 

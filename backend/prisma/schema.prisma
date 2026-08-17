@@ -23,7 +23,6 @@ enum AssetType {
   Music
   Logo
   Watermark
-  Animation
   Icon
 }
 
@@ -46,6 +45,8 @@ enum Language {
   English
   Hindi
   Urdu
+  HindiRoman
+  UrduRoman
 }
 
 enum AutomationMode {
