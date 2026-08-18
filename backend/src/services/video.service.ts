@@ -7,9 +7,22 @@ import axios from 'axios';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
+import {
+  computeCoverFit,
+  computePanOverscan,
+  DEFAULT_PAN_OVERSCAN_FACTOR,
+  OUTPUT_WIDTH,
+  OUTPUT_HEIGHT,
+} from './background-geometry.js';
 
 const execFilePromise = util.promisify(execFile);
 const ffmpegPath = ffmpegInstaller.path;
+
+/**
+ * Authoritative Render Frame Rate (MQA-10)
+ * Standardized single constant threaded into every frame-rate dependent calculation.
+ */
+export const RENDER_FPS = 30;
 
 export type AnimationPreset =
   | 'None'
@@ -23,43 +36,79 @@ export type AnimationPreset =
 export interface VideoRenderOptions {
   foregroundImagePathOrUrl?: string | undefined;
   animationPreset?: AnimationPreset | undefined;
+  backgroundWidth?: number | undefined;
+  backgroundHeight?: number | undefined;
+  panOverscanFactor?: number | undefined;
   storageFolder?: string | undefined;
 }
 
-/**
- * NOTE ON PREVIEW STALENESS:
- * Animation preview clips for the Content Profile UI are generated ahead-of-time
- * via `npm run generate:animation-previews`. Whenever the underlying FFmpeg filter graph,
- * zoom increment formula, CRF/preset values, or overscan logic changes for any preset,
- * maintainers must re-run that script to update the preview assets in Cloudinary/SystemConfig.
- */
+export interface BuildFFmpegArgsParams {
+  localImagePath: string;
+  localForegroundPath?: string | undefined;
+  localAudioPath: string;
+  durationSeconds: number;
+  animationPreset?: AnimationPreset | undefined;
+  backgroundWidth?: number | undefined;
+  backgroundHeight?: number | undefined;
+  panOverscanFactor?: number | undefined;
+  tempOutputPath: string;
+}
 
 /**
- * Builds the dynamic zoompan filter expression for a given preset and clip duration.
- * Uses dynamic increment computation: (targetZoom - 1.0) / totalFrames.
+ * Builds the dynamic zoompan filter expression for zoom presets (MQA-08).
+ * Operates on a cover-fit scaled original asset plate.
+ * Inc = (targetZoom - 1.0) / totalFrames.
  */
 export function buildZoompanExpression(
   preset: AnimationPreset,
   durationSeconds: number,
   targetZoom: number = 1.10
 ): string | null {
-  const framesCount = durationSeconds * 25; // 25 fps
-  const inc = (targetZoom - 1.0) / framesCount;
+  const totalFrames = durationSeconds * RENDER_FPS;
+  const inc = (targetZoom - 1.0) / totalFrames;
 
   switch (preset) {
     case 'SlowZoomIn':
-      return `zoompan=z='min(zoom+${inc},${targetZoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${framesCount}:s=1080x1920:fps=25`;
+      return `zoompan=z='min(zoom+${inc},${targetZoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
     case 'SlowZoomOut':
-      return `zoompan=z='max(${targetZoom}-(${inc}*(on-1)),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${framesCount}:s=1080x1920:fps=25`;
+      return `zoompan=z='max(${targetZoom}-(${inc}*(on-1)),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Builds the crop filter expression for pan presets (MQA-06 / MQA-11).
+ * Operates on an overscanned scaled original asset plate using frame-based linear interpolation.
+ * PanLeft: Camera moves right-to-left across source (x decreases from maxPanX to 0).
+ * PanRight: Camera moves left-to-right across source (x increases from 0 to maxPanX).
+ * PanUp: Camera moves bottom-to-top across source (y decreases from maxPanY to 0).
+ * PanDown: Camera moves top-to-bottom across source (y increases from 0 to maxPanY).
+ */
+export function buildPanCropExpression(
+  preset: AnimationPreset,
+  durationSeconds: number,
+  scaledWidth: number,
+  scaledHeight: number
+): string | null {
+  const totalFrames = durationSeconds * RENDER_FPS;
+  const maxPanX = Math.max(0, scaledWidth - OUTPUT_WIDTH);
+  const maxPanY = Math.max(0, scaledHeight - OUTPUT_HEIGHT);
+  const halfPanX = Math.round(maxPanX / 2);
+  const halfPanY = Math.round(maxPanY / 2);
+
+  // Duration-normalized progress calculation over [0, totalFrames - 1]
+  const frameDenom = Math.max(1, totalFrames - 1);
+
+  switch (preset) {
     case 'PanLeft':
-      return `zoompan=z=1.0:x='(iw-1080)*(1-on/${framesCount})':y='(ih-1920)/2':d=${framesCount}:s=1080x1920:fps=25`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*(1-n/${frameDenom})':y='${halfPanY}'`;
     case 'PanRight':
-      return `zoompan=z=1.0:x='(iw-1080)*(on/${framesCount})':y='(ih-1920)/2':d=${framesCount}:s=1080x1920:fps=25`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*(n/${frameDenom})':y='${halfPanY}'`;
     case 'PanUp':
-      return `zoompan=z=1.0:x='(iw-1080)/2':y='(ih-1920)*(1-on/${framesCount})':d=${framesCount}:s=1080x1920:fps=25`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*(1-n/${frameDenom})'`;
     case 'PanDown':
-      return `zoompan=z=1.0:x='(iw-1080)/2':y='(ih-1920)*(on/${framesCount})':d=${framesCount}:s=1080x1920:fps=25`;
-    case 'None':
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*(n/${frameDenom})'`;
     default:
       return null;
   }
@@ -68,29 +117,52 @@ export function buildZoompanExpression(
 /**
  * Builds the complete FFmpeg command argument array for single or layered rendering.
  */
-export function buildFFmpegArgs(params: {
-  localImagePath: string;
-  localForegroundPath?: string | undefined;
-  localAudioPath: string;
-  durationSeconds: number;
-  animationPreset?: AnimationPreset | undefined;
-  tempOutputPath: string;
-}): string[] {
-  const { localImagePath, localForegroundPath, localAudioPath, durationSeconds, animationPreset, tempOutputPath } = params;
+export function buildFFmpegArgs(params: BuildFFmpegArgsParams): string[] {
+  const {
+    localImagePath,
+    localForegroundPath,
+    localAudioPath,
+    durationSeconds,
+    animationPreset,
+    backgroundWidth,
+    backgroundHeight,
+    panOverscanFactor,
+    tempOutputPath,
+  } = params;
+
+  const bgW = backgroundWidth && backgroundWidth > 0 ? backgroundWidth : OUTPUT_WIDTH;
+  const bgH = backgroundHeight && backgroundHeight > 0 ? backgroundHeight : OUTPUT_HEIGHT;
+  const preset = animationPreset || 'None';
 
   if (localForegroundPath) {
-    // Two-input Layered Composition (AQL-06, AQL-10)
-    const zoompan = buildZoompanExpression(animationPreset || 'None', durationSeconds);
-    const filterComplex = zoompan
-      ? `[0:v] scale=2160:3840:flags=lanczos, ${zoompan} [bg]; [1:v] scale=1080:1920:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`
-      : `[0:v] scale=1080:1920:flags=lanczos [bg]; [1:v] scale=1080:1920:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
+    // Two-input Layered Composition (MQA-01, MQA-05, MQA-11)
+    let filterComplex: string;
+    let bgInputArgs: string[];
 
-    // CRITICAL FIX: When zoompan is used, do NOT loop the input image with -loop 1 before zoompan.
-    // zoompan takes 1 image frame and generates the full animated frame sequence (d=duration*fps).
-    // Looping the input causes zoompan to reset its zoom/pan state on every single input frame, making it static.
-    const bgInputArgs = zoompan
-      ? ['-i', localImagePath]
-      : ['-loop', '1', '-t', durationSeconds.toString(), '-i', localImagePath];
+    if (preset === 'SlowZoomIn' || preset === 'SlowZoomOut') {
+      const { coveredWidth, coveredHeight } = computeCoverFit(bgW, bgH, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      const zoompan = buildZoompanExpression(preset, durationSeconds);
+      filterComplex = `[0:v] scale=${coveredWidth}:${coveredHeight}:flags=lanczos, ${zoompan} [bg]; [1:v] scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
+      // Single input frame: zoompan expands 1 input image into full frame sequence (d = duration * fps)
+      bgInputArgs = ['-i', localImagePath];
+    } else if (preset === 'PanLeft' || preset === 'PanRight' || preset === 'PanUp' || preset === 'PanDown') {
+      const { scaledWidth, scaledHeight } = computePanOverscan(
+        bgW,
+        bgH,
+        OUTPUT_WIDTH,
+        OUTPUT_HEIGHT,
+        panOverscanFactor ?? DEFAULT_PAN_OVERSCAN_FACTOR
+      );
+      const panCrop = buildPanCropExpression(preset, durationSeconds, scaledWidth, scaledHeight);
+      filterComplex = `[0:v] scale=${scaledWidth}:${scaledHeight}:flags=lanczos, ${panCrop} [bg]; [1:v] scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
+      // Stream input frames: crop filter evaluates time-varying expressions frame by frame
+      bgInputArgs = ['-loop', '1', '-t', durationSeconds.toString(), '-i', localImagePath];
+    } else {
+      // None (static background cover-fit centered crop)
+      const { coveredWidth, coveredHeight } = computeCoverFit(bgW, bgH, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      filterComplex = `[0:v] scale=${coveredWidth}:${coveredHeight}:flags=lanczos, crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x=(iw-${OUTPUT_WIDTH})/2:y=(ih-${OUTPUT_HEIGHT})/2 [bg]; [1:v] scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
+      bgInputArgs = ['-loop', '1', '-t', durationSeconds.toString(), '-i', localImagePath];
+    }
 
     return [
       '-y',
@@ -106,26 +178,26 @@ export function buildFFmpegArgs(params: {
       '-crf', '18',
       '-preset', 'slow',
       '-pix_fmt', 'yuv420p',
-      '-r', '25',
+      '-r', RENDER_FPS.toString(),
       '-c:a', 'aac',
       '-b:a', '192k',
       '-shortest',
       tempOutputPath,
     ];
   } else {
-    // Single-input Flat Composition (AQL-10 feature-off fallback with quality improvements)
+    // Single-input Flat Composition (fallback when no separate foreground plate exists)
     return [
       '-y',
       '-loop', '1',
       '-t', durationSeconds.toString(),
       '-i', localImagePath,
       '-i', localAudioPath,
-      '-vf', 'scale=1080:1920:flags=lanczos,format=yuv420p',
+      '-vf', `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos,format=yuv420p`,
       '-c:v', 'libx264',
       '-crf', '18',
       '-preset', 'slow',
       '-pix_fmt', 'yuv420p',
-      '-r', '25',
+      '-r', RENDER_FPS.toString(),
       '-c:a', 'aac',
       '-b:a', '192k',
       '-shortest',
@@ -187,7 +259,17 @@ export const videoService = {
     options?: VideoRenderOptions
   ): Promise<string> {
     logger.info(
-      { jobId, durationSeconds, imagePathOrUrl, foregroundUrl: options?.foregroundImagePathOrUrl, audioPathOrUrl, preset: options?.animationPreset },
+      {
+        jobId,
+        durationSeconds,
+        imagePathOrUrl,
+        foregroundUrl: options?.foregroundImagePathOrUrl,
+        audioPathOrUrl,
+        preset: options?.animationPreset,
+        bgWidth: options?.backgroundWidth,
+        bgHeight: options?.backgroundHeight,
+        fps: RENDER_FPS,
+      },
       'Compiling video using FFmpeg with Cloudinary storage'
     );
 
@@ -199,7 +281,7 @@ export const videoService = {
     }
 
     try {
-      // 1. Prepare main/background image input
+      // 1. Prepare main/background image input (original asset file or flat render)
       let localImagePath: string;
       if (imagePathOrUrl.startsWith('http://') || imagePathOrUrl.startsWith('https://')) {
         localImagePath = await downloadToScratch(imagePathOrUrl, `${jobId}_img`);
@@ -249,6 +331,9 @@ export const videoService = {
         localAudioPath,
         durationSeconds,
         animationPreset: options?.animationPreset,
+        backgroundWidth: options?.backgroundWidth,
+        backgroundHeight: options?.backgroundHeight,
+        panOverscanFactor: options?.panOverscanFactor,
         tempOutputPath,
       });
 

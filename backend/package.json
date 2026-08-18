@@ -10,8 +10,7 @@
     "dev": "tsx watch src/api.ts",
     "test": "npx tsx --test src/tests/**/*.test.ts",
     "db:migrate": "prisma migrate deploy",
-    "db:generate": "prisma generate",
-    "generate:animation-previews": "tsx src/scripts/generate-animation-previews.ts"
+    "db:generate": "prisma generate"
   },
   "keywords": [],
   "author": "",
@@ -34,6 +33,7 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "axios": "^1.18.1",

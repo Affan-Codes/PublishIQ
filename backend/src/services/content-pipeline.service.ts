@@ -429,14 +429,20 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
           throw new ValidationError(`Manual background asset ${manualAssetId} does not have a trusted Cloudinary file path`);
         }
 
+        const meta = (asset.metadata as Record<string, any>) || {};
+        const width = typeof meta.width === 'number' ? meta.width : undefined;
+        const height = typeof meta.height === 'number' ? meta.height : undefined;
+
         const updatedSnapshot = {
           ...snapshot,
           selectedBackgroundAssetId: asset.id,
           selectedBackgroundFilePath: asset.filePath,
+          selectedBackgroundWidth: width,
+          selectedBackgroundHeight: height,
           backgroundSelectionMethod: 'manual',
         };
 
-        logger.info({ jobId, assetId: asset.id }, 'Manual background asset resolved successfully');
+        logger.info({ jobId, assetId: asset.id, width, height }, 'Manual background asset resolved successfully');
         await jobRepository.transitionJobStage(jobId, stage, {
           configSnapshot: updatedSnapshot,
         });
@@ -510,14 +516,20 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
           }
         }
 
+        const meta = (chosenAsset.metadata as Record<string, any>) || {};
+        const width = typeof meta.width === 'number' ? meta.width : undefined;
+        const height = typeof meta.height === 'number' ? meta.height : undefined;
+
         const updatedSnapshot = {
           ...snapshot,
           selectedBackgroundAssetId: chosenAsset.id,
           selectedBackgroundFilePath: chosenAsset.filePath,
+          selectedBackgroundWidth: width,
+          selectedBackgroundHeight: height,
           backgroundSelectionMethod: 'ai',
         };
 
-        logger.info({ jobId, assetId: chosenAsset.id, method: 'ai' }, 'AI background asset resolved successfully');
+        logger.info({ jobId, assetId: chosenAsset.id, method: 'ai', width, height }, 'AI background asset resolved successfully');
         await jobRepository.transitionJobStage(jobId, stage, {
           configSnapshot: updatedSnapshot,
         });
@@ -550,14 +562,15 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
       const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
 
-      // Render vertical PNG(s) via Playwright (passing selectedBackgroundFilePath and animationPreset if configured)
+      const hasBackground = !!(snapshot.selectedBackgroundFilePath && snapshot.selectedBackgroundFilePath.trim().length > 0);
+
+      // Render vertical PNG via Playwright (MQA-01, MQA-05: foreground plate if background exists, full composite if none)
       const renderResult = await renderingService.renderImage(jobId, text, {
         language: snapshot.language || profile.language,
         branding: brandingText,
         watermark: watermarkText,
         templateVersionId,
-        backgroundImageUrl: snapshot.selectedBackgroundFilePath || undefined,
-        animationPreset: renderingConfiguration.animation?.preset,
+        hasBackground,
       });
 
       const updatedSnapshot = {
@@ -712,10 +725,17 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       const renderingConfig = (snapshot.renderingConfiguration !== undefined ? snapshot.renderingConfiguration : job.contentProfile?.renderingConfiguration) as Record<string, any> || {};
       const animationPreset = renderingConfig.animation?.preset;
 
-      // Render the video using FFmpeg (two-plate layered mode if foregroundImageUrl exists)
-      const videoUrl = await videoService.renderVideo(jobId, job.imageUrl, musicFilePath, duration, {
-        foregroundImagePathOrUrl: snapshot.foregroundImageUrl || undefined,
+      // MQA-01 & MQA-05: When background is configured, feed original background asset URL directly into FFmpeg
+      const hasBackgroundAsset = !!(snapshot.selectedBackgroundFilePath && snapshot.selectedBackgroundFilePath.trim().length > 0);
+      const bgImagePathOrUrl = hasBackgroundAsset ? snapshot.selectedBackgroundFilePath : job.imageUrl;
+      const foregroundImagePathOrUrl = hasBackgroundAsset ? (snapshot.foregroundImageUrl || job.imageUrl) : undefined;
+
+      // Render the video using FFmpeg
+      const videoUrl = await videoService.renderVideo(jobId, bgImagePathOrUrl, musicFilePath, duration, {
+        foregroundImagePathOrUrl,
         animationPreset,
+        backgroundWidth: snapshot.selectedBackgroundWidth,
+        backgroundHeight: snapshot.selectedBackgroundHeight,
       });
 
       await jobRepository.transitionJobStage(jobId, stage, {

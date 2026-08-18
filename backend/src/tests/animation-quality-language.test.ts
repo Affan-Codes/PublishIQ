@@ -61,123 +61,79 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
     });
   });
 
-  describe('AQL-03: Duration-Independent Dynamic Zoom Timing', () => {
+  describe('AQL-03: Duration-Independent Dynamic Zoom Timing (RENDER_FPS = 30)', () => {
     it('should calculate zoom increment inversely proportional to frame count for 5s clip', () => {
       const expr5s = buildZoompanExpression('SlowZoomIn', 5);
-      const expectedInc5s = (1.10 - 1.0) / (5 * 25); // 0.10 / 125 = 0.0008
+      const expectedInc5s = (1.10 - 1.0) / (5 * 30); // 0.10 / 150 = 0.0006666...
       assert.ok(expr5s?.includes(`zoom+${expectedInc5s}`));
-      assert.ok(expr5s?.includes(`d=${5 * 25}`));
+      assert.ok(expr5s?.includes(`d=${5 * 30}`));
+      assert.ok(expr5s?.includes(`fps=30`));
     });
 
     it('should calculate zoom increment inversely proportional to frame count for 15s clip', () => {
       const expr15s = buildZoompanExpression('SlowZoomIn', 15);
-      const expectedInc15s = (1.10 - 1.0) / (15 * 25); // 0.10 / 375 = 0.0002666...
+      const expectedInc15s = (1.10 - 1.0) / (15 * 30); // 0.10 / 450 = 0.0002222...
       assert.ok(expr15s?.includes(`zoom+${expectedInc15s}`));
-      assert.ok(expr15s?.includes(`d=${15 * 25}`));
+      assert.ok(expr15s?.includes(`d=${15 * 30}`));
+      assert.ok(expr15s?.includes(`fps=30`));
     });
 
     it('should calculate zoom increment inversely proportional to frame count for 30s clip', () => {
       const expr30s = buildZoompanExpression('SlowZoomIn', 30);
-      const expectedInc30s = (1.10 - 1.0) / (30 * 25); // 0.10 / 750 = 0.0001333...
+      const expectedInc30s = (1.10 - 1.0) / (30 * 30); // 0.10 / 900 = 0.0001111...
       assert.ok(expr30s?.includes(`zoom+${expectedInc30s}`));
-      assert.ok(expr30s?.includes(`d=${30 * 25}`));
+      assert.ok(expr30s?.includes(`d=${30 * 30}`));
+      assert.ok(expr30s?.includes(`fps=30`));
     });
   });
 
-  describe('AQL-06: Two-Layer Template Separation & Background Scrim', () => {
-    it('should render only background plate and overlay when layer is background', () => {
-      const bgHtml = renderDefaultQuoteTemplate({
-        text: 'Invisible in background plate',
-        language: 'English',
-        backgroundImageUrl: 'https://res.cloudinary.com/demo/image/upload/bg.jpg',
-        layer: 'background',
-      });
-
-      assert.ok(bgHtml.includes('class="background-layer"'));
-      assert.ok(bgHtml.includes('class="overlay-layer"'));
-      assert.ok(!bgHtml.includes('class="content-layer"'));
-      assert.ok(!bgHtml.includes('Invisible in background plate'));
-    });
-
-    it('should render only transparent foreground plate when layer is foreground', () => {
+  describe('AQL-06: Foreground Template Plate & Dark Gradient Scrim (MQA-01, MQA-02)', () => {
+    it('should render transparent foreground plate with scrim and content when layer is foreground', () => {
       const fgHtml = renderDefaultQuoteTemplate({
         text: 'Visible quote text in foreground plate',
         language: 'English',
-        backgroundImageUrl: 'https://res.cloudinary.com/demo/image/upload/bg.jpg',
         layer: 'foreground',
       });
 
       assert.ok(fgHtml.includes('background-color: transparent'));
+      assert.ok(fgHtml.includes('class="overlay-layer"'));
       assert.ok(fgHtml.includes('class="content-layer"'));
       assert.ok(fgHtml.includes('Visible quote text in foreground plate'));
       assert.ok(!fgHtml.includes('class="background-layer"'));
-      assert.ok(!fgHtml.includes('class="overlay-layer"'));
     });
 
-    it('should render full composite when layer is full or default', () => {
+    it('should render full fallback composite with black background when layer is full', () => {
       const fullHtml = renderDefaultQuoteTemplate({
         text: 'Full composite quote text',
         language: 'English',
-        backgroundImageUrl: 'https://res.cloudinary.com/demo/image/upload/bg.jpg',
         layer: 'full',
       });
 
-      assert.ok(fullHtml.includes('class="background-layer"'));
-      assert.ok(fullHtml.includes('class="overlay-layer"'));
+      assert.ok(fullHtml.includes('background-color: #000000'));
       assert.ok(fullHtml.includes('class="content-layer"'));
       assert.ok(fullHtml.includes('Full composite quote text'));
+      assert.ok(!fullHtml.includes('class="background-layer"'));
     });
   });
 
-  describe('AQL-07 & AQL-08: Animation Presets & Pan Overscan Bounds', () => {
-    const presets: AnimationPreset[] = [
-      'None',
-      'SlowZoomIn',
-      'SlowZoomOut',
-      'PanLeft',
-      'PanRight',
-      'PanUp',
-      'PanDown',
-    ];
+  describe('AQL-07 & AQL-08: Animation Presets & FFmpeg Expressions (MQA-06, MQA-17)', () => {
+    it('should generate valid bounded zoompan expression for SlowZoomIn and SlowZoomOut', () => {
+      const zoomIn = buildZoompanExpression('SlowZoomIn', 15);
+      assert.ok(zoomIn !== null);
+      assert.ok(zoomIn.includes('s=1080x1920:fps=30'));
+      assert.ok(zoomIn.includes('d=450'));
 
-    presets.forEach((preset) => {
-      it(`should generate valid bounded expression for preset ${preset}`, () => {
+      const zoomOut = buildZoompanExpression('SlowZoomOut', 15);
+      assert.ok(zoomOut !== null);
+      assert.ok(zoomOut.includes('s=1080x1920:fps=30'));
+      assert.ok(zoomOut.includes('d=450'));
+    });
+
+    it('should return null zoompan expression for None and Pan presets (which use plain crop)', () => {
+      const nonZoomPresets: AnimationPreset[] = ['None', 'PanLeft', 'PanRight', 'PanUp', 'PanDown'];
+      for (const preset of nonZoomPresets) {
         const expr = buildZoompanExpression(preset, 15);
-        if (preset === 'None') {
-          assert.equal(expr, null);
-        } else {
-          assert.ok(expr !== null);
-          assert.ok(expr.includes('s=1080x1920:fps=25'));
-          assert.ok(expr.includes('d=375'));
-        }
-      });
-    });
-
-    it('should apply 130% overscan in template for pan presets', () => {
-      const panPresets: AnimationPreset[] = ['PanLeft', 'PanRight', 'PanUp', 'PanDown'];
-      for (const preset of panPresets) {
-        const html = renderDefaultQuoteTemplate({
-          text: 'Pan test',
-          language: 'English',
-          backgroundImageUrl: 'https://res.cloudinary.com/demo/image/upload/bg.jpg',
-          layer: 'background',
-          animationPreset: preset,
-        });
-        assert.ok(html.includes('background-size: 130%'));
-      }
-    });
-
-    it('should apply standard cover background-size in template for zoom or none presets', () => {
-      const nonPanPresets: AnimationPreset[] = ['None', 'SlowZoomIn', 'SlowZoomOut'];
-      for (const preset of nonPanPresets) {
-        const html = renderDefaultQuoteTemplate({
-          text: 'Zoom test',
-          language: 'English',
-          backgroundImageUrl: 'https://res.cloudinary.com/demo/image/upload/bg.jpg',
-          layer: 'background',
-          animationPreset: preset,
-        });
-        assert.ok(html.includes('background-size: cover'));
+        assert.equal(expr, null);
       }
     });
   });

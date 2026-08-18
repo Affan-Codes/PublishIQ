@@ -1,5 +1,4 @@
 import { chromium, Browser } from 'playwright';
-import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { templateRepository } from '../repositories/template.repository.js';
 import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
@@ -11,8 +10,7 @@ export interface RenderOptions {
   watermark?: string;
   fontFamily?: string;
   templateVersionId?: string;
-  backgroundImageUrl?: string;
-  animationPreset?: 'None' | 'SlowZoomIn' | 'SlowZoomOut' | 'PanLeft' | 'PanRight' | 'PanUp' | 'PanDown';
+  hasBackground?: boolean;
 }
 
 export interface RenderImageResult {
@@ -52,11 +50,14 @@ export const renderingService = {
   },
 
   /**
-   * Renders the generated text onto vertical image(s) (2160x3840 physical at 2x DSF) and returns the media URI paths.
-   * When a background is configured (AQL-06), renders two separate plates:
-   * 1. Background plate (background + scrim with optional pan overscan)
-   * 2. Foreground plate (transparent-background quote text and branding with alpha channel)
-   * When no background is configured, renders a single full composite image.
+   * Renders the quote text onto vertical image plates (2160x3840 physical at 2x DSF) and returns Cloudinary media URIs.
+   * 
+   * Architecture (MQA-01, MQA-05):
+   * When a background asset is configured, Chromium renders ONLY the transparent foreground plate
+   * (containing quote text, branding, watermark, and dark gradient scrim for readability).
+   * The original background photographic asset is fed directly to FFmpeg without browser rasterization.
+   * 
+   * When no background is configured, renders a single full composite image on solid black.
    */
   async renderImage(jobId: string, text: string, options: RenderOptions): Promise<RenderImageResult> {
     let templatePath = 'DefaultQuoteTemplate';
@@ -71,8 +72,11 @@ export const renderingService = {
       }
     }
 
-    const hasBackground = !!(options.backgroundImageUrl && options.backgroundImageUrl.trim().length > 0);
-    logger.info({ jobId, language: options.language, templatePath, hasBackground, animationPreset: options.animationPreset }, 'Rendering image with Playwright template at 2x resolution');
+    const hasBackground = !!options.hasBackground;
+    logger.info(
+      { jobId, language: options.language, templatePath, hasBackground },
+      'Rendering image plate with Playwright template at 2x resolution'
+    );
 
     const renderer = getTemplateRenderer(templatePath);
 
@@ -87,36 +91,14 @@ export const renderingService = {
       const page = await context.newPage();
 
       if (hasBackground) {
-        // 1. Render Background Plate (Background + Overlay Scrim)
-        const bgHtml = renderer({
-          text,
-          language: options.language,
-          branding: options.branding,
-          watermark: options.watermark,
-          fontFamily: options.fontFamily,
-          backgroundImageUrl: options.backgroundImageUrl,
-          layer: 'background',
-          animationPreset: options.animationPreset,
-        });
-
-        await page.setContent(bgHtml);
-        // @ts-ignore
-        await page.evaluate(() => document.fonts.ready);
-
-        const bgBuffer = await page.screenshot({ type: 'png' });
-        const bgRelativePath = `images/${jobId}_bg.png`;
-        const { url: bgUrl } = await cloudinaryStorageProvider.save(bgBuffer, bgRelativePath);
-
-        // 2. Render Foreground Plate (Text + Branding over Transparent background)
+        // Render Transparent Foreground Plate with Scrim Overlay (MQA-05 / MQA-11)
         const fgHtml = renderer({
           text,
           language: options.language,
           branding: options.branding,
           watermark: options.watermark,
           fontFamily: options.fontFamily,
-          backgroundImageUrl: options.backgroundImageUrl,
           layer: 'foreground',
-          animationPreset: options.animationPreset,
         });
 
         await page.setContent(fgHtml);
@@ -127,10 +109,10 @@ export const renderingService = {
         const fgRelativePath = `images/${jobId}_fg.png`;
         const { url: fgUrl } = await cloudinaryStorageProvider.save(fgBuffer, fgRelativePath);
 
-        logger.info({ bgUrl, fgUrl }, 'Layered background and foreground images rendered and uploaded successfully');
-        return { imageUrl: bgUrl, foregroundImageUrl: fgUrl };
+        logger.info({ fgUrl }, 'Transparent foreground image plate rendered and uploaded successfully');
+        return { imageUrl: fgUrl, foregroundImageUrl: fgUrl };
       } else {
-        // Single flattened screenshot when no background is configured
+        // Single flattened screenshot on black background when no background asset is configured
         const htmlContent = renderer({
           text,
           language: options.language,

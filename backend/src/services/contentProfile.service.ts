@@ -8,7 +8,6 @@ import { ContentProfile, ContentProfileStatus, Language, AssetType, AssetStatus,
 import { logger } from '../utils/logger.js';
 import { SYSTEM_PROMPT_VARIABLES, extractPromptVariables } from '../constants/prompt-variables.js';
 import { systemConfigCache } from '../config/system-config.cache.js';
-import { DEFAULT_ANIMATION_PREVIEW_URLS } from '../constants/animation-previews.js';
 
 function validatePromptVariableCollisions(promptVariables?: Record<string, any>) {
   if (!promptVariables || typeof promptVariables !== 'object') return;
@@ -212,14 +211,6 @@ export const contentProfileService = {
     logger.warn({ id }, 'Deleting content profile');
     await this.getProfileById(id); // Ensure exists
     return contentProfileRepository.delete(id);
-  },
-
-  async getAnimationPreviews(): Promise<Record<string, string>> {
-    const cached = await systemConfigCache.get<Record<string, string>>('animation_preview_urls');
-    if (cached && typeof cached === 'object') {
-      return cached;
-    }
-    return DEFAULT_ANIMATION_PREVIEW_URLS;
   },
 };
 

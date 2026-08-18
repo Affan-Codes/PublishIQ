@@ -72,19 +72,6 @@ export const contentProfileController = {
       next(error);
     }
   },
-
-  async getAnimationPreviews(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const previews = await contentProfileService.getAnimationPreviews();
-      res.json({
-        success: true,
-        data: previews,
-        meta: {},
-      });
-    } catch (error) {
-      next(error);
-    }
-  },
 };
 
 export default contentProfileController;

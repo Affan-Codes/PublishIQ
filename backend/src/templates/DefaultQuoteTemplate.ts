@@ -5,9 +5,7 @@ export interface TemplateRenderData {
   watermark?: string | undefined;
   fontFamily?: string | undefined;
   theme?: 'dark' | 'light' | 'gradient' | undefined;
-  backgroundImageUrl?: string | undefined;
-  layer?: 'full' | 'background' | 'foreground' | undefined;
-  animationPreset?: 'None' | 'SlowZoomIn' | 'SlowZoomOut' | 'PanLeft' | 'PanRight' | 'PanUp' | 'PanDown' | undefined;
+  layer?: 'full' | 'foreground' | undefined;
 }
 
 function escapeHtml(unsafe: string): string {
@@ -17,10 +15,6 @@ function escapeHtml(unsafe: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
-}
-
-function escapeCssUrl(url: string): string {
-  return url.replace(/['"\\()]/g, '\\$&');
 }
 
 export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
@@ -36,15 +30,8 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
   const brandingText = data.branding || 'PUBLISHIQ';
   const watermarkText = data.watermark || '@publishiq';
   const fontFamily = data.fontFamily ? `'${data.fontFamily}', 'Poppins', sans-serif` : "'Poppins', sans-serif";
-  const hasBackground = !!(data.backgroundImageUrl && data.backgroundImageUrl.trim().length > 0);
-  const escapedBgUrl = hasBackground ? escapeCssUrl(data.backgroundImageUrl!.trim()) : '';
-
-  const isPanPreset = ['PanLeft', 'PanRight', 'PanUp', 'PanDown'].includes(data.animationPreset || '');
-  const bgSize = isPanPreset ? '130%' : 'cover';
 
   const isForegroundOnly = layer === 'foreground';
-  const isBackgroundOnly = layer === 'background';
-
   const bodyBg = isForegroundOnly ? 'transparent' : '#000000';
 
   return `
@@ -76,22 +63,8 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       overflow: hidden;
     }
 
-    ${hasBackground && !isForegroundOnly ? `
-    /* Layer 1: Background Image */
-    .background-layer {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 1080px;
-      height: 1920px;
-      background-image: url('${escapedBgUrl}');
-      background-size: ${bgSize};
-      background-position: center;
-      background-repeat: no-repeat;
-      z-index: 1;
-    }
-
-    /* Layer 2: Overlay Scrim */
+    ${isForegroundOnly ? `
+    /* Layer 1: Scrim Overlay for Readability over Background */
     .overlay-layer {
       position: absolute;
       top: 0;
@@ -103,8 +76,7 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
     }
     ` : ''}
 
-    ${!isBackgroundOnly ? `
-    /* Layer 3: Foreground Content */
+    /* Layer 2: Foreground Content (Text + Branding) */
     .content-layer {
       position: relative;
       z-index: 3;
@@ -168,13 +140,11 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       letter-spacing: 1px;
       text-shadow: 0px 2px 10px rgba(0, 0, 0, 0.7);
     }
-    ` : ''}
   </style>
 </head>
 <body>
   <div class="canvas-container">
-    ${hasBackground && !isForegroundOnly ? `<div class="background-layer"></div><div class="overlay-layer"></div>` : ''}
-    ${!isBackgroundOnly ? `
+    ${isForegroundOnly ? `<div class="overlay-layer"></div>` : ''}
     <div class="content-layer">
       <div class="branding-container">${escapeHtml(brandingText)}</div>
       
@@ -184,7 +154,6 @@ export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {
       
       <div class="watermark-container">${escapeHtml(watermarkText)}</div>
     </div>
-    ` : ''}
   </div>
 </body>
 </html>

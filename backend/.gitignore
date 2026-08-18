@@ -8,8 +8,10 @@ logs/
 media/images/
 media/videos/
 media/temp/
+scratch/
 *.mp4
 *.webm
 *.png
 *.jpg
 *.jpeg
+*.bmp
