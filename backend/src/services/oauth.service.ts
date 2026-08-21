@@ -201,13 +201,17 @@ export const oauthService = {
         throw new ValidationError('Google Client ID / Secret environment variables are missing');
       }
 
-      const tokenRes = await axios.post('https://oauth2.googleapis.com/token', null, {
-        params: {
-          client_id: clientId,
-          client_secret: clientSecret,
-          code,
-          grant_type: 'authorization_code',
-          redirect_uri: redirectUri,
+      const tokenParams = new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+      });
+
+      const tokenRes = await axios.post('https://oauth2.googleapis.com/token', tokenParams.toString(), {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
 

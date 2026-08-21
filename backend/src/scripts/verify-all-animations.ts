@@ -1,4 +1,5 @@
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 import { execFile } from 'child_process';
 import util from 'util';
 import fs from 'fs';
@@ -9,6 +10,7 @@ import { probeMedia, formatReportTable } from './diagnose-render-quality.js';
 
 const execFilePromise = util.promisify(execFile);
 const ffmpegPath = ffmpegInstaller.path;
+const ffprobePath = ffprobeInstaller.path;
 
 const PRESETS: AnimationPreset[] = [
   'None',
@@ -83,12 +85,45 @@ export async function runAnimationVerification(outDir: string = './scratch/anima
 
   console.log('\n=== Probing Output Video Files with FFprobe ===\n');
   const reports = [];
-  for (const file of generatedFiles) {
+  const detailedStats: Array<{
+    preset: string;
+    r_frame_rate: string;
+    avg_frame_rate: string;
+    nb_frames: string | number;
+    duration: string | number;
+    time_base: string;
+  }> = [];
+
+  for (let i = 0; i < generatedFiles.length; i++) {
+    const file = generatedFiles[i]!;
+    const preset = PRESETS[i]!;
     const report = await probeMedia(file);
     reports.push(report);
+
+    // Query ffprobe stream details
+    const probeArgs = [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_streams',
+      file,
+    ];
+    const { stdout } = await execFilePromise(ffprobePath, probeArgs);
+    const data = JSON.parse(stdout);
+    const vStream = data.streams?.find((s: any) => s.codec_type === 'video') || {};
+
+    detailedStats.push({
+      preset,
+      r_frame_rate: vStream.r_frame_rate || 'N/A',
+      avg_frame_rate: vStream.avg_frame_rate || 'N/A',
+      nb_frames: vStream.nb_frames || report.video?.frameCount || 'N/A',
+      duration: vStream.duration || report.durationSeconds || 'N/A',
+      time_base: vStream.time_base || 'N/A',
+    });
   }
 
   console.log(formatReportTable(reports));
+  console.log('\n=== Detailed Animation Timing & Frame Rate Stream Metrics ===\n');
+  console.table(detailedStats);
   console.log(`\nAll 7 animation clips generated successfully in: ${path.resolve(outDir)}\n`);
 }
 

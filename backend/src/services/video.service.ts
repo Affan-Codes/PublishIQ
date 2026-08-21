@@ -14,6 +14,7 @@ import {
   OUTPUT_WIDTH,
   OUTPUT_HEIGHT,
 } from './background-geometry.js';
+import { smoothstepExpr } from './animation-easing.js';
 
 const execFilePromise = util.promisify(execFile);
 const ffmpegPath = ffmpegInstaller.path;
@@ -55,9 +56,8 @@ export interface BuildFFmpegArgsParams {
 }
 
 /**
- * Builds the dynamic zoompan filter expression for zoom presets (MQA-08).
- * Operates on a cover-fit scaled original asset plate.
- * Inc = (targetZoom - 1.0) / totalFrames.
+ * Builds the dynamic zoompan filter expression for zoom presets (MQA-08, AEN-03).
+ * Operates on a cover-fit scaled original asset plate using smoothstep easing.
  */
 export function buildZoompanExpression(
   preset: AnimationPreset,
@@ -65,21 +65,22 @@ export function buildZoompanExpression(
   targetZoom: number = 1.10
 ): string | null {
   const totalFrames = durationSeconds * RENDER_FPS;
-  const inc = (targetZoom - 1.0) / totalFrames;
+  const frameDenom = Math.max(1, totalFrames - 1);
+  const easedT = smoothstepExpr('on', frameDenom);
 
   switch (preset) {
     case 'SlowZoomIn':
-      return `zoompan=z='min(zoom+${inc},${targetZoom})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
+      return `zoompan=z='1.0+(${targetZoom}-1.0)*${easedT}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
     case 'SlowZoomOut':
-      return `zoompan=z='max(${targetZoom}-(${inc}*(on-1)),1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
+      return `zoompan=z='${targetZoom}-(${targetZoom}-1.0)*${easedT}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${OUTPUT_WIDTH}x${OUTPUT_HEIGHT}:fps=${RENDER_FPS}`;
     default:
       return null;
   }
 }
 
 /**
- * Builds the crop filter expression for pan presets (MQA-06 / MQA-11).
- * Operates on an overscanned scaled original asset plate using frame-based linear interpolation.
+ * Builds the crop filter expression for pan presets (MQA-06, MQA-11, AEN-04).
+ * Operates on an overscanned scaled original asset plate using smoothstep-eased progress.
  * PanLeft: Camera moves right-to-left across source (x decreases from maxPanX to 0).
  * PanRight: Camera moves left-to-right across source (x increases from 0 to maxPanX).
  * PanUp: Camera moves bottom-to-top across source (y decreases from maxPanY to 0).
@@ -99,16 +100,17 @@ export function buildPanCropExpression(
 
   // Duration-normalized progress calculation over [0, totalFrames - 1]
   const frameDenom = Math.max(1, totalFrames - 1);
+  const easedT = smoothstepExpr('n', frameDenom);
 
   switch (preset) {
     case 'PanLeft':
-      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*(1-n/${frameDenom})':y='${halfPanY}'`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*(1-${easedT})':y='${halfPanY}'`;
     case 'PanRight':
-      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*(n/${frameDenom})':y='${halfPanY}'`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${maxPanX}*${easedT}':y='${halfPanY}'`;
     case 'PanUp':
-      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*(1-n/${frameDenom})'`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*(1-${easedT})'`;
     case 'PanDown':
-      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*(n/${frameDenom})'`;
+      return `crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x='${halfPanX}':y='${maxPanY}*${easedT}'`;
     default:
       return null;
   }
@@ -155,13 +157,13 @@ export function buildFFmpegArgs(params: BuildFFmpegArgsParams): string[] {
       );
       const panCrop = buildPanCropExpression(preset, durationSeconds, scaledWidth, scaledHeight);
       filterComplex = `[0:v] scale=${scaledWidth}:${scaledHeight}:flags=lanczos, ${panCrop} [bg]; [1:v] scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
-      // Stream input frames: crop filter evaluates time-varying expressions frame by frame
-      bgInputArgs = ['-loop', '1', '-t', durationSeconds.toString(), '-i', localImagePath];
+      // Stream input frames: crop filter evaluates time-varying expressions frame by frame (AEN-01 explicit input framerate)
+      bgInputArgs = ['-loop', '1', '-framerate', RENDER_FPS.toString(), '-t', durationSeconds.toString(), '-i', localImagePath];
     } else {
       // None (static background cover-fit centered crop)
       const { coveredWidth, coveredHeight } = computeCoverFit(bgW, bgH, OUTPUT_WIDTH, OUTPUT_HEIGHT);
       filterComplex = `[0:v] scale=${coveredWidth}:${coveredHeight}:flags=lanczos, crop=w=${OUTPUT_WIDTH}:h=${OUTPUT_HEIGHT}:x=(iw-${OUTPUT_WIDTH})/2:y=(ih-${OUTPUT_HEIGHT})/2 [bg]; [1:v] scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:flags=lanczos [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`;
-      bgInputArgs = ['-loop', '1', '-t', durationSeconds.toString(), '-i', localImagePath];
+      bgInputArgs = ['-loop', '1', '-framerate', RENDER_FPS.toString(), '-t', durationSeconds.toString(), '-i', localImagePath];
     }
 
     return [
@@ -189,6 +191,7 @@ export function buildFFmpegArgs(params: BuildFFmpegArgsParams): string[] {
     return [
       '-y',
       '-loop', '1',
+      '-framerate', RENDER_FPS.toString(),
       '-t', durationSeconds.toString(),
       '-i', localImagePath,
       '-i', localAudioPath,

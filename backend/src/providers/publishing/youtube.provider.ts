@@ -274,13 +274,17 @@ export const youtubeAdapter: PublishingAdapter = {
       throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set to refresh Google tokens.');
     }
 
-    const res = await axios.post('https://oauth2.googleapis.com/token', null, {
-      params: {
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token',
-      }
+    const tokenParams = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    });
+
+    const res = await axios.post('https://oauth2.googleapis.com/token', tokenParams.toString(), {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
     });
 
     return {

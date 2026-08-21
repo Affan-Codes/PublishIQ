@@ -1,6 +1,7 @@
 import { PlatformConnection, Platform, HealthStatus, ConnectionStatus } from '@prisma/client';
 import { prisma } from '../database/db.js';
 import { encrypt } from '../utils/crypto.js';
+import { ConflictError } from '../errors/custom-errors.js';
 
 export const platformConnectionRepository = {
   async getById(id: string, workspaceId?: string): Promise<PlatformConnection | null> {
@@ -169,8 +170,22 @@ export const platformConnectionRepository = {
         throw new Error(`Platform connection not found in workspace: ${id}`);
       }
     }
-    return prisma.platformConnection.delete({
-      where: { id },
+
+    return prisma.$transaction(async (tx) => {
+      const recordCount = await tx.publishingRecord.count({
+        where: { platformConnectionId: id },
+      });
+      if (recordCount > 0) {
+        throw new ConflictError('Cannot delete platform connection with existing publishing history. You can disable the connection or re-authorize via OAuth.');
+      }
+
+      await tx.channelPlatformConnection.deleteMany({
+        where: { platformConnectionId: id },
+      });
+
+      return tx.platformConnection.delete({
+        where: { id },
+      });
     });
   },
 };

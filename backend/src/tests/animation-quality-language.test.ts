@@ -61,28 +61,31 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
     });
   });
 
-  describe('AQL-03: Duration-Independent Dynamic Zoom Timing (RENDER_FPS = 30)', () => {
-    it('should calculate zoom increment inversely proportional to frame count for 5s clip', () => {
+  describe('AQL-03: Duration-Independent Dynamic Zoom Timing (RENDER_FPS = 30, AEN-03 Smoothstep)', () => {
+    it('should generate closed-form smoothstep zoom expression for 5s clip', () => {
       const expr5s = buildZoompanExpression('SlowZoomIn', 5);
-      const expectedInc5s = (1.10 - 1.0) / (5 * 30); // 0.10 / 150 = 0.0006666...
-      assert.ok(expr5s?.includes(`zoom+${expectedInc5s}`));
-      assert.ok(expr5s?.includes(`d=${5 * 30}`));
+      const totalFrames = 5 * 30; // 150
+      const frameDenom = totalFrames - 1; // 149
+      assert.ok(expr5s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
+      assert.ok(expr5s?.includes(`d=${totalFrames}`));
       assert.ok(expr5s?.includes(`fps=30`));
     });
 
-    it('should calculate zoom increment inversely proportional to frame count for 15s clip', () => {
+    it('should generate closed-form smoothstep zoom expression for 15s clip', () => {
       const expr15s = buildZoompanExpression('SlowZoomIn', 15);
-      const expectedInc15s = (1.10 - 1.0) / (15 * 30); // 0.10 / 450 = 0.0002222...
-      assert.ok(expr15s?.includes(`zoom+${expectedInc15s}`));
-      assert.ok(expr15s?.includes(`d=${15 * 30}`));
+      const totalFrames = 15 * 30; // 450
+      const frameDenom = totalFrames - 1; // 449
+      assert.ok(expr15s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
+      assert.ok(expr15s?.includes(`d=${totalFrames}`));
       assert.ok(expr15s?.includes(`fps=30`));
     });
 
-    it('should calculate zoom increment inversely proportional to frame count for 30s clip', () => {
+    it('should generate closed-form smoothstep zoom expression for 30s clip', () => {
       const expr30s = buildZoompanExpression('SlowZoomIn', 30);
-      const expectedInc30s = (1.10 - 1.0) / (30 * 30); // 0.10 / 900 = 0.0001111...
-      assert.ok(expr30s?.includes(`zoom+${expectedInc30s}`));
-      assert.ok(expr30s?.includes(`d=${30 * 30}`));
+      const totalFrames = 30 * 30; // 900
+      const frameDenom = totalFrames - 1; // 899
+      assert.ok(expr30s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
+      assert.ok(expr30s?.includes(`d=${totalFrames}`));
       assert.ok(expr30s?.includes(`fps=30`));
     });
   });

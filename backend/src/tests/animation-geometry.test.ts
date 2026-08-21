@@ -31,8 +31,8 @@ async function extractFrameRGB(mp4Path: string, timestampSeconds: number): Promi
   try {
     const args = [
       '-y',
-      '-ss', timestampSeconds.toString(),
       '-i', mp4Path,
+      '-ss', timestampSeconds.toFixed(3),
       '-vframes', '1',
       tempBmp,
     ];
