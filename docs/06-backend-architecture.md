@@ -13,21 +13,21 @@
 ```
 src/
   controllers/        # HTTP only — parse request, call one Service method, shape response. No business logic.
-  services/            # All business logic. The only layer allowed to coordinate multiple repositories/providers.
-  repositories/        # Database access only. Every Prisma import lives here and nowhere else.
-  workers/             # BullMQ processors. One file per queue (content-pipeline.worker.ts, cleanup.worker.ts, ...).
+  services/           # All business logic & orchestration (content-pipeline, video, animation-easing, background-geometry, etc.).
+  repositories/       # Database access only. Every Prisma import lives here and nowhere else.
+  workers/            # BullMQ processors. One file per queue (content-pipeline.worker.ts, cleanup.worker.ts, ...).
   providers/
-    ai/                # AIProviderAdapter interface + GeminiAdapter
-    publishing/        # PublishingAdapter interface + YouTubeAdapter, InstagramAdapter
-    storage/           # StorageProvider interface + LocalDiskStorageProvider
-  templates/           # React rendering templates (versioned per Template/TemplateVersion, 05-database-design.md 3.4)
-  utils/               # Pure functions only — normalization, hashing, date math. No DB, no network, no state.
-  middleware/           # auth, error handler, rate limiter, request validation (Zod)
-  events/               # EventBus (in-process) + Valkey (Redis protocol compatible) Pub/Sub bridge (04-system-architecture.md, Section 3)
-  config/               # env loading, SystemConfiguration cache, FeatureFlag cache
-  jobs/                 # BullMQ queue definitions (one per Job Type) — distinct from workers/: this is "how to enqueue," workers/ is "how to process"
-  api.ts                # Express app entrypoint (api container)
-  worker.ts             # Worker entrypoint (worker container)
+    ai/               # AIProviderAdapter interface + GeminiAdapter
+    publishing/       # PublishingAdapter interface + YouTubeAdapter, InstagramAdapter, FacebookAdapter
+    storage/          # StorageProvider interface + LocalDiskStorageProvider, CloudinaryStorageProvider
+  templates/          # React rendering templates (versioned per Template/TemplateVersion, 05-database-design.md 3.4)
+  utils/              # Pure functions only — normalization, hashing, date math. No DB, no network, no state.
+  middleware/         # auth, error handler, rate limiter, request validation (Zod)
+  events/             # EventBus (in-process) + Valkey (Redis protocol compatible) Pub/Sub bridge (04-system-architecture.md, Section 3)
+  config/             # env loading, SystemConfiguration cache, FeatureFlag cache
+  jobs/               # BullMQ queue definitions (one per Job Type) — distinct from workers/: this is "how to enqueue," workers/ is "how to process"
+  api.ts              # Express app entrypoint (api container)
+  worker.ts           # Worker entrypoint (worker container)
 ```
 
 This maps directly onto `PROJECT_DECISIONS.md` Section 25's Module Ownership table — the folder boundary *is* the enforcement mechanism. A lint rule (`no-restricted-imports`) blocks `services/**` from importing anything under `../repositories/**`'s Prisma client directly except through a Repository's exported functions, and blocks `controllers/**` from importing `services/**/*.repository.ts` at all. This is cheap to set up and catches the single most common violation (a controller reaching into the DB "just this once") at CI time instead of at code review time.
@@ -89,6 +89,8 @@ interface StorageProvider {
 
 `StructuredAIResponse` is a Zod schema, not a loosely-typed object — `03-technical-requirements.md`'s decision to enforce `PROJECT_DECISIONS.md` Section 5.1's JSON-in/JSON-out contract happens exactly here, at the boundary of `GeminiAdapter.generate()`. If Gemini returns something that fails the schema, `GeminiAdapter` throws a typed `AIResponseSchemaError` — the Content Pipeline Service catches it and records it as a `Generating Content` stage failure (Reason: schema validation failed), never as a silent retry-with-different-parsing-logic.
 
+All OAuth 2.0 token exchanges and refreshes across publishing adapters must transmit parameters via URL-encoded request body (`application/x-www-form-urlencoded` via `URLSearchParams`) per `PROJECT_DECISIONS.md` Section 15.1, preventing credential leakage in query strings and 400 Bad Request provider rejections.
+
 Adding a second AI Provider or Publishing platform later means adding one new file implementing one of these three interfaces and registering it at startup — no change to any Service, Controller, or Worker.
 
 ---
@@ -118,7 +120,7 @@ Environment variables (`03-technical-requirements.md`, Section 5) are loaded onc
 
 ## 6. Error Handling Conventions
 
-- A small hierarchy of typed errors: `ValidationError`, `NotFoundError`, `ConflictError` (e.g., disabling an Asset still referenced by an active Content Profile), `ExternalProviderError` (wraps any AI/publishing/storage failure with the Provider's raw error attached for logging, never exposed to the client).
+- A small hierarchy of typed errors: `ValidationError`, `NotFoundError`, `ConflictError` (e.g., disabling an Asset referenced by an active Content Profile, or deleting a Platform Connection with associated `PublishingRecord` audit rows per `PROJECT_DECISIONS.md` Section 15.2), `ExternalProviderError` (wraps any AI/publishing/storage failure with the Provider's raw error attached for logging, never exposed to the client).
 - Services throw these; the Controller layer's centralized error-mapping middleware converts each type to the appropriate HTTP status (400/404/409/502) — this mapping table lives in exactly one place (`middleware/error-handler.ts`), so a Controller never hand-writes `res.status(400)` itself.
 - Inside a Worker, the same typed errors are caught by the Service's own stage-loop (`04-system-architecture.md`, Section 2.1) and turned into the Job's `failureStage`/`failureReason` columns — the identical error taxonomy serves both the HTTP path and the Job pipeline, so there is one way errors are described across the whole backend, not two.
 

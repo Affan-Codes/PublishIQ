@@ -135,10 +135,17 @@ Each Channel's Schedule (`PROJECT_DECISIONS.md` Section 17) is a BullMQ **repeat
 | Provider interface | v1 implementation(s) | Notes |
 |---|---|---|
 | `AIProviderAdapter` | `GeminiAdapter` | Returns structured JSON validated against a Zod schema (`PROJECT_DECISIONS.md` Section 5.1); on schema-validation failure, treated as a Generating Content stage failure, not silently retried with a different parse strategy. |
-| `PublishingAdapter` | `YouTubeAdapter`, `InstagramAdapter` (added as demand justifies — `01-vision-and-scope.md` Section 14) | Each adapter owns its own Platform Limits (`PROJECT_DECISIONS.md` Section 22); the Publishing stage in the pipeline calls `adapter.publish(content)` and never branches on platform name itself. |
-| `StorageProvider` | `LocalDiskStorageProvider` | Behind the same interface from day one so R2/S3 (`PROJECT_DECISIONS.md` Section 27) is a second implementation later, not a rewrite. |
+| `PublishingAdapter` | `YouTubeAdapter`, `InstagramAdapter`, `FacebookAdapter` | Each adapter owns its own Platform Limits (`PROJECT_DECISIONS.md` Section 22); the Publishing stage in the pipeline calls `adapter.publish(content)` and never branches on platform name itself. All OAuth token refresh operations conform to RFC 6749 URL-encoded body standard (`PROJECT_DECISIONS.md` Section 15.1). |
+| `StorageProvider` | `LocalDiskStorageProvider`, `CloudinaryStorageProvider` | Cloudinary and local disk sit behind the same storage interface, ensuring transparent asset URL resolution and retrieval. |
 
-All three interfaces live in the Providers layer (Section 25 Module Ownership) and are the **only** code permitted to make an external network call to Gemini, a social platform, or the filesystem.
+All provider interfaces live in the Providers layer (Section 25 Module Ownership) and are the **only** code permitted to make an external network call to Gemini, social platform APIs, Cloudinary, or the local filesystem.
+
+### 5.1 Animation Engine & Layered Filter Graph Topology
+The media generation pipeline constructs a layered FFmpeg filter graph executing at 60 FPS (`PROJECT_DECISIONS.md` Section 7.2):
+- **Background Stream (Input 0):** Scaled original asset plate animated via either `zoompan` (SlowZoomIn/Out with unlooped single-frame demuxer) or `crop` (PanLeft/Right/Up/Down with `-framerate 60` looped demuxer) utilizing closed-form Hermite smoothstep easing $S(t) = t^2(3-2t)$.
+- **Foreground Stream (Input 1):** Transparent 1080x1920 PNG plate rendered by Playwright containing typography, scrim overlay, branding, and watermark.
+- **Audio Stream (Input 2):** Selected background music track trimmed with `-shortest`.
+- **Composition Graph:** `[0:v] scale=... [bg]; [1:v] scale=1080:1920 [fg]; [bg][fg] overlay=0:0:format=auto, format=yuv420p [outv]`.
 
 ---
 

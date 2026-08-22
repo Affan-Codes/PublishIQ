@@ -20,10 +20,10 @@ const execFilePromise = util.promisify(execFile);
 const ffmpegPath = ffmpegInstaller.path;
 
 /**
- * Authoritative Render Frame Rate (MQA-10)
+ * Authoritative Render Frame Rate (MQA-10, AEN-01a)
  * Standardized single constant threaded into every frame-rate dependent calculation.
  */
-export const RENDER_FPS = 30;
+export const RENDER_FPS = 60;
 
 export type AnimationPreset =
   | 'None'

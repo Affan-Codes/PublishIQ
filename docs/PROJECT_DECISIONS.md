@@ -1,8 +1,8 @@
 # PROJECT_DECISIONS.md
 
 **Status:** FROZEN — FINAL
-**Version:** 2.4
-**Last revised:** 2026-08-16
+**Version:** 2.5
+**Last revised:** 2026-08-22
 
 This document is the constitution of the project. Every future document, diagram, schema, and line of code must conform to the decisions recorded here. No future document may contradict this file. Any change to a decision listed here requires explicit, written approval from the project owner before it takes effect — no exceptions, no silent drift.
 
@@ -17,6 +17,7 @@ This document is the constitution of the project. Every future document, diagram
 - **v2.2 (final)** — Consistency audit ahead of documentation generation surfaced two defects in v2.1: (1) Section 18 listed "Generate Content," "Generate Image," "Generate Video," and "Publish" as four independent Job Types while simultaneously describing Section 19's state machine as belonging to one single, unnamed job — an internal contradiction, since four independently-queued jobs cannot also be the discrete internal states of one job's lifecycle; (2) Section 18's narrative text miscounted Section 19's state diagram as having 12 states when it has 13. Both corrected. **Decision (approved by project owner): Option C.** The system uses a single BullMQ Job Type, the **Content Pipeline Job**, which progresses through the 13 internal stages defined in Section 19. Generate Content / Generate Image / Generate Video / Publish are internal pipeline stages, not independent Job Types. Cleanup, Archive, Retry Publish remain independent Job Types; **Token Refresh** and **Health Check** are added as new independent Job Types. Documentation generation order reconfirmed unchanged: `docs/00-glossary.md` remains the first documentation file, per Section 35, generated before `01-vision-and-scope.md` and every other document. Final consistency audit performed post-correction — no remaining contradictions, duplicate concepts, or terminology drift found.
 - **v2.3 (audit remediation)** — Resolved pipeline state count discrepancies: updated Section 19's state machine to 14 states (incorporating the `Running` state and clean names matching code) and removed dead stages (`GeneratingImage`, `GeneratingVideo`, `SelectingMusic`, `Published`) from the database schema. Documented single hardcoded React layout as the primary v1 rendering path (Section 7.1/13.1), utilizing `TemplateVersion` tracking for future extensibility. Formally approved multi-user roles (`Owner`, `Administrator`, `User`) and authorization middleware scope adjustments (Section 1). Registered Facebook Page publishing as a fully integrated platform connection channel (Section 24). Registered Node.js native test runner (`node:test`) and `tsx` execution as the validated tech stack choice (Section 31).
 - **v2.4 (Prompt, Asset & AI Music Selection Remediation)** — Formally approved dual-phase music selection architecture (Section 9.1): sanitized eligible catalog injection during content generation, optional AI asset selection via `selectedMusicAssetId`, authoritative backend candidate validation, and persistent round-robin ring rotation (`MusicSelectionState`) as the deterministic fallback. Formally recorded Content Profile behavioral configuration snapshotting into `Job.configSnapshot` at creation time (Section 11). Formally added `musicCatalog` to the reserved system prompt variables (Section 12).
+- **v2.5 (Animation Engine Architecture, OAuth Protocol & Connection Safety Remediation)** — Formally approved 60 FPS authoritative rendering standard (`RENDER_FPS = 60`) threaded through all video generation, filter calculations, and test suites (Section 7.2). Formally recorded 7 animation presets (`None`, `SlowZoomIn`, `SlowZoomOut`, `PanLeft`, `PanRight`, `PanUp`, `PanDown`) with duration-independent closed-form cubic Hermite smoothstep easing $S(t) = t^2(3-2t)$ across zoom and pan motions (Section 7.2). Formally mandated explicit input-side demuxer framerate (`-framerate 60`) on looped image streams for pan and none presets while keeping zoom single-input unlooped (Section 7.2). Formally mandated RFC 6749 compliant URL-encoded request body transmission (`application/x-www-form-urlencoded`) for OAuth 2.0 token exchanges and refreshes across all publishing adapters (Section 15.1). Formally mandated transactional referential integrity enforcement on Platform Connection deletion: join entries are cleaned safely, and typed `ConflictError` (HTTP 409) is thrown if immutable `PublishingRecord` audit rows exist (Section 15.2).
 
 ---
 
@@ -130,6 +131,16 @@ Final Video
 
 React templates are chosen over manual SVG/Sharp text rendering because browser engines correctly handle RTL and complex-script shaping (Urdu Nastaliq, Hindi Devanagari) out of the box. Render concurrency remains bounded (v1 target: 1–2 concurrent render jobs; exact value lives in System Configuration).
 
+### 7.2 Animation Engine Architecture, Presets & Motion Curves — FROZEN (v2.5)
+
+- **Authoritative Render Frame Rate:** The system standardizes on `RENDER_FPS = 60` across all FFmpeg invocations (`-r 60`), zoom filter parameters (`fps=60`, `d=duration*60`), pan-crop frame denominators (`frameDenom = duration*60 - 1`), input demuxers, and automated motion test suites.
+- **Animation Presets:** Exactly seven standard background motion presets are supported: `None` (static cover-fit crop), `SlowZoomIn` (1.0x to 1.10x push), `SlowZoomOut` (1.10x to 1.0x pull-back), `PanLeft` (right-to-left sweep), `PanRight` (left-to-right sweep), `PanUp` (bottom-to-top sweep), and `PanDown` (top-to-bottom sweep). No additional presets (Ken Burns, 3D, particles) are in scope for v1.
+- **Closed-Form Hermite Smoothstep Easing:** All zoom and pan motion curves utilize the normalized cubic Hermite polynomial:
+  $$S(t) = t^2 (3 - 2t) \quad \text{where } t = \frac{\text{frame}}{\text{totalFrames} - 1}$$
+  Rendered in FFmpeg expression syntax as `((var/denom)*(var/denom)*(3-2*(var/denom)))` (`on` for zoompan, `n` for crop). Linear stepping is strictly prohibited, aligning production output with the frontend CSS preview (`ease-in-out`).
+- **Demuxer Frame-Rate Alignment:** Looped image inputs for pan presets and `None` must explicitly specify `-framerate 60` before `-i` to prevent FFmpeg's `image2` demuxer from defaulting to 25fps (which caused 25→60 frame drops/duplication and truncated pan travel to 41.7%). Zoom presets (`SlowZoomIn`, `SlowZoomOut`) strictly preserve unlooped single-frame input (`-i`) without `-framerate` or `-loop`, allowing `zoompan`'s internal engine to control frame expansion without conflict.
+- **Layered Video Composition:** Background animations are scaled, cropped/zoomed, and composited under a transparent foreground HTML/CSS typography plate (containing quote text, scrim gradient, branding, and watermark) in a single layered filter graph (`overlay=0:0:format=auto, format=yuv420p`) encoded with `-c:v libx264 -crf 18 -preset slow -r 60 -c:a aac -b:a 192k -shortest`.
+
 ---
 
 ## 8. Languages
@@ -236,6 +247,14 @@ Channels remain fully independent of one another, even when sharing a Content Pr
 A Platform Connection stores: Platform, Access Token, Refresh Token, Expiry, Permissions/scopes, Health Status, and **Owner (Workspace)** — standardized terminology, see Section 26.
 
 Channels reference one or more Platform Connections; they do not own authentication state directly.
+
+### 15.1 OAuth 2.0 Protocol Compliance — FROZEN (v2.5)
+- All OAuth 2.0 token exchanges (`authorization_code`) and automated/manual token refreshes (`refresh_token`) across all platform adapters (YouTube, Instagram, Facebook) must transmit parameters as URL-encoded key-value pairs in the HTTP request body (`application/x-www-form-urlencoded` via `URLSearchParams`) per RFC 6749 Section 4.1.3 & 6.
+- Passing OAuth token exchange parameters via URL query parameters is strictly prohibited to prevent credential leakage in HTTP logs and avoid provider 400 Bad Request rejections.
+
+### 15.2 Referential Integrity & Deletion Safety — FROZEN (v2.5)
+- Deleting a Platform Connection must execute inside a database transaction that first cleans up associated join records (`ChannelPlatformConnection`).
+- If immutable historical audit records (`PublishingRecord`) reference the Platform Connection, the database foreign-key RESTRICT constraint is respected and the repository must throw a typed `ConflictError` (HTTP 409) rather than crashing or cascading deletion across audit history.
 
 ---
 

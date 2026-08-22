@@ -1,6 +1,6 @@
 import test, { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildZoompanExpression, buildFFmpegArgs, AnimationPreset } from '../services/video.service.js';
+import { buildZoompanExpression, buildFFmpegArgs, AnimationPreset, RENDER_FPS } from '../services/video.service.js';
 import { renderDefaultQuoteTemplate } from '../templates/DefaultQuoteTemplate.js';
 import { RenderingConfigurationSchema } from '../schemas/content-profile.schema.js';
 import { LANGUAGE_SCRIPT_INSTRUCTIONS, geminiResponseSchema } from '../providers/ai/gemini.provider.js';
@@ -61,32 +61,32 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
     });
   });
 
-  describe('AQL-03: Duration-Independent Dynamic Zoom Timing (RENDER_FPS = 30, AEN-03 Smoothstep)', () => {
+  describe('AQL-03: Duration-Independent Dynamic Zoom Timing (RENDER_FPS = 60, AEN-03 Smoothstep)', () => {
     it('should generate closed-form smoothstep zoom expression for 5s clip', () => {
       const expr5s = buildZoompanExpression('SlowZoomIn', 5);
-      const totalFrames = 5 * 30; // 150
-      const frameDenom = totalFrames - 1; // 149
+      const totalFrames = 5 * RENDER_FPS;
+      const frameDenom = totalFrames - 1;
       assert.ok(expr5s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
       assert.ok(expr5s?.includes(`d=${totalFrames}`));
-      assert.ok(expr5s?.includes(`fps=30`));
+      assert.ok(expr5s?.includes(`fps=${RENDER_FPS}`));
     });
 
     it('should generate closed-form smoothstep zoom expression for 15s clip', () => {
       const expr15s = buildZoompanExpression('SlowZoomIn', 15);
-      const totalFrames = 15 * 30; // 450
-      const frameDenom = totalFrames - 1; // 449
+      const totalFrames = 15 * RENDER_FPS;
+      const frameDenom = totalFrames - 1;
       assert.ok(expr15s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
       assert.ok(expr15s?.includes(`d=${totalFrames}`));
-      assert.ok(expr15s?.includes(`fps=30`));
+      assert.ok(expr15s?.includes(`fps=${RENDER_FPS}`));
     });
 
     it('should generate closed-form smoothstep zoom expression for 30s clip', () => {
       const expr30s = buildZoompanExpression('SlowZoomIn', 30);
-      const totalFrames = 30 * 30; // 900
-      const frameDenom = totalFrames - 1; // 899
+      const totalFrames = 30 * RENDER_FPS;
+      const frameDenom = totalFrames - 1;
       assert.ok(expr30s?.includes(`z='1.0+(1.1-1.0)*((on/${frameDenom})*(on/${frameDenom})*(3-2*(on/${frameDenom})))'`));
       assert.ok(expr30s?.includes(`d=${totalFrames}`));
-      assert.ok(expr30s?.includes(`fps=30`));
+      assert.ok(expr30s?.includes(`fps=${RENDER_FPS}`));
     });
   });
 
@@ -123,13 +123,13 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
     it('should generate valid bounded zoompan expression for SlowZoomIn and SlowZoomOut', () => {
       const zoomIn = buildZoompanExpression('SlowZoomIn', 15);
       assert.ok(zoomIn !== null);
-      assert.ok(zoomIn.includes('s=1080x1920:fps=30'));
-      assert.ok(zoomIn.includes('d=450'));
+      assert.ok(zoomIn.includes(`s=1080x1920:fps=${RENDER_FPS}`));
+      assert.ok(zoomIn.includes(`d=${15 * RENDER_FPS}`));
 
       const zoomOut = buildZoompanExpression('SlowZoomOut', 15);
       assert.ok(zoomOut !== null);
-      assert.ok(zoomOut.includes('s=1080x1920:fps=30'));
-      assert.ok(zoomOut.includes('d=450'));
+      assert.ok(zoomOut.includes(`s=1080x1920:fps=${RENDER_FPS}`));
+      assert.ok(zoomOut.includes(`d=${15 * RENDER_FPS}`));
     });
 
     it('should return null zoompan expression for None and Pan presets (which use plain crop)', () => {

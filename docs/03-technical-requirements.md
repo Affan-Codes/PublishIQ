@@ -25,14 +25,14 @@ This document also has a second job the PRD explicitly deferred to it: **resolvi
 | ORM / DB access | **Prisma** | Type-safe queries, first-class migrations, and it enforces the Repository boundary (Section 25) naturally — Prisma Client is only ever imported inside Repository files. |
 | Database | **PostgreSQL** | Relational integrity matters here (Channels→Profiles→Prompts/Templates reference graph, Section 26 of `PROJECT_DECISIONS.md`); JSONB columns cover the few genuinely semi-structured fields (stage history, hashtags) without going full-NoSQL. |
 | Queue / scheduling | **BullMQ on Valkey (Redis protocol compatible)** | Frozen, `PROJECT_DECISIONS.md` Section 17. Not re-decided here. |
-| Rendering | **Playwright (headless Chromium) → PNG → FFmpeg → video** | Frozen, `PROJECT_DECISIONS.md` Section 7.1. Not re-decided here. |
+| Rendering | **Playwright (headless Chromium) → PNG → FFmpeg (60 FPS, smoothstep easing, layered composition) → video** | Frozen, `PROJECT_DECISIONS.md` Section 7.1 & 7.2. 60 FPS standard, 7 animation presets, closed-form cubic Hermite smoothstep easing, input-side demuxer pacing (`-framerate 60`), and layered composition (`-crf 18 -preset slow`). |
 | Frontend | **React + TypeScript, Vite** | React is already mandatory for the rendering Templates (Section 7.1); reusing it for the Dashboard avoids a second frontend paradigm. Vite over CRA/webpack for build speed and near-zero config, consistent with DX priority. |
 | Validation | **Zod** | Runtime schema validation at every controller boundary and for AI Provider structured-JSON responses (Section 5.1 of `PROJECT_DECISIONS.md`) — one library for both jobs, no duplicated validation logic. |
 | Logging | **Pino** | Structured JSON logs, low overhead, standard choice for Node services; feeds the Logs Dashboard Module (Section 30). |
 | Containerization | **Docker Compose only** | Frozen, `PROJECT_DECISIONS.md` Section 28. Not re-decided here. |
-| Auth (v1) | **Session-based, single operator, password + hashed credential (bcrypt), HTTP-only cookie session** | v1 has exactly one operator (`01-vision-and-scope.md` Section 6). A full JWT/refresh-token/RBAC system is complexity with no current beneficiary — session auth is simpler, sufficient, and trivially replaceable when multi-user (Future Vision, Section 14) is actually built. |
+| Auth (v1) | **JWT-based, password + hashed credential (bcrypt), HTTP-only cookie session, multi-role RBAC (Owner, Administrator, User)** | Validated in v2.3 (`PROJECT_DECISIONS.md` Section 1). Multi-role access control scoped to Workspace. |
 | API style | **REST, `/api/v1/...`** | Frozen, `PROJECT_DECISIONS.md` Section 29. |
-| Testing | **Vitest** (unit + integration), **Supertest** (HTTP layer) | Matches Section 32's unit/integration split; Vitest chosen over Jest for TS-native speed, no material behavior difference otherwise. |
+| Testing | **Node.js native test runner (`node:test`) + `tsx`** | Validated in v2.3 (`PROJECT_DECISIONS.md` Section 31). High performance, zero extra runner dependencies, full native ESM and TypeScript support for unit, integration, and motion quality test suites. |
 
 **Explicitly rejected, and why (so a later document doesn't quietly reintroduce these):**
 - **GraphQL** — no requirement anywhere calls for client-driven query shaping; REST is simpler and sufficient.
@@ -46,6 +46,7 @@ This document also has a second job the PRD explicitly deferred to it: **resolvi
 
 ### 3.1 Performance
 - Render concurrency: 1–2 concurrent render jobs (`PROJECT_DECISIONS.md` Section 7.1), value lives in System Configuration (Section 21). This document does not raise or lower that number.
+- Authoritative render frame rate: 60 FPS across all video rendering (`PROJECT_DECISIONS.md` Section 7.2).
 - Dashboard list views (Jobs, Queue, Publishing History) must paginate server-side once row counts exceed ~200 — no unbounded client-side table loads.
 - Global Search (FR-NAV-04) must return results within a few seconds even against the Logs area; if a naive `LIKE` query against the Log table cannot hold that bar at realistic log volume, a Postgres `tsvector` full-text index is the escalation path — not a new search service.
 
@@ -53,9 +54,11 @@ This document also has a second job the PRD explicitly deferred to it: **resolvi
 - Every BullMQ queue is configured with exponential backoff and a bounded max-attempts value sourced from System Configuration (Retry Limits, `PROJECT_DECISIONS.md` Section 21) — never an unbounded retry loop.
 - Domain Events (`PROJECT_DECISIONS.md` Section 23) are written inside the same database transaction as the state change that produced them, so an event is never lost to a mid-write crash and never fires for a state change that didn't actually commit.
 - Docker Compose services restart on failure (`restart: unless-stopped`); Postgres and Valkey (Redis protocol compatible) data are on named volumes so a container recreate never loses state.
+- Platform Connection deletion enforces referential integrity: join rows are safely detached and deletions are restricted if historical `PublishingRecord` audit entries exist (`PROJECT_DECISIONS.md` Section 15.2).
 
 ### 3.3 Security
 - Secrets (DB credentials, Valkey URL, AI Provider API key, OAuth client secrets for Publishing Adapters) live in environment variables injected via Docker Compose `.env`, never committed, never returned by any API response.
+- OAuth 2.0 token exchanges and refreshes must transmit client secrets and tokens in URL-encoded POST request bodies (`application/x-www-form-urlencoded`) per RFC 6749, never as query parameters in URLs (`PROJECT_DECISIONS.md` Section 15.1).
 - Platform Connection Access/Refresh Tokens (`PROJECT_DECISIONS.md` Section 15) are encrypted at rest (application-level AES-GCM, key from environment, not the DB) — the Health-Status/expiry fields the dashboard shows (FR-CHN-03) are plaintext metadata, the tokens themselves never are.
 - All inbound HTTP traffic goes through `helmet` (standard header hardening) and CORS restricted to the Dashboard's own origin — no public open CORS policy, since this is a single-operator system with no legitimate third-party browser client.
 - Rate limiting on the API (basic IP-based) is a cheap, standard safeguard against credential-stuffing on the single login endpoint — not a scalability feature.

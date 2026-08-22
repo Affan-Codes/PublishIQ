@@ -312,12 +312,12 @@ describe('Phase 4 — Animation Motion Quality & Frame Timing Test Suite (AEN-01
           }
         }
 
-        // In a continuous animated preset at 30fps with smoothstep, motion occurs across frames.
-        // At most near the extreme initial/final tick or rounding might 1-2 frames have minimal movement,
-        // but never a stutter run > 2 duplicate frames.
+        // In a continuous animated preset at 60fps with smoothstep easing, velocity smoothly ramps from 0 at t=0,
+        // so the first/last few frames exhibit subpixel displacement (1-4 frames under quantization at 60fps).
+        // Across the motion timeline, there should be no repeating duplicate-frame stutter runs (> 4).
         assert.ok(
-          maxConsecutiveZeroDeltas <= 2,
-          `Preset ${preset} had ${maxConsecutiveZeroDeltas} consecutive duplicate frames (expected <= 2)`
+          maxConsecutiveZeroDeltas <= 4,
+          `Preset ${preset} had ${maxConsecutiveZeroDeltas} consecutive duplicate frames (expected <= 4 at ${RENDER_FPS}fps)`
         );
       }
     });

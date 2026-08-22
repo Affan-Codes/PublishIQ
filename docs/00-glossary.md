@@ -113,6 +113,26 @@ A database record keyed by `(workspaceId, mood, genre)` tracking the last-select
 An immutable JSON snapshot captured on the `Job` record at creation time containing all eleven behavioral `ContentProfile` configuration fields and pinned version IDs, ensuring that subsequent profile edits never alter in-flight or historical pipeline job executions.
 *Defined in: PROJECT_DECISIONS.md, Section 11.*
 
+### Animation Preset
+One of the seven standard background motion presets supported by the video rendering pipeline: `None` (static cover-fit crop), `SlowZoomIn` (1.0x to 1.10x push), `SlowZoomOut` (1.10x to 1.0x pull-back), `PanLeft` (right-to-left horizontal sweep), `PanRight` (left-to-right horizontal sweep), `PanUp` (bottom-to-top vertical sweep), and `PanDown` (top-to-bottom vertical sweep).
+*Defined in: PROJECT_DECISIONS.md, Section 7.2.*
+
+### Authoritative Render Frame Rate (RENDER_FPS)
+The standardized constant of 60 frames per second (`RENDER_FPS = 60`) threaded into all FFmpeg rendering commands (`-r 60`), zoompan filter parameters (`fps=60`, `d=duration*60`), pan-crop frame denominators (`frameDenom = duration*60 - 1`), input demuxers, and automated motion test suites.
+*Defined in: PROJECT_DECISIONS.md, Section 7.2.*
+
+### Smoothstep Easing
+The normalized cubic Hermite polynomial $S(t) = t^2 (3 - 2t)$ generated in FFmpeg expressions (`((var/denom)*(var/denom)*(3-2*(var/denom)))`) to provide smooth ease-in-out acceleration and deceleration across all zoom and pan video animations, matching the frontend CSS preview.
+*Defined in: PROJECT_DECISIONS.md, Section 7.2.*
+
+### Layered Video Composition
+The two-input FFmpeg pipeline compositing dynamic background animation (overscan scaling + pan/crop or cover-fit + zoompan) under a transparent foreground HTML/CSS typography plate (containing quote text, scrim gradient, branding, and watermark) in a single layered filter graph (`overlay=0:0:format=auto, format=yuv420p`).
+*Defined in: PROJECT_DECISIONS.md, Section 7.2.*
+
+### OAuth 2.0 URL-Encoded Body Standard
+The RFC 6749 compliant token request standard requiring authorization code exchanges and token refreshes across all publishing adapters to transmit credentials as URL-encoded parameters in the HTTP request body (`application/x-www-form-urlencoded`) rather than query parameters.
+*Defined in: PROJECT_DECISIONS.md, Section 15.1.*
+
 ### Storage Provider
 The abstraction layer behind which the platform's file storage backend sits. Local disk is the only implemented Storage Provider in v1; migration to Cloudflare R2 or S3 requires only a new provider behind the existing interface, no application-level rewrite. Storage Provider selection is a System Configuration value.
 *Defined in: PROJECT_DECISIONS.md, Section 21, Section 27.*
