@@ -8,7 +8,12 @@ export function createContentProfileSnapshot(
   profile: Partial<ContentProfile> & { promptVersionId: string; templateVersionId: string },
   extra?: Record<string, any>
 ): Record<string, any> {
-  return {
+  const templateDefinition =
+    (profile as any).templateVersion?.definition !== undefined
+      ? (profile as any).templateVersion?.definition
+      : extra?.templateDefinition;
+
+  const snapshot: Record<string, any> = {
     promptVersionId: profile.promptVersionId,
     templateVersionId: profile.templateVersionId,
     language: profile.language,
@@ -25,4 +30,10 @@ export function createContentProfileSnapshot(
     validationRules: profile.validationRules ?? {},
     ...extra,
   };
+
+  if (templateDefinition !== undefined) {
+    snapshot.templateDefinition = templateDefinition;
+  }
+
+  return snapshot;
 }

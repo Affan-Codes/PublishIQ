@@ -1,4 +1,4 @@
-import { ContentTypeStatus, Role } from '@prisma/client';
+import { ContentTypeStatus, Role, TemplateCategory } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { env } from '../src/config/env.js';
 import { prisma } from '../src/database/db.js';
@@ -199,6 +199,83 @@ Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON stri
       templateId: defaultTemplate.id,
       versionNumber: 1,
       componentPath: 'DefaultQuoteTemplate',
+      category: TemplateCategory.MinimalQuote,
+      definition: {
+        category: 'MinimalQuote',
+        layout: {
+          contentAlign: 'center',
+          verticalAnchor: 'center',
+          maxContentWidthPx: 880,
+          blockGapPx: 48,
+        },
+        typography: {
+          heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
+          body: { sizePx: 48, weight: 400, lineHeight: 1.6 },
+          code: { sizePx: 38, lineHeight: 1.5 },
+          caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+        },
+        colors: {
+          background: '#0A0A0C',
+          primary: '#FFFFFF',
+          secondary: '#E2E8F0',
+          accent: '#FFFFFF',
+          muted: '#718096',
+          error: '#E53E3E',
+        },
+        emphasisRules: {
+          primary: { colorToken: 'primary', weight: 700, textTransform: 'uppercase' },
+          secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+          normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+          muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+        },
+        contentMapping: {
+          heading: { typography: 'heading' },
+          body_default: { typography: 'body' },
+          body_label: { typography: 'body', forceEmphasis: 'primary' },
+          body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+          code_default: { typography: 'code' },
+          code_command: { typography: 'code', forceEmphasis: 'normal' },
+          body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+          list_item_default: { typography: 'body' },
+        },
+        decorations: {
+          divider: 'none',
+          codeIcon: false,
+          terminalPrompt: false,
+          heart: false,
+          cornerMark: false,
+        },
+        backgroundTreatment: {
+          mode: 'solid',
+        },
+        branding: {
+          typography: 'caption',
+          sizeScalePct: 100,
+          opacityCeiling: 1.0,
+        },
+        watermark: {
+          typography: 'caption',
+          sizeScalePct: 100,
+          opacityCeiling: 0.65,
+        },
+      },
+      sampleContent: {
+        blocks: [
+          {
+            type: 'heading',
+            runs: [
+              { text: 'She was my ' },
+              { text: 'UPDATE', emphasis: 'primary' },
+              { text: ', but I was just her temporary commit.' },
+            ],
+          },
+          {
+            type: 'body',
+            role: 'attribution',
+            runs: [{ text: '@codedropout // Follow for more', emphasis: 'muted' }],
+          },
+        ],
+      },
       status: 'Active',
       notes: 'Initial version',
     }

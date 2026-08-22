@@ -104,20 +104,109 @@ test('CFG-08, CFG-11 & CFG-16: Prompt Testing, Concurrency & Template Component 
     }
   });
 
-  await t.test('CFG-16: getTemplateRenderer resolves valid componentPath and falls back cleanly', () => {
-    const defaultRenderer = getTemplateRenderer('DefaultQuoteTemplate');
-    assert.strictEqual(typeof defaultRenderer, 'function');
+  await t.test('CFG-16: getTemplateRenderer differentiates definition-driven template from legacy and produces distinct HTML output', () => {
+    const legacyVersion = {
+      componentPath: 'DefaultQuoteTemplate',
+      definition: null,
+    };
 
-    const fallbackRenderer = getTemplateRenderer('NonExistentCustomTemplate');
-    assert.strictEqual(typeof fallbackRenderer, 'function');
+    const definitionVersion = {
+      componentPath: null,
+      definition: {
+        category: 'Terminal',
+        layout: {
+          contentAlign: 'left',
+          verticalAnchor: 'top',
+          maxContentWidthPx: 920,
+          blockGapPx: 28,
+        },
+        typography: {
+          heading: { sizePx: 52, weight: 700, lineHeight: 1.4 },
+          body: { sizePx: 38, weight: 400, lineHeight: 1.6 },
+          code: { sizePx: 42, lineHeight: 1.5 },
+          caption: { sizePx: 26, weight: 400, lineHeight: 1.4 },
+        },
+        colors: {
+          background: '#0D1117',
+          primary: '#58A6FF',
+          secondary: '#8B949E',
+          accent: '#7EE787',
+          muted: '#484F58',
+          error: '#FF7B72',
+        },
+        emphasisRules: {
+          primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
+          secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+          normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+          muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+        },
+        contentMapping: {
+          heading: { typography: 'heading' },
+          body_default: { typography: 'body' },
+          body_label: { typography: 'body', forceEmphasis: 'primary' },
+          body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+          code_default: { typography: 'code' },
+          code_command: { typography: 'code', forceEmphasis: 'normal' },
+          body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+          list_item_default: { typography: 'body' },
+        },
+        decorations: {
+          divider: 'none',
+          codeIcon: false,
+          terminalPrompt: true,
+          heart: false,
+          cornerMark: true,
+        },
+        backgroundTreatment: {
+          mode: 'solid',
+        },
+        branding: {
+          typography: 'caption',
+          sizeScalePct: 90,
+          opacityCeiling: 0.8,
+        },
+        watermark: {
+          typography: 'caption',
+          sizeScalePct: 90,
+          opacityCeiling: 0.6,
+        },
+      },
+    };
 
-    const rendered = fallbackRenderer({
-      text: 'Test Quote Text',
+    const legacyRenderer = getTemplateRenderer(legacyVersion);
+    assert.strictEqual(typeof legacyRenderer, 'function');
+
+    const definitionRenderer = getTemplateRenderer(definitionVersion);
+    assert.strictEqual(typeof definitionRenderer, 'function');
+
+    // Assert that the two renderers are distinct functions
+    assert.notStrictEqual(legacyRenderer, definitionRenderer, 'Definition renderer must be distinct from legacy renderer');
+
+    const legacyHtml = legacyRenderer({
+      text: 'Sample statement text',
       language: 'English',
-      branding: 'BRAND',
-      watermark: '@brand',
+      branding: 'BRAND_A',
+      watermark: '@brand_a',
     });
-    assert(rendered.includes('Test Quote Text'), 'Rendered HTML should contain quote text');
-    assert(rendered.includes('BRAND'), 'Rendered HTML should contain branding');
+
+    const definitionHtml = definitionRenderer({
+      content: {
+        blocks: [
+          {
+            type: 'code',
+            role: 'command',
+            runs: [{ text: './sample.exe' }],
+          },
+        ],
+      },
+      definition: definitionVersion.definition as any,
+      language: 'English',
+      branding: 'BRAND_B',
+      watermark: '@brand_b',
+    });
+
+    assert(legacyHtml.includes('quote-text'), 'Legacy HTML should use legacy class names');
+    assert(definitionHtml.includes('decoration-terminal-prompt') || definitionHtml.includes('$ '), 'Definition HTML should render terminal decorations');
+    assert.notStrictEqual(legacyHtml, definitionHtml, 'Rendered HTML outputs must be visibly different between legacy and definition templates');
   });
 });

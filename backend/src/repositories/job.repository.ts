@@ -229,6 +229,7 @@ export const jobRepository = {
     language: any;
     contentTypeId: string;
     text: string;
+    blocks?: any;
     textHash?: string | null;
     imageUrl?: string | null;
     videoUrl?: string | null;
@@ -246,6 +247,7 @@ export const jobRepository = {
         language: data.language,
         contentTypeId: data.contentTypeId,
         text: data.text,
+        blocks: data.blocks ?? undefined,
         textHash: data.textHash ?? null,
         imageUrl: data.imageUrl ?? null,
         videoUrl: data.videoUrl ?? null,

@@ -36,6 +36,7 @@ import {
   ArrowUp,
   ArrowDown,
   Eye,
+  Layout,
 } from 'lucide-react';
 
 const contentProfileSchema = z.object({
@@ -295,15 +296,6 @@ export const ContentProfilesView: React.FC = () => {
   });
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
-  const { data: templateVersions = [] } = useQuery({
-    queryKey: ['template-versions', selectedTemplateId],
-    queryFn: async () => {
-      if (!selectedTemplateId) return [];
-      const res = await apiClient.get(`/templates/${selectedTemplateId}/versions`);
-      return res.data.data;
-    },
-    enabled: !!selectedTemplateId,
-  });
 
   const handleRefreshAll = () => {
     refetch();
@@ -312,7 +304,7 @@ export const ContentProfilesView: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['templates'] });
   };
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ContentProfileBaseFormValues>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ContentProfileBaseFormValues>({
     resolver: zodResolver(contentProfileSchema),
   });
 
@@ -525,6 +517,9 @@ export const ContentProfilesView: React.FC = () => {
     setValMaxLength(300);
     setValMinLength(5);
     setValStrictProfanity(true);
+
+    setSelectedPromptId('');
+    setSelectedTemplateId('');
 
     reset({
       name: '',
@@ -978,33 +973,100 @@ export const ContentProfilesView: React.FC = () => {
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                        Template Definition
+                  {/* Visual Template Card Picker */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80]">
+                        Visual Rendering Template
                       </label>
-                      <select
-                        value={selectedTemplateId}
-                        onChange={(e) => setSelectedTemplateId(e.target.value)}
-                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white text-xs outline-none focus:border-purple-500 mb-2"
-                      >
-                        <option value="">Select Template</option>
-                        {templates.map((t: any) => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
-                        ))}
-                      </select>
-
-                      <select
-                        {...register('templateVersionId')}
-                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white text-xs outline-none focus:border-purple-500"
-                      >
-                        <option value="">Select Version</option>
-                        {templateVersions.map((tv: any) => (
-                          <option key={tv.id} value={tv.id}>Version {tv.versionNumber} ({tv.status})</option>
-                        ))}
-                      </select>
-                      {errors.templateVersionId && <p className="mt-1 text-xs text-red-400">{errors.templateVersionId.message}</p>}
+                      <span className="text-[11px] text-[#9c9cb0]">
+                        Select template layout and version
+                      </span>
                     </div>
+
+                    <input type="hidden" {...register('templateVersionId')} />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {templates.map((t: any) => {
+                        const activeVer = t.versions?.find((v: any) => v.status === 'Active') || t.versions?.[0];
+                        const isSelected = selectedTemplateId === t.id || watch('templateVersionId') === activeVer?.id;
+                        const categoryName = activeVer?.category || 'MinimalQuote';
+
+                        return (
+                          <div
+                            key={t.id}
+                            onClick={() => {
+                              setSelectedTemplateId(t.id);
+                              if (activeVer) {
+                                setValue('templateVersionId', activeVer.id, { shouldValidate: true });
+                              }
+                            }}
+                            className={`rounded-xl border p-3 cursor-pointer transition flex flex-col justify-between space-y-2 relative ${
+                              isSelected
+                                ? 'bg-purple-950/20 border-purple-500 shadow-lg shadow-purple-500/10 ring-1 ring-purple-500'
+                                : 'bg-[#14141e] border-[#1a1a24] hover:border-[#2b2b3a]'
+                            }`}
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                  {categoryName}
+                                </span>
+                                {isSelected && (
+                                  <span className="w-4 h-4 rounded-full bg-purple-600 text-white flex items-center justify-center text-[10px]">
+                                    <Check size={10} />
+                                  </span>
+                                )}
+                              </div>
+
+                              {activeVer?.previewImageUrl ? (
+                                <div className="w-full h-24 rounded-lg bg-black overflow-hidden border border-white/10">
+                                  <img
+                                    src={activeVer.previewImageUrl}
+                                    alt={t.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-full h-24 rounded-lg bg-[#0e0e14] border border-dashed border-[#2b2b3a] flex flex-col items-center justify-center text-[#6e6e80] gap-1">
+                                  <Layout size={18} />
+                                  <span className="text-[10px]">Visual Layout</span>
+                                </div>
+                              )}
+
+                              <div>
+                                <h4 className="font-bold text-xs text-white line-clamp-1">{t.name}</h4>
+                                <span className="text-[10px] text-[#6e6e80]">
+                                  Version {activeVer?.versionNumber ?? 1} ({activeVer?.status ?? 'Active'})
+                                </span>
+                              </div>
+                            </div>
+
+                            {isSelected && t.versions && t.versions.length > 1 && (
+                              <div className="pt-2 border-t border-[#1a1a24]" onClick={(e) => e.stopPropagation()}>
+                                <label className="text-[10px] text-[#6e6e80] font-semibold block mb-1">Select Version</label>
+                                <select
+                                  value={watch('templateVersionId')}
+                                  onChange={(e) => setValue('templateVersionId', e.target.value, { shouldValidate: true })}
+                                  className="w-full rounded bg-[#161620] border border-[#1a1a24] text-white text-[11px] px-2 py-1 outline-none focus:border-purple-500"
+                                >
+                                  {t.versions.map((tv: any) => (
+                                    <option key={tv.id} value={tv.id}>
+                                      v{tv.versionNumber} ({tv.status})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {errors.templateVersionId && (
+                      <p className="mt-1 text-xs text-red-400">{errors.templateVersionId.message}</p>
+                    )}
                   </div>
 
                   <div>

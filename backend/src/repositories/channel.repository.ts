@@ -10,7 +10,11 @@ export const channelRepository = {
     const channel = await prisma.channel.findFirst({
       where,
       include: {
-        contentProfile: true,
+        contentProfile: {
+          include: {
+            templateVersion: true,
+          },
+        },
         platformConnections: {
           include: {
             platformConnection: true,
@@ -36,7 +40,11 @@ export const channelRepository = {
         },
       },
       include: {
-        contentProfile: true,
+        contentProfile: {
+          include: {
+            templateVersion: true,
+          },
+        },
         platformConnections: {
           include: {
             platformConnection: true,
@@ -56,7 +64,11 @@ export const channelRepository = {
     const channels = await prisma.channel.findMany({
       where: { workspaceId },
       include: {
-        contentProfile: true,
+        contentProfile: {
+          include: {
+            templateVersion: true,
+          },
+        },
         platformConnections: {
           include: {
             platformConnection: true,

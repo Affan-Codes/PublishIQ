@@ -32,13 +32,16 @@ export const templateController = {
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const workspaceId = req.workspaceId!;
-      const { name, notes, componentPath, componentSource } = req.body;
+      const { name, notes, componentPath, componentSource, category, definition, sampleContent } = req.body;
       const template = await templateService.createTemplate({
         workspaceId,
         name,
         notes,
         componentPath,
         componentSource,
+        category,
+        definition,
+        sampleContent,
       });
       res.status(201).json({
         success: true,
@@ -99,16 +102,39 @@ export const templateController = {
 
   async createVersion(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { componentPath, componentSource, notes } = req.body;
+      const { componentPath, componentSource, category, definition, sampleContent, notes } = req.body;
       const version = await templateService.createVersion(
         req.params.id as string,
-        componentPath,
-        componentSource,
-        notes
+        {
+          componentPath,
+          componentSource,
+          category,
+          definition,
+          sampleContent,
+          notes,
+        }
       );
       res.status(201).json({
         success: true,
         data: version,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const versionNumber = parseInt(req.params.versionNumber as string, 10);
+      const previewImageUrl = await templateService.getOrGeneratePreview(
+        req.params.id as string,
+        versionNumber,
+        req.workspaceId!
+      );
+      res.json({
+        success: true,
+        data: { previewImageUrl },
         meta: {},
       });
     } catch (error) {

@@ -96,4 +96,27 @@ test('CFG-10 & CFG-20: Content Profile Strict Schemas and Config Snapshotting Te
     assert.deepStrictEqual(snapshot.validationRules, { bannedWords: ['testbad'], maxLength: 300 });
     assert.strictEqual(snapshot.bullJobId, 'job-123');
   });
+
+  await t.test('createContentProfileSnapshot preserves templateDefinition when templateVersion relation is populated', () => {
+    const mockDef = {
+      category: 'CodeAnalogy',
+      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 900, blockGapPx: 32 },
+    };
+
+    const profileWithTemplate = {
+      id: '00000000-0000-0000-0000-000000000001',
+      promptVersionId: '00000000-0000-0000-0000-000000000004',
+      templateVersionId: '00000000-0000-0000-0000-000000000005',
+      language: Language.English,
+      tone: 'Inspiring',
+      writingStyle: 'Poetic',
+      templateVersion: {
+        id: '00000000-0000-0000-0000-000000000005',
+        definition: mockDef,
+      },
+    } as any;
+
+    const snapshot = createContentProfileSnapshot(profileWithTemplate);
+    assert.deepStrictEqual(snapshot.templateDefinition, mockDef, 'Must snapshot templateDefinition from templateVersion');
+  });
 });

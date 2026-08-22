@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { ContentBlockSchema } from './content-block.schema.js';
 
 export const AIContentResponseSchema = z.object({
   title: z.string().min(1, 'Title must not be empty').max(100, 'Title must not exceed 100 characters'),
   quote: z.string().min(1, 'Quote must not be empty'),
+  blocks: z.array(ContentBlockSchema).min(1).max(12).optional(),
   caption: z.string().min(1, 'Caption must not be empty').max(100, 'Caption must not exceed 100 characters'),
   hashtags: z.array(z.string()).default([]),
   metadata: z.record(z.string(), z.any()).default({}),
@@ -13,3 +15,4 @@ export const AIContentResponseSchema = z.object({
 });
 
 export type AIContentResponse = z.infer<typeof AIContentResponseSchema>;
+

@@ -299,6 +299,7 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
         ...snapshot,
         aiSelectedMusicAssetId,
         aiSelectedBackgroundAssetId,
+        blocks: aiResponse.blocks || null,
       };
 
       // Store generated text in job record
@@ -561,6 +562,9 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       // CFG-01: Wire brandingRules and watermarkRules text with renderingConfiguration fallback
       const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
       const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
+      const brandingOpacity = typeof brandingRules.opacity === 'number' ? brandingRules.opacity : undefined;
+      const watermarkOpacity = typeof watermarkRules.opacity === 'number' ? watermarkRules.opacity : undefined;
+      const content = snapshot.blocks ? { blocks: snapshot.blocks } : undefined;
 
       const hasBackground = !!(snapshot.selectedBackgroundFilePath && snapshot.selectedBackgroundFilePath.trim().length > 0);
 
@@ -569,6 +573,9 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
         language: snapshot.language || profile.language,
         branding: brandingText,
         watermark: watermarkText,
+        brandingOpacity,
+        watermarkOpacity,
+        content,
         templateVersionId,
         hasBackground,
       });
@@ -900,6 +907,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
               language: finalizedJob.contentProfile?.language || 'English',
               contentTypeId: finalizedJob.contentProfile?.contentTypeId || '',
               text: finalizedJob.generatedText || '',
+              blocks: snapshot.blocks || undefined,
               textHash: normalizedHash,
               imageUrl: finalizedJob.imageUrl,
               videoUrl: finalizedJob.videoUrl,
@@ -911,6 +919,7 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
             // Synchronize existing GeneratedContent with updated job fields
             await generatedContentRepository.update(genContent.id, {
               text: finalizedJob.generatedText || '',
+              blocks: (snapshot.blocks as any) ?? undefined,
               imageUrl: finalizedJob.imageUrl,
               videoUrl: finalizedJob.videoUrl,
               caption: finalizedJob.caption,

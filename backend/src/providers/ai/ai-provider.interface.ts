@@ -1,3 +1,5 @@
+import { ContentBlock } from '../../schemas/content-block.schema.js';
+
 export interface PromptVersionData {
   body: string;
   versionNumber: number;
@@ -5,7 +7,8 @@ export interface PromptVersionData {
 
 export interface StructuredAIResponse {
   text: string;
-  metadata?: Record<string, any>;
+  blocks?: ContentBlock[] | undefined;
+  metadata?: Record<string, any> | undefined;
 }
 
 export interface AIProviderAdapter {

@@ -1,3 +1,5 @@
+import { escapeHtml } from '../utils/html-escape.js';
+
 export interface TemplateRenderData {
   text: string;
   language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman';
@@ -6,15 +8,6 @@ export interface TemplateRenderData {
   fontFamily?: string | undefined;
   theme?: 'dark' | 'light' | 'gradient' | undefined;
   layer?: 'full' | 'foreground' | undefined;
-}
-
-function escapeHtml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 export function renderDefaultQuoteTemplate(data: TemplateRenderData): string {

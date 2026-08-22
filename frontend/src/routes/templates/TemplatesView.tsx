@@ -10,30 +10,50 @@ import { SkeletonCard } from '../../components/ui/Skeleton.js';
 import { EmptyState } from '../../components/ui/EmptyState.js';
 import { Button } from '../../components/ui/Button.js';
 import { ErrorState } from '../../components/ui/ErrorState.js';
-import { Plus, History, RotateCcw, X, AlertCircle, Layout, Search } from 'lucide-react';
+import {
+  Plus,
+  History,
+  RotateCcw,
+  X,
+  AlertCircle,
+  Layout,
+  Search,
+  Type,
+  Palette,
+  Sparkles,
+  Maximize,
+  Shield,
+  Layers,
+  Image,
+  Eye,
+} from 'lucide-react';
+
+const TemplateCategorySchema = z.enum([
+  'CodeAnalogy',
+  'MinimalQuote',
+  'SplitStatement',
+  'Terminal',
+  'CodeBlock',
+]);
 
 const templateCreateSchema = z.object({
   name: z.string().min(1, 'Template name is required').max(100),
-  notes: z.string().max(500).optional(),
-  componentPath: z.string().min(1, 'Component path is required'),
-  componentSource: z.string().optional(),
-});
-
-const templateVersionSchema = z.object({
-  componentPath: z.string().min(1, 'Component path is required'),
-  componentSource: z.string().optional(),
+  category: TemplateCategorySchema,
   notes: z.string().max(500).optional(),
 });
 
 type TemplateCreateValues = z.infer<typeof templateCreateSchema>;
-type TemplateVersionValues = z.infer<typeof templateVersionSchema>;
 
 interface TemplateVersion {
   id: string;
   templateId: string;
   versionNumber: number;
-  componentPath: string;
+  componentPath: string | null;
   componentSource: string | null;
+  category: string | null;
+  definition: any | null;
+  sampleContent: any | null;
+  previewImageUrl: string | null;
   status: 'Draft' | 'Active' | 'Deprecated';
   notes: string | null;
   createdAt: string;
@@ -44,18 +64,239 @@ interface Template {
   name: string;
   status: 'Draft' | 'Active' | 'Deprecated';
   notes: string | null;
+  usedByCount?: number;
   versions?: TemplateVersion[];
 }
+
+const CATEGORY_PRESETS: Record<string, { label: string; description: string; definition: any; sampleContent: any }> = {
+  CodeAnalogy: {
+    label: 'Code Analogy',
+    description: 'Multi-line programming concepts mapped to philosophical emotions (Variables, Functions, Loops)',
+    definition: {
+      category: 'CodeAnalogy',
+      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 900, blockGapPx: 32 },
+      typography: {
+        heading: { sizePx: 56, weight: 700, lineHeight: 1.4 },
+        body: { sizePx: 42, weight: 400, lineHeight: 1.6 },
+        code: { sizePx: 36, lineHeight: 1.5 },
+        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+      },
+      colors: { background: '#000000', primary: '#FFFFFF', secondary: '#A0AEC0', accent: '#F6AD55', muted: '#718096', error: '#E53E3E' },
+      emphasisRules: {
+        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
+        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+      },
+      contentMapping: {
+        heading: { typography: 'heading' },
+        body_default: { typography: 'body' },
+        body_label: { typography: 'body', forceEmphasis: 'primary' },
+        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+        code_default: { typography: 'code' },
+        code_command: { typography: 'code', forceEmphasis: 'normal' },
+        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+        list_item_default: { typography: 'body' },
+      },
+      decorations: { divider: 'none', codeIcon: false, terminalPrompt: false, heart: false, cornerMark: false },
+      backgroundTreatment: { mode: 'solid' },
+      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
+      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
+    },
+    sampleContent: {
+      blocks: [
+        { type: 'body', runs: [{ text: 'Variables', emphasis: 'primary' }, { text: ' taught me to store emotions I never expressed.', emphasis: 'normal' }] },
+        { type: 'body', runs: [{ text: 'Functions', emphasis: 'primary' }, { text: ' taught me that giving without return drains you.', emphasis: 'normal' }] },
+        { type: 'body', runs: [{ text: 'Loops', emphasis: 'primary' }, { text: " reminded me that repeating mistakes isn't growth.", emphasis: 'normal' }] },
+        { type: 'body', role: 'attribution', runs: [{ text: '// Execution completed.', emphasis: 'muted' }] },
+      ],
+    },
+  },
+  MinimalQuote: {
+    label: 'Minimal Quote',
+    description: 'Clean, bold centered quote with emphasis keywords and subtle attribution',
+    definition: {
+      category: 'MinimalQuote',
+      layout: { contentAlign: 'center', verticalAnchor: 'center', maxContentWidthPx: 880, blockGapPx: 48 },
+      typography: {
+        heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
+        body: { sizePx: 48, weight: 400, lineHeight: 1.6 },
+        code: { sizePx: 38, lineHeight: 1.5 },
+        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+      },
+      colors: { background: '#0A0A0C', primary: '#FFFFFF', secondary: '#E2E8F0', accent: '#FFFFFF', muted: '#718096', error: '#E53E3E' },
+      emphasisRules: {
+        primary: { colorToken: 'primary', weight: 700, textTransform: 'uppercase' },
+        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+      },
+      contentMapping: {
+        heading: { typography: 'heading' },
+        body_default: { typography: 'body' },
+        body_label: { typography: 'body', forceEmphasis: 'primary' },
+        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+        code_default: { typography: 'code' },
+        code_command: { typography: 'code', forceEmphasis: 'normal' },
+        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+        list_item_default: { typography: 'body' },
+      },
+      decorations: { divider: 'none', codeIcon: false, terminalPrompt: false, heart: false, cornerMark: false },
+      backgroundTreatment: { mode: 'solid' },
+      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
+      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.65 },
+    },
+    sampleContent: {
+      blocks: [
+        { type: 'heading', runs: [{ text: 'She was my ' }, { text: 'UPDATE', emphasis: 'primary' }, { text: ', but I was just her temporary commit.' }] },
+        { type: 'body', role: 'attribution', runs: [{ text: '@codedropout // Follow for more', emphasis: 'muted' }] },
+      ],
+    },
+  },
+  SplitStatement: {
+    label: 'Split Statement',
+    description: 'Header hook with decorative line divider and highlighted body statements over photo backdrop',
+    definition: {
+      category: 'SplitStatement',
+      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 900, blockGapPx: 36 },
+      typography: {
+        heading: { sizePx: 60, weight: 700, lineHeight: 1.4 },
+        body: { sizePx: 44, weight: 400, lineHeight: 1.6 },
+        code: { sizePx: 36, lineHeight: 1.5 },
+        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+      },
+      colors: { background: '#000000', primary: '#FFFFFF', secondary: '#CBD5E0', accent: '#ED8936', muted: '#A0AEC0', error: '#E53E3E' },
+      emphasisRules: {
+        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
+        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+      },
+      contentMapping: {
+        heading: { typography: 'heading' },
+        body_default: { typography: 'body' },
+        body_label: { typography: 'body', forceEmphasis: 'primary' },
+        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+        code_default: { typography: 'code' },
+        code_command: { typography: 'code', forceEmphasis: 'normal' },
+        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+        list_item_default: { typography: 'body' },
+      },
+      decorations: { divider: 'line', codeIcon: true, terminalPrompt: false, heart: true, cornerMark: false },
+      backgroundTreatment: { mode: 'image_overlay', scrimOpacity: 0.65 },
+      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
+      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
+    },
+    sampleContent: {
+      blocks: [
+        { type: 'heading', runs: [{ text: 'Relationships are like ' }, { text: 'code', emphasis: 'primary' }, { text: '.' }] },
+        { type: 'divider', runs: [] },
+        { type: 'body', runs: [{ text: 'One small ' }, { text: 'error', emphasis: 'primary' }, { text: ' can break everything if you ignore the ' }, { text: 'warnings', emphasis: 'primary' }, { text: '.' }] },
+      ],
+    },
+  },
+  Terminal: {
+    label: 'Terminal',
+    description: 'Developer command prompt with $ command, highlighted error status, and logs',
+    definition: {
+      category: 'Terminal',
+      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 920, blockGapPx: 28 },
+      typography: {
+        heading: { sizePx: 52, weight: 700, lineHeight: 1.4 },
+        body: { sizePx: 38, weight: 400, lineHeight: 1.6 },
+        code: { sizePx: 42, lineHeight: 1.5 },
+        caption: { sizePx: 26, weight: 400, lineHeight: 1.4 },
+      },
+      colors: { background: '#0D1117', primary: '#58A6FF', secondary: '#8B949E', accent: '#7EE787', muted: '#484F58', error: '#FF7B72' },
+      emphasisRules: {
+        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
+        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+      },
+      contentMapping: {
+        heading: { typography: 'heading' },
+        body_default: { typography: 'body' },
+        body_label: { typography: 'body', forceEmphasis: 'primary' },
+        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+        code_default: { typography: 'code' },
+        code_command: { typography: 'code', forceEmphasis: 'normal' },
+        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+        list_item_default: { typography: 'body' },
+      },
+      decorations: { divider: 'none', codeIcon: false, terminalPrompt: true, heart: false, cornerMark: true },
+      backgroundTreatment: { mode: 'solid' },
+      branding: { typography: 'caption', sizeScalePct: 90, opacityCeiling: 0.8 },
+      watermark: { typography: 'caption', sizeScalePct: 90, opacityCeiling: 0.6 },
+    },
+    sampleContent: {
+      blocks: [
+        { type: 'code', role: 'command', runs: [{ text: './relationship.exe' }] },
+        { type: 'body', role: 'error', runs: [{ text: 'FATAL ERROR: NullPointer in feelings', emphasis: 'primary' }] },
+        { type: 'list_item', runs: [{ text: '-> Expected: reciprocated devotion', emphasis: 'secondary' }] },
+        { type: 'body', role: 'attribution', runs: [{ text: 'Process terminated with exit code 1', emphasis: 'muted' }] },
+      ],
+    },
+  },
+  CodeBlock: {
+    label: 'Code Block',
+    description: 'Framed syntax snippet card with monospace styling and bottom reflection narrative',
+    definition: {
+      category: 'CodeBlock',
+      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 920, blockGapPx: 36 },
+      typography: {
+        heading: { sizePx: 56, weight: 700, lineHeight: 1.4 },
+        body: { sizePx: 42, weight: 400, lineHeight: 1.6 },
+        code: { sizePx: 38, lineHeight: 1.6 },
+        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+      },
+      colors: { background: '#1E1E1E', primary: '#D4D4D4', secondary: '#252526', accent: '#4EC9B0', muted: '#6A9955', error: '#F44747' },
+      emphasisRules: {
+        primary: { colorToken: 'accent', weight: 600, textTransform: 'none' },
+        secondary: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+      },
+      contentMapping: {
+        heading: { typography: 'heading' },
+        body_default: { typography: 'body' },
+        body_label: { typography: 'body', forceEmphasis: 'primary' },
+        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+        code_default: { typography: 'code' },
+        code_command: { typography: 'code', forceEmphasis: 'normal' },
+        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+        list_item_default: { typography: 'body' },
+      },
+      decorations: { divider: 'none', codeIcon: true, terminalPrompt: false, heart: false, cornerMark: false },
+      backgroundTreatment: { mode: 'solid' },
+      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
+      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
+    },
+    sampleContent: {
+      blocks: [
+        { type: 'code', runs: [{ text: 'if (love) {\n  trust();\n  grow();\n} else {\n  refactor(mindset);\n}' }] },
+        { type: 'body', runs: [{ text: 'Never force an algorithm that creates infinite emotional loops.', emphasis: 'normal' }] },
+      ],
+    },
+  },
+};
 
 export const TemplatesView: React.FC = () => {
   const queryClient = useQueryClient();
   const { addToast } = useNotifications();
-  
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
   const [historyTemplate, setHistoryTemplate] = useState<Template | null>(null);
+  const [selectedVersionForPreview, setSelectedVersionForPreview] = useState<TemplateVersion | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // 9-tab Template Editor states
+  const [activeEditorTab, setActiveEditorTab] = useState<'layout' | 'typography' | 'colors' | 'emphasis' | 'spacing' | 'decorations' | 'branding' | 'watermark' | 'background'>('layout');
+  const [editorDefinition, setEditorDefinition] = useState<any>(CATEGORY_PRESETS.MinimalQuote.definition);
+  const [editorCategory, setEditorCategory] = useState<string>('MinimalQuote');
+  const [versionNotes, setVersionNotes] = useState('');
 
   // Queries
   const { data: templates = [], isLoading, isFetching, isError, error, refetch } = useQuery<Template[]>({
@@ -66,18 +307,34 @@ export const TemplatesView: React.FC = () => {
     },
   });
 
-  const { register: regCreate, handleSubmit: subCreate, reset: resetCreate, formState: { errors: errCreate } } = useForm<TemplateCreateValues>({
+  const { register: regCreate, handleSubmit: subCreate, reset: resetCreate, setValue: setCreateValue, formState: { errors: errCreate } } = useForm<TemplateCreateValues>({
     resolver: zodResolver(templateCreateSchema),
+    defaultValues: {
+      category: 'MinimalQuote',
+    },
   });
 
-  const { register: regVer, handleSubmit: subVer, reset: resetVer, formState: { errors: errVer } } = useForm<TemplateVersionValues>({
-    resolver: zodResolver(templateVersionSchema),
-  });
+  // When category changes in form, reset definition to that category preset
+  const handleCategoryChange = (cat: string) => {
+    setEditorCategory(cat);
+    setCreateValue('category', cat as any);
+    if (CATEGORY_PRESETS[cat]) {
+      setEditorDefinition(JSON.parse(JSON.stringify(CATEGORY_PRESETS[cat].definition)));
+    }
+  };
 
   // Mutations
   const createMutation = useMutation({
     mutationFn: async (values: TemplateCreateValues) => {
-      const res = await apiClient.post('/templates', values);
+      const preset = CATEGORY_PRESETS[values.category];
+      const payload = {
+        name: values.name,
+        notes: values.notes,
+        category: values.category,
+        definition: editorDefinition,
+        sampleContent: preset?.sampleContent,
+      };
+      const res = await apiClient.post('/templates', payload);
       return res.data.data;
     },
     onSuccess: () => {
@@ -92,8 +349,15 @@ export const TemplatesView: React.FC = () => {
   });
 
   const addVersionMutation = useMutation({
-    mutationFn: async (values: TemplateVersionValues) => {
-      const res = await apiClient.post(`/templates/${historyTemplate?.id}/versions`, values);
+    mutationFn: async () => {
+      const preset = CATEGORY_PRESETS[editorCategory];
+      const payload = {
+        category: editorCategory,
+        definition: editorDefinition,
+        sampleContent: preset?.sampleContent,
+        notes: versionNotes || undefined,
+      };
+      const res = await apiClient.post(`/templates/${historyTemplate?.id}/versions`, payload);
       return res.data.data;
     },
     onSuccess: () => {
@@ -105,7 +369,7 @@ export const TemplatesView: React.FC = () => {
         });
       }
       setIsVersionOpen(false);
-      resetVer();
+      setVersionNotes('');
     },
     onError: (err: any) => {
       setErrorText(err.response?.data?.error?.message || err.message || 'Failed to add version');
@@ -141,7 +405,7 @@ export const TemplatesView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-white">Visual Rendering Templates</h2>
-            <p className="text-sm text-[#9c9cb0]">Manage Remotion and Canvas video overlay layouts</p>
+            <p className="text-sm text-[#9c9cb0]">Manage visual templates for AI-generated content</p>
           </div>
           <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} />
         </div>
@@ -155,13 +419,371 @@ export const TemplatesView: React.FC = () => {
     );
   }
 
+  // 9-tab Definition Editor Sub-Component
+  const renderDefinitionTabs = () => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-1.5 border-b border-[#1a1a24] pb-2">
+        {[
+          { id: 'layout', label: '1. Layout', icon: Layout },
+          { id: 'typography', label: '2. Typography', icon: Type },
+          { id: 'colors', label: '3. Colors', icon: Palette },
+          { id: 'emphasis', label: '4. Emphasis', icon: Sparkles },
+          { id: 'spacing', label: '5. Spacing', icon: Maximize },
+          { id: 'decorations', label: '6. Decorations', icon: Layers },
+          { id: 'branding', label: '7. Branding', icon: Shield },
+          { id: 'watermark', label: '8. Watermark', icon: Shield },
+          { id: 'background', label: '9. Background', icon: Image },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const active = activeEditorTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveEditorTab(tab.id as any)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                active
+                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
+                  : 'text-[#6e6e80] hover:text-white hover:bg-[#14141e]'
+              }`}
+            >
+              <Icon size={12} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* TAB 1: Layout */}
+      {activeEditorTab === 'layout' && (
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Content Alignment</label>
+            <select
+              value={editorDefinition.layout?.contentAlign || 'left'}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, layout: { ...editorDefinition.layout, contentAlign: e.target.value } })}
+              className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+            >
+              <option value="left">Left Aligned</option>
+              <option value="center">Center Aligned</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Vertical Anchor</label>
+            <select
+              value={editorDefinition.layout?.verticalAnchor || 'center'}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, layout: { ...editorDefinition.layout, verticalAnchor: e.target.value } })}
+              className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+            >
+              <option value="top">Top Anchored</option>
+              <option value="center">Center Anchored</option>
+              <option value="bottom">Bottom Anchored</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: Typography */}
+      {activeEditorTab === 'typography' && (
+        <div className="grid grid-cols-2 gap-4 text-xs max-h-56 overflow-y-auto pr-1">
+          {['heading', 'body', 'code', 'caption'].map((role) => {
+            const typo = editorDefinition.typography?.[role] || { sizePx: 40, lineHeight: 1.5, weight: 400 };
+            return (
+              <div key={role} className="bg-[#14141e] p-3 rounded-lg border border-[#1a1a24] space-y-2">
+                <span className="font-bold text-white uppercase tracking-wider">{role}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[#6e6e80]">Size: {typo.sizePx}px</span>
+                  <input
+                    type="range"
+                    min="14"
+                    max="100"
+                    value={typo.sizePx}
+                    onChange={(e) => {
+                      const updated = { ...editorDefinition.typography, [role]: { ...typo, sizePx: Number(e.target.value) } };
+                      setEditorDefinition({ ...editorDefinition, typography: updated });
+                    }}
+                    className="w-24 accent-purple-500"
+                  />
+                </div>
+                {role !== 'code' && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#6e6e80]">Weight</span>
+                    <select
+                      value={typo.weight || 400}
+                      onChange={(e) => {
+                        const updated = { ...editorDefinition.typography, [role]: { ...typo, weight: Number(e.target.value) } };
+                        setEditorDefinition({ ...editorDefinition, typography: updated });
+                      }}
+                      className="bg-[#161620] border border-[#1a1a24] text-white rounded px-2 py-0.5 text-[11px]"
+                    >
+                      <option value={400}>Regular (400)</option>
+                      <option value={600}>SemiBold (600)</option>
+                      <option value={700}>Bold (700)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TAB 3: Colors */}
+      {activeEditorTab === 'colors' && (
+        <div className="grid grid-cols-3 gap-3 text-xs">
+          {['background', 'primary', 'secondary', 'accent', 'muted', 'error'].map((slot) => {
+            const val = editorDefinition.colors?.[slot] || '#FFFFFF';
+            return (
+              <div key={slot} className="bg-[#14141e] p-2.5 rounded-lg border border-[#1a1a24] space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-[#9c9cb0] capitalize">{slot}</span>
+                  <div className="w-4 h-4 rounded border border-white/20" style={{ backgroundColor: val }} />
+                </div>
+                <input
+                  type="text"
+                  value={val}
+                  onChange={(e) => {
+                    const updated = { ...editorDefinition.colors, [slot]: e.target.value };
+                    setEditorDefinition({ ...editorDefinition, colors: updated });
+                  }}
+                  className="w-full bg-[#161620] border border-[#1a1a24] text-white font-mono px-2 py-1 rounded text-xs"
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TAB 4: Emphasis */}
+      {activeEditorTab === 'emphasis' && (
+        <div className="grid grid-cols-2 gap-3 text-xs max-h-56 overflow-y-auto pr-1">
+          {['primary', 'secondary', 'normal', 'muted'].map((role) => {
+            const rule = editorDefinition.emphasisRules?.[role] || { colorToken: 'accent', weight: 700, textTransform: 'none' };
+            return (
+              <div key={role} className="bg-[#14141e] p-3 rounded-lg border border-[#1a1a24] space-y-2">
+                <span className="font-bold text-white capitalize">{role} Emphasis</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6e6e80]">Color Slot:</span>
+                  <select
+                    value={rule.colorToken}
+                    onChange={(e) => {
+                      const updated = { ...editorDefinition.emphasisRules, [role]: { ...rule, colorToken: e.target.value } };
+                      setEditorDefinition({ ...editorDefinition, emphasisRules: updated });
+                    }}
+                    className="bg-[#161620] border border-[#1a1a24] text-white rounded px-2 py-0.5 text-[11px]"
+                  >
+                    {['accent', 'primary', 'secondary', 'muted', 'error'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6e6e80]">Transform:</span>
+                  <select
+                    value={rule.textTransform || 'none'}
+                    onChange={(e) => {
+                      const updated = { ...editorDefinition.emphasisRules, [role]: { ...rule, textTransform: e.target.value } };
+                      setEditorDefinition({ ...editorDefinition, emphasisRules: updated });
+                    }}
+                    className="bg-[#161620] border border-[#1a1a24] text-white rounded px-2 py-0.5 text-[11px]"
+                  >
+                    <option value="none">None</option>
+                    <option value="uppercase">UPPERCASE</option>
+                  </select>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TAB 5: Spacing */}
+      {activeEditorTab === 'spacing' && (
+        <div className="space-y-4 text-xs">
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Max Content Width: {editorDefinition.layout?.maxContentWidthPx || 900}px</span>
+              <span>400px - 1000px</span>
+            </div>
+            <input
+              type="range"
+              min="400"
+              max="1000"
+              value={editorDefinition.layout?.maxContentWidthPx || 900}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, layout: { ...editorDefinition.layout, maxContentWidthPx: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Block Gap: {editorDefinition.layout?.blockGapPx || 32}px</span>
+              <span>8px - 160px</span>
+            </div>
+            <input
+              type="range"
+              min="8"
+              max="160"
+              value={editorDefinition.layout?.blockGapPx || 32}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, layout: { ...editorDefinition.layout, blockGapPx: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: Decorations */}
+      {activeEditorTab === 'decorations' && (
+        <div className="space-y-3 text-xs">
+          <div className="flex justify-between items-center">
+            <span className="text-[#6e6e80]">Divider Style</span>
+            <select
+              value={editorDefinition.decorations?.divider || 'none'}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, decorations: { ...editorDefinition.decorations, divider: e.target.value } })}
+              className="bg-[#161620] border border-[#1a1a24] text-white rounded px-3 py-1 text-xs"
+            >
+              <option value="none">None</option>
+              <option value="line">Horizontal Line</option>
+              <option value="code_symbol">&lt;/&gt; Code Symbol</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            {[
+              { key: 'terminalPrompt', label: 'Terminal Prompt ($)' },
+              { key: 'codeIcon', label: 'Code Icon (</>)' },
+              { key: 'heart', label: 'Heart Mark (♡)' },
+              { key: 'cornerMark', label: 'Corner Framing Marks' },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-2 bg-[#14141e] p-2 rounded-lg border border-[#1a1a24] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editorDefinition.decorations?.[key])}
+                  onChange={(e) => {
+                    const dec = { ...editorDefinition.decorations, [key]: e.target.checked };
+                    setEditorDefinition({ ...editorDefinition, decorations: dec });
+                  }}
+                  className="accent-purple-500"
+                />
+                <span className="text-white text-xs">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 7: Branding */}
+      {activeEditorTab === 'branding' && (
+        <div className="space-y-4 text-xs">
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Size Scale: {editorDefinition.branding?.sizeScalePct || 100}%</span>
+              <span>50% - 150%</span>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="150"
+              value={editorDefinition.branding?.sizeScalePct || 100}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, branding: { ...editorDefinition.branding, sizeScalePct: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Opacity Ceiling: {Math.round((editorDefinition.branding?.opacityCeiling ?? 1) * 100)}%</span>
+              <span>0% - 100%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={editorDefinition.branding?.opacityCeiling ?? 1}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, branding: { ...editorDefinition.branding, opacityCeiling: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* TAB 8: Watermark */}
+      {activeEditorTab === 'watermark' && (
+        <div className="space-y-4 text-xs">
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Size Scale: {editorDefinition.watermark?.sizeScalePct || 100}%</span>
+              <span>50% - 150%</span>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="150"
+              value={editorDefinition.watermark?.sizeScalePct || 100}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, watermark: { ...editorDefinition.watermark, sizeScalePct: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+          <div>
+            <div className="flex justify-between text-[#6e6e80] mb-1">
+              <span>Opacity Ceiling: {Math.round((editorDefinition.watermark?.opacityCeiling ?? 0.7) * 100)}%</span>
+              <span>0% - 100%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={editorDefinition.watermark?.opacityCeiling ?? 0.7}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, watermark: { ...editorDefinition.watermark, opacityCeiling: Number(e.target.value) } })}
+              className="w-full accent-purple-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* TAB 9: Background */}
+      {activeEditorTab === 'background' && (
+        <div className="space-y-4 text-xs">
+          <div>
+            <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Background Treatment Mode</label>
+            <select
+              value={editorDefinition.backgroundTreatment?.mode || 'solid'}
+              onChange={(e) => setEditorDefinition({ ...editorDefinition, backgroundTreatment: { ...editorDefinition.backgroundTreatment, mode: e.target.value } })}
+              className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+            >
+              <option value="solid">Solid Canvas Color</option>
+              <option value="image_overlay">Image Overlay (Transparent Plate with Scrim)</option>
+              <option value="gradient">Vertical Gradient</option>
+            </select>
+          </div>
+          {editorDefinition.backgroundTreatment?.mode === 'image_overlay' && (
+            <div>
+              <div className="flex justify-between text-[#6e6e80] mb-1">
+                <span>Scrim Opacity: {Math.round((editorDefinition.backgroundTreatment?.scrimOpacity ?? 0.65) * 100)}%</span>
+                <span>0% - 100%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={editorDefinition.backgroundTreatment?.scrimOpacity ?? 0.65}
+                onChange={(e) => setEditorDefinition({ ...editorDefinition, backgroundTreatment: { ...editorDefinition.backgroundTreatment, scrimOpacity: Number(e.target.value) } })}
+                className="w-full accent-purple-500"
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Visual Rendering Templates</h2>
-          <p className="text-sm text-[#9c9cb0]">Manage Remotion and Canvas video overlay layouts</p>
+          <p className="text-sm text-[#9c9cb0]">Manage visual templates for AI-generated content</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -195,64 +817,87 @@ export const TemplatesView: React.FC = () => {
         <EmptyState
           icon={Layout}
           title="No rendering templates configured"
-          description="Register visual layout components for automated FFmpeg and Remotion video rendering."
+          description="Register visual layout components for automated FFmpeg video rendering."
           actionLabel="Create Template"
           onAction={() => setIsCreateOpen(true)}
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredTemplates.map((template) => (
-            <div
-              key={template.id}
-              className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 flex flex-col justify-between hover:border-[#2b2b3a] transition"
-            >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                      template.status === 'Active'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                    }`}
+          {filteredTemplates.map((template) => {
+            const activeVer = template.versions?.find((v) => v.status === 'Active') || template.versions?.[0];
+            const categoryName = activeVer?.category || 'MinimalQuote';
+            return (
+              <div
+                key={template.id}
+                className="rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 flex flex-col justify-between hover:border-[#2b2b3a] transition"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        template.status === 'Active'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      }`}
+                    >
+                      {template.status}
+                    </span>
+                    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                      {categoryName}
+                    </span>
+                  </div>
+
+                  {activeVer?.previewImageUrl && (
+                    <div className="w-full h-32 rounded-lg bg-black overflow-hidden border border-[#1a1a24] flex items-center justify-center relative group">
+                      <img
+                        src={activeVer.previewImageUrl}
+                        alt={template.name}
+                        className="w-full h-full object-cover object-center group-hover:scale-105 transition duration-300"
+                      />
+                      <button
+                        onClick={() => setSelectedVersionForPreview(activeVer)}
+                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs gap-1 transition cursor-pointer"
+                      >
+                        <Eye size={14} /> Full Preview
+                      </button>
+                    </div>
+                  )}
+
+                  <div>
+                    <h3 className="text-lg font-bold text-white">{template.name}</h3>
+                    <p className="text-xs text-[#9c9cb0] mt-1 line-clamp-2">
+                      {template.notes || 'No notes available.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-[#1a1a24]/50 pt-4 text-xs">
+                  <span className="text-[#6e6e80]">
+                    Used By: <strong className="text-white">{template.usedByCount || 0}</strong> profiles
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={History}
+                    onClick={async () => {
+                      const res = await apiClient.get(`/templates/${template.id}`);
+                      setHistoryTemplate(res.data.data);
+                    }}
                   >
-                    {template.status}
-                  </span>
-                  <span className="text-[10px] text-[#6e6e80] font-mono">
-                    ID: {template.id.slice(0, 8)}
-                  </span>
-                </div>
-
-                <div>
-                  <h3 className="text-lg font-bold text-white">{template.name}</h3>
-                  <p className="text-xs text-[#9c9cb0] mt-1 line-clamp-2">
-                    {template.notes || 'No notes available.'}
-                  </p>
+                    Version Registry
+                  </Button>
                 </div>
               </div>
-
-              <div className="flex items-center justify-end border-t border-[#1a1a24]/50 pt-4">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon={History}
-                  onClick={async () => {
-                    const res = await apiClient.get(`/templates/${template.id}`);
-                    setHistoryTemplate(res.data.data);
-                  }}
-                >
-                  Version Registry
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Create Template Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
-          <div className="w-full max-w-lg rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
-            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
+          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
               <h3 className="text-lg font-bold text-white">Create Visual Rendering Template</h3>
               <button onClick={() => setIsCreateOpen(false)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
@@ -267,54 +912,54 @@ export const TemplatesView: React.FC = () => {
             )}
 
             <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Template Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Elegant Shayari Short Layout"
-                  {...regCreate('name')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
-                />
-                {errCreate.name && <p className="mt-1 text-xs text-red-400">{errCreate.name.message}</p>}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Template Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Minimalist Quote Poster"
+                    {...regCreate('name')}
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+                  />
+                  {errCreate.name && <p className="mt-1 text-xs text-red-400">{errCreate.name.message}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                    Template Category
+                  </label>
+                  <select
+                    value={editorCategory}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+                  >
+                    {Object.entries(CATEGORY_PRESETS).map(([cat, preset]) => (
+                      <option key={cat} value={cat}>{preset.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Component File Path
+                  Template Notes (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="templates/ShayariShortTemplate.tsx"
-                  {...regCreate('componentPath')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono outline-none focus:border-purple-500"
-                />
-                {errCreate.componentPath && <p className="mt-1 text-xs text-red-400">{errCreate.componentPath.message}</p>}
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Initial Version Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Baseline vertical layout layout"
+                  placeholder="e.g. Vertical layout for viral social shorts"
                   {...regCreate('notes')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
+                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Component Source JSON Config (Optional)
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="{ &quot;aspectRatio&quot;: &quot;9:16&quot;, &quot;fontSize&quot;: 24 }"
-                  {...regCreate('componentSource')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] p-3 text-white font-mono text-xs outline-none focus:border-purple-500"
-                />
+              {/* 9-Tab Template Definition Editor */}
+              <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
+                <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                  Template Definition Settings (9 Tabs)
+                </span>
+                {renderDefinitionTabs()}
               </div>
 
               <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
@@ -332,12 +977,12 @@ export const TemplatesView: React.FC = () => {
 
       {/* Version Registry Drawer */}
       {historyTemplate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
-          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
-            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
+          <div className="w-full max-w-3xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
               <div>
                 <h3 className="text-xl font-bold text-white">{historyTemplate.name}</h3>
-                <p className="text-xs text-[#9c9cb0]">Template Version Registry & Activation Engine</p>
+                <p className="text-xs text-[#9c9cb0]">Template Version Registry & Preview Engine</p>
               </div>
               <button onClick={() => setHistoryTemplate(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
@@ -345,14 +990,14 @@ export const TemplatesView: React.FC = () => {
             </div>
 
             <div className="flex justify-between items-center bg-[#14141e] p-4 rounded-xl border border-[#1a1a24]">
-              <span className="text-xs text-[#9c9cb0]">Update template rendering paths or code configurations.</span>
+              <span className="text-xs text-[#9c9cb0]">Manage layout definitions, preview rendered output, or activate older versions.</span>
               <Button size="sm" icon={Plus} onClick={() => { setErrorText(null); setIsVersionOpen(true); }}>
                 New Version
               </Button>
             </div>
 
             {/* Versions List */}
-            <div className="space-y-4 max-h-96 overflow-y-auto">
+            <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
               {(historyTemplate.versions || []).map((ver) => (
                 <div key={ver.id} className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -367,20 +1012,38 @@ export const TemplatesView: React.FC = () => {
                       >
                         {ver.status}
                       </span>
+                      {ver.category && (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                          {ver.category}
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] text-[#6e6e80]">
                       {new Date(ver.createdAt).toLocaleString()}
                     </span>
                   </div>
 
-                  <p className="text-xs text-white font-mono bg-[#0c0c12] p-2.5 rounded border border-[#1b1b26]">
-                    Path: {ver.componentPath}
-                  </p>
+                  {ver.previewImageUrl && (
+                    <div className="flex items-center gap-3 bg-[#0c0c12] p-2 rounded border border-[#1a1a24]">
+                      <img src={ver.previewImageUrl} alt="Preview" className="w-16 h-28 object-cover rounded border border-white/10" />
+                      <div className="text-xs space-y-1">
+                        <span className="font-semibold text-white block">Rendered Preview Plate</span>
+                        <span className="text-[10px] text-[#6e6e80] font-mono break-all">{ver.previewImageUrl}</span>
+                        <button
+                          onClick={() => setSelectedVersionForPreview(ver)}
+                          className="text-purple-400 hover:text-purple-300 flex items-center gap-1 text-[11px] font-semibold pt-1 cursor-pointer"
+                        >
+                          <Eye size={12} /> Inspect Full Render
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {ver.notes && <p className="text-xs text-[#6e6e80] italic">Notes: {ver.notes}</p>}
 
-                  {ver.status !== 'Active' && (
-                    <div className="flex justify-end pt-1">
+                  <div className="flex items-center justify-between border-t border-[#1a1a24] pt-2">
+                    <span className="text-[10px] text-[#6e6e80] font-mono">ID: {ver.id}</span>
+                    {ver.status !== 'Active' && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -393,8 +1056,8 @@ export const TemplatesView: React.FC = () => {
                       >
                         Set as Active
                       </Button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -410,9 +1073,9 @@ export const TemplatesView: React.FC = () => {
 
       {/* Add Version Modal */}
       {isVersionOpen && historyTemplate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-10 sm:py-12">
-          <div className="w-full max-w-lg rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-6 shadow-2xl my-auto">
-            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
+          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
               <h3 className="text-lg font-bold text-white">Publish New Template Version</h3>
               <button onClick={() => setIsVersionOpen(false)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
@@ -425,53 +1088,78 @@ export const TemplatesView: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={subVer((v) => addVersionMutation.mutate(v))} className="space-y-4 text-sm">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Component File Path
-                </label>
-                <input
-                  type="text"
-                  placeholder="templates/ShayariShortTemplateV2.tsx"
-                  {...regVer('componentPath')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white font-mono outline-none focus:border-purple-500"
-                />
-                {errVer.componentPath && <p className="mt-1 text-xs text-red-400">{errVer.componentPath.message}</p>}
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Category</label>
+                  <select
+                    value={editorCategory}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+                  >
+                    {Object.entries(CATEGORY_PRESETS).map(([cat, preset]) => (
+                      <option key={cat} value={cat}>{preset.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Version Notes</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Updated subtitle scaling and palette"
+                    value={versionNotes}
+                    onChange={(e) => setVersionNotes(e.target.value)}
+                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Version Change Notes
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Updated subtitle font scaling"
-                  {...regVer('notes')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Component Source JSON Config (Optional)
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="{ &quot;updatedAt&quot;: &quot;2026&quot; }"
-                  {...regVer('componentSource')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] p-3 text-white font-mono text-xs outline-none focus:border-purple-500"
-                />
+              {/* 9 Tabs Editor */}
+              <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
+                <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                  Template Definition Settings
+                </span>
+                {renderDefinitionTabs()}
               </div>
 
               <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
                 <Button variant="secondary" type="button" onClick={() => setIsVersionOpen(false)} disabled={addVersionMutation.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" isLoading={addVersionMutation.isPending} loadingText="Publishing...">
+                <Button
+                  onClick={() => addVersionMutation.mutate()}
+                  isLoading={addVersionMutation.isPending}
+                  loadingText="Publishing..."
+                >
                   Publish Version
                 </Button>
               </div>
-            </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Preview Modal */}
+      {selectedVersionForPreview && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/90 backdrop-blur-md p-4 sm:p-6 flex justify-center items-center">
+          <div className="w-full max-w-md rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-2">
+              <span className="text-sm font-bold text-white">Version {selectedVersionForPreview.versionNumber} Preview</span>
+              <button onClick={() => setSelectedVersionForPreview(null)} className="text-[#6e6e80] hover:text-white cursor-pointer">
+                <X size={20} />
+              </button>
+            </div>
+            {selectedVersionForPreview.previewImageUrl ? (
+              <div className="w-full aspect-[9/16] rounded-lg overflow-hidden border border-white/20 bg-black shadow-inner">
+                <img
+                  src={selectedVersionForPreview.previewImageUrl}
+                  alt="Full Render Preview"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-[#6e6e80] py-8 text-center">No preview image generated for this version.</p>
+            )}
           </div>
         </div>
       )}

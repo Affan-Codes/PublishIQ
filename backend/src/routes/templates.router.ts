@@ -3,15 +3,20 @@ import { z } from 'zod';
 import { requireAuth } from '../middlewares/auth.js';
 import { validateRequest } from '../middlewares/request-validator.js';
 import templateController from '../controllers/template.controller.js';
-import { PromptStatus } from '@prisma/client';
+import { PromptStatus, TemplateCategory } from '@prisma/client';
+import { TemplateDefinitionSchema } from '../schemas/template-definition.schema.js';
+import { StructuredContentSchema } from '../schemas/content-block.schema.js';
 
 const router = Router();
 
 const templateCreateSchema = z.object({
   name: z.string().min(1, 'Template name is required').max(100),
   notes: z.string().max(500).optional(),
-  componentPath: z.string().min(1, 'Component path is required'),
+  componentPath: z.string().optional(),
   componentSource: z.string().optional(),
+  category: z.nativeEnum(TemplateCategory).optional(),
+  definition: TemplateDefinitionSchema.optional(),
+  sampleContent: StructuredContentSchema.optional(),
 });
 
 const templateUpdateSchema = z.object({
@@ -21,8 +26,11 @@ const templateUpdateSchema = z.object({
 });
 
 const templateVersionSchema = z.object({
-  componentPath: z.string().min(1, 'Component path is required'),
+  componentPath: z.string().optional(),
   componentSource: z.string().optional(),
+  category: z.nativeEnum(TemplateCategory).optional(),
+  definition: TemplateDefinitionSchema.optional(),
+  sampleContent: StructuredContentSchema.optional(),
   notes: z.string().max(500).optional(),
 });
 
@@ -67,6 +75,12 @@ router.get(
   '/templates/:id/versions/:versionNumber',
   validateRequest({ params: versionParamSchema }),
   templateController.getVersion
+);
+
+router.get(
+  '/templates/:id/versions/:versionNumber/preview',
+  validateRequest({ params: versionParamSchema }),
+  templateController.getPreview
 );
 
 router.post(

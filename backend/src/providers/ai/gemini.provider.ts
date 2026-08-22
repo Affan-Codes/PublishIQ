@@ -20,6 +20,30 @@ export const geminiResponseSchema = {
   properties: {
     title: { type: 'STRING', description: 'A short headline or title for the generated content (MUST NOT exceed 100 characters)' },
     quote: { type: 'STRING', description: 'The main motivational/business quote or Shayari text in the requested language' },
+    blocks: {
+      type: 'ARRAY',
+      description: 'Optional structured content blocks (1-12 blocks). Each block has type (heading, body, code, divider, list_item), optional role (default, label, command, error, attribution, cta), and runs (1-6 runs with text and optional emphasis: primary, secondary, normal, muted).',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          type: { type: 'STRING', description: 'Block type: heading | body | code | divider | list_item' },
+          role: { type: 'STRING', description: 'Block semantic role: default | label | command | error | attribution | cta' },
+          runs: {
+            type: 'ARRAY',
+            description: 'Text segments within this block (1-6 runs)',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                text: { type: 'STRING', description: 'Plain text of the run (1-220 chars, no HTML)' },
+                emphasis: { type: 'STRING', description: 'Semantic emphasis: primary | secondary | normal | muted' },
+              },
+              required: ['text'],
+            },
+          },
+        },
+        required: ['type', 'runs'],
+      },
+    },
     caption: { type: 'STRING', description: 'A descriptive caption for social media posts (MUST NOT exceed 100 characters)' },
     hashtags: { type: 'ARRAY', items: { type: 'STRING' }, description: 'At least 3 relevant hashtags' },
     metadata: { type: 'OBJECT', description: 'Any extra generation metadata or settings' },
@@ -157,6 +181,7 @@ export const geminiProvider: AIProviderAdapter = {
       const result = validated.data;
       return {
         text: result.quote.trim(),
+        blocks: result.blocks,
         metadata: {
           title: result.title.trim(),
           caption: result.caption.trim(),
