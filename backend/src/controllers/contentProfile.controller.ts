@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import contentProfileService from '../services/contentProfile.service.js';
+import { jobService } from '../services/job.service.js';
 
 export const contentProfileController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -8,6 +9,41 @@ export const contentProfileController = {
       res.json({
         success: true,
         data: profile,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async getReadiness(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const readiness = await contentProfileService.getProfileReadiness(
+        req.params.id as string,
+        req.workspaceId!
+      );
+      res.json({
+        success: true,
+        data: readiness,
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async dryRun(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const job = await jobService.createContentPipelineJob(
+        req.workspaceId!,
+        req.body?.channelId,
+        req.body?.sourceGeneratedContentId,
+        true,
+        req.params.id as string
+      );
+      res.status(201).json({
+        success: true,
+        data: job,
         meta: {},
       });
     } catch (error) {

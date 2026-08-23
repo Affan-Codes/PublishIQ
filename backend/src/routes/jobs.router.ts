@@ -7,10 +7,17 @@ import { JobType, PipelineStage } from '@prisma/client';
 
 const router = Router();
 
-const jobCreateSchema = z.object({
-  channelId: z.string().uuid('Invalid Channel ID format'),
-  sourceGeneratedContentId: z.string().uuid('Invalid Generated Content ID format').optional(),
-});
+const jobCreateSchema = z
+  .object({
+    channelId: z.string().uuid('Invalid Channel ID format').optional(),
+    contentProfileId: z.string().uuid('Invalid ContentProfile ID format').optional(),
+    sourceGeneratedContentId: z.string().uuid('Invalid Generated Content ID format').optional(),
+    dryRun: z.boolean().optional().default(false),
+    isDryRun: z.boolean().optional(),
+  })
+  .refine((data) => Boolean(data.channelId || data.contentProfileId), {
+    message: 'Either channelId or contentProfileId must be provided',
+  });
 
 const jobQuerySchema = z.object({
   jobType: z.nativeEnum(JobType).optional(),

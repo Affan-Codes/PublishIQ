@@ -343,6 +343,7 @@ model Job {
   videoUrl          String?
   caption           String?        @db.Text
   hashtags          Json?
+  isDryRun          Boolean        @default(false)
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

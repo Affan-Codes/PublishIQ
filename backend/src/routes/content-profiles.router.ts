@@ -24,6 +24,26 @@ router.get(
   contentProfileController.getById
 );
 
+router.get(
+  '/content-profiles/:id/readiness',
+  validateRequest({ params: idParamSchema }),
+  contentProfileController.getReadiness
+);
+
+router.post(
+  '/content-profiles/:id/dry-run',
+  validateRequest({
+    params: idParamSchema,
+    body: z
+      .object({
+        channelId: z.string().uuid('Invalid Channel ID format').optional(),
+        sourceGeneratedContentId: z.string().uuid('Invalid Generated Content ID format').optional(),
+      })
+      .optional(),
+  }),
+  contentProfileController.dryRun
+);
+
 router.post(
   '/content-profiles',
   validateRequest({ body: ContentProfileCreateSchema }),

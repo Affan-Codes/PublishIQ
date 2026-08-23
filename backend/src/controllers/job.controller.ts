@@ -46,11 +46,13 @@ export const jobController = {
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { channelId, sourceGeneratedContentId } = req.body;
+      const { channelId, sourceGeneratedContentId, dryRun, isDryRun, contentProfileId } = req.body;
       const job = await jobService.createContentPipelineJob(
         req.workspaceId!,
         channelId,
-        sourceGeneratedContentId
+        sourceGeneratedContentId,
+        Boolean(isDryRun ?? dryRun),
+        contentProfileId
       );
 
       res.status(201).json({

@@ -32,7 +32,8 @@ export const jobRepository = {
     });
   },
 
-  async getPromptVersionById(id: string) {
+  async getPromptVersionById(id?: string) {
+    if (!id) return null;
     return prisma.promptVersion.findUnique({
       where: { id },
     });
@@ -89,15 +90,16 @@ export const jobRepository = {
   async createJob(data: {
     workspaceId: string;
     jobType: JobType;
-    channelId?: string;
-    contentProfileId?: string;
-    pipelineStage?: PipelineStage;
+    channelId?: string | null | undefined;
+    contentProfileId?: string | null | undefined;
+    pipelineStage?: PipelineStage | null | undefined;
     configSnapshot?: any;
-    generatedText?: string | null;
-    imageUrl?: string | null;
-    videoUrl?: string | null;
-    caption?: string | null;
+    generatedText?: string | null | undefined;
+    imageUrl?: string | null | undefined;
+    videoUrl?: string | null | undefined;
+    caption?: string | null | undefined;
     hashtags?: any;
+    isDryRun?: boolean | undefined;
   }): Promise<Job> {
     return prisma.job.create({
       data: {
@@ -112,6 +114,7 @@ export const jobRepository = {
         videoUrl: data.videoUrl ?? null,
         caption: data.caption ?? null,
         hashtags: data.hashtags ?? null,
+        isDryRun: data.isDryRun ?? false,
       },
     });
   },

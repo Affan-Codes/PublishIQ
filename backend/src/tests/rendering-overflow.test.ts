@@ -20,7 +20,7 @@ test('Rendering Overflow Protection Tests (P1-02, P1-03)', async (t) => {
 
     assert.ok(usableHeight > 0);
     assert.ok(usableHeight < 1920);
-    assert.strictEqual(usableHeight, 1920 - 140 - 160);
+    assert.strictEqual(usableHeight, 1920 - insets.topPx - insets.bottomPx);
   });
 
   await t.test('renderFromDefinition includes safe-area padding in content-layer', () => {

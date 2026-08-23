@@ -2,6 +2,7 @@ import { Job, JobType, PipelineStage, Prisma } from '@prisma/client';
 import { jobRepository } from '../repositories/job.repository.js';
 import { channelRepository } from '../repositories/channel.repository.js';
 import { generatedContentRepository } from '../repositories/generatedContent.repository.js';
+import { contentProfileRepository } from '../repositories/contentProfile.repository.js';
 import { ValidationError, NotFoundError, ConflictError } from '../errors/custom-errors.js';
 import { contentPipelineQueue } from '../jobs/index.js';
 import { logger } from '../utils/logger.js';
@@ -113,22 +114,39 @@ export const jobService = {
   },
 
   /**
-   * Starts a new content pipeline job for a channel.
-   * Can optionally start with duplicate content prefilled.
+   * Starts a new content pipeline job for a channel or directly for a content profile.
+   * Can optionally start with duplicate content prefilled, or as a dry-run test.
    */
   async createContentPipelineJob(
     workspaceId: string,
-    channelId: string,
-    sourceGeneratedContentId?: string
+    channelId?: string,
+    sourceGeneratedContentId?: string,
+    isDryRun: boolean = false,
+    contentProfileId?: string
   ): Promise<Job> {
-    const channel = await channelRepository.getById(channelId);
-    if (!channel) {
-      throw new NotFoundError('Channel not found');
-    }
+    let profile: any = null;
+    let resolvedChannelId: string | null = null;
+    let resolvedProfileId: string | null = null;
 
-    const profile = channel.contentProfile;
-    if (!profile) {
-      throw new ValidationError('Channel does not have a content profile configured');
+    if (channelId) {
+      const channel = await channelRepository.getById(channelId);
+      if (!channel) {
+        throw new NotFoundError('Channel not found');
+      }
+      profile = channel.contentProfile;
+      if (!profile) {
+        throw new ValidationError('Channel does not have a content profile configured');
+      }
+      resolvedChannelId = channel.id;
+      resolvedProfileId = channel.contentProfileId;
+    } else if (contentProfileId) {
+      profile = await contentProfileRepository.getById(contentProfileId, workspaceId);
+      if (!profile) {
+        throw new NotFoundError('Content profile not found');
+      }
+      resolvedProfileId = profile.id;
+    } else {
+      throw new ValidationError('Either channelId or contentProfileId must be provided');
     }
 
     const configSnapshot = createContentProfileSnapshot(profile);
@@ -137,10 +155,11 @@ export const jobService = {
     const dbJob = await jobRepository.createJob({
       workspaceId,
       jobType: JobType.ContentPipeline,
-      channelId,
-      contentProfileId: channel.contentProfileId,
+      channelId: resolvedChannelId || undefined,
+      contentProfileId: resolvedProfileId || undefined,
       pipelineStage: PipelineStage.Draft,
       configSnapshot,
+      isDryRun,
     });
 
     if (sourceGeneratedContentId) {
@@ -164,7 +183,7 @@ export const jobService = {
       { jobId: dbJob.id }
     );
 
-    logger.info({ jobId: dbJob.id, channelId }, 'Created and enqueued content pipeline job');
+    logger.info({ jobId: dbJob.id, channelId: resolvedChannelId, isDryRun }, 'Created and enqueued content pipeline job');
     return dbJob;
   },
 

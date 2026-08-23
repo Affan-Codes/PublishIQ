@@ -37,7 +37,83 @@ import {
   ArrowDown,
   Eye,
   Layout,
+  Play,
+  CheckCircle2,
 } from 'lucide-react';
+
+const ProfileReadinessBadge: React.FC<{ profileId: string }> = ({ profileId }) => {
+  const { data: readiness, isLoading } = useQuery<{ ready: boolean; missing: string[] }>({
+    queryKey: ['profile-readiness', profileId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/content-profiles/${profileId}/readiness`);
+      return res.data.data;
+    },
+    staleTime: 15000,
+  });
+
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (isLoading || !readiness) {
+    return <span className="text-[10px] text-[#6e6e80] animate-pulse">Checking...</span>;
+  }
+
+  if (readiness.ready) {
+    return (
+      <div className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span>Ready</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen(!isOpen);
+        }}
+        className="flex items-center gap-1 text-[10px] font-medium text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full hover:bg-amber-500/20 transition cursor-pointer"
+        title="Click to view missing setup items"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+        <span>{readiness.missing.length} missing</span>
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+          <div className="absolute right-0 top-full mt-1.5 z-40 w-72 p-3 rounded-xl border border-[#2b2b3a] bg-[#14141e] shadow-2xl text-xs space-y-2">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-1.5">
+              <span className="font-semibold text-amber-300 flex items-center gap-1 text-xs">
+                <AlertTriangle size={13} className="text-amber-400" />
+                Readiness Checks ({readiness.missing.length})
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                }}
+                className="text-[#6e6e80] hover:text-white"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <ul className="space-y-1.5 text-[11px] text-[#9c9cb0]">
+              {readiness.missing.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-1.5">
+                  <span className="text-amber-400 shrink-0 mt-0.5">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 const contentProfileSchema = z.object({
   name: z.string().min(1, 'Profile name is required').max(100),
@@ -202,6 +278,48 @@ export const ContentProfilesView: React.FC = () => {
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'basic' | 'branding' | 'background' | 'copy' | 'audio' | 'rendering'>('basic');
+
+  // Dry Run States & Query
+  const [activeDryRunJobId, setActiveDryRunJobId] = useState<string | null>(null);
+  const [activeDryRunProfileId, setActiveDryRunProfileId] = useState<string | null>(null);
+  const [isDryRunModalOpen, setIsDryRunModalOpen] = useState(false);
+
+  const dryRunMutation = useMutation({
+    mutationFn: async (profileId: string) => {
+      setActiveDryRunProfileId(profileId);
+      const res = await apiClient.post(`/content-profiles/${profileId}/dry-run`, {});
+      return res.data.data;
+    },
+    onSuccess: (job) => {
+      setActiveDryRunJobId(job.id);
+      setIsDryRunModalOpen(true);
+      addToast('Test run initiated! (Dry run without publishing)', 'info');
+    },
+    onError: (err: any) => {
+      addToast(err.response?.data?.error?.message || err.message || 'Failed to start test run', 'error');
+    },
+    onSettled: () => {
+      setActiveDryRunProfileId(null);
+    },
+  });
+
+  const { data: dryRunJob } = useQuery({
+    queryKey: ['dry-run-job', activeDryRunJobId],
+    queryFn: async () => {
+      if (!activeDryRunJobId) return null;
+      const res = await apiClient.get(`/jobs/${activeDryRunJobId}`);
+      return res.data.data;
+    },
+    enabled: !!activeDryRunJobId && isDryRunModalOpen,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 1500;
+      if (data.pipelineStage === 'Completed' || data.pipelineStage === 'Failed') {
+        return false;
+      }
+      return 1500;
+    },
+  });
 
   // Structured Sub-Forms State
   const [promptVariablesList, setPromptVariablesList] = useState<{ key: string; value: string }[]>([]);
@@ -656,15 +774,18 @@ export const ContentProfilesView: React.FC = () => {
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      profile.status === 'Active'
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                    }`}
-                  >
-                    {profile.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        profile.status === 'Active'
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                      }`}
+                    >
+                      {profile.status}
+                    </span>
+                    <ProfileReadinessBadge profileId={profile.id} />
+                  </div>
                   <span className="text-[10px] text-[#6e6e80] font-mono">
                     {profile.language} • {profile.tone}
                   </span>
@@ -719,24 +840,36 @@ export const ContentProfilesView: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 border-t border-[#1a1a24]/50 pt-4">
+              <div className="flex items-center justify-between border-t border-[#1a1a24]/50 pt-4">
                 <Button
                   size="sm"
-                  variant="ghost"
-                  icon={Edit2}
-                  onClick={() => openEditDialog(profile)}
+                  variant="secondary"
+                  icon={Play}
+                  onClick={() => dryRunMutation.mutate(profile.id)}
+                  isLoading={dryRunMutation.isPending && activeDryRunProfileId === profile.id}
+                  className="bg-purple-950/40 border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:text-white"
                 >
-                  Edit
+                  Test Run
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={Trash2}
-                  onClick={() => setDeletingProfileId(profile.id)}
-                  className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
-                >
-                  Delete
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={Edit2}
+                    onClick={() => openEditDialog(profile)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={Trash2}
+                    onClick={() => setDeletingProfileId(profile.id)}
+                    className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
@@ -1869,6 +2002,144 @@ export const ContentProfilesView: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Dry Run / Test Run Result Modal */}
+      {isDryRunModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-[#2b2b3a] bg-[#0e0e12] p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Profile Test Run</h3>
+                  <p className="text-xs text-[#6e6e80]">
+                    Dry Run — Validates generation & visual rendering without publishing
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsDryRunModalOpen(false);
+                  setActiveDryRunJobId(null);
+                }}
+                className="text-[#6e6e80] hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {!dryRunJob ? (
+              <div className="py-12 text-center text-xs text-[#6e6e80] animate-pulse">
+                Initializing pipeline worker...
+              </div>
+            ) : dryRunJob.pipelineStage !== 'Completed' && dryRunJob.pipelineStage !== 'Failed' ? (
+              <div className="py-10 text-center space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full bg-purple-500/10 border border-purple-500/20 px-3 py-1 text-xs text-purple-300">
+                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" />
+                  <span>Processing Stage: <strong>{dryRunJob.pipelineStage}</strong></span>
+                </div>
+                <p className="text-xs text-[#9c9cb0]">
+                  Generating content, rendering visual template, mixing audio, and composing video...
+                </p>
+              </div>
+            ) : dryRunJob.pipelineStage === 'Failed' ? (
+              <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-4 text-xs text-rose-300 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-rose-400">
+                  <AlertCircle size={15} />
+                  <span>Dry Run Failed at Stage: {dryRunJob.failureStage || 'Pipeline'}</span>
+                </div>
+                <p className="font-mono">{dryRunJob.failureReason || 'An unknown error occurred during execution'}</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-xs text-emerald-300">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-400" />
+                    <span className="font-medium">Dry Run Completed Successfully</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-400/80">0 External Posts Made</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Media Preview */}
+                  <div className="rounded-lg border border-[#1a1a24] bg-[#14141e] p-3 flex flex-col items-center justify-center aspect-[9/16] max-h-[360px] overflow-hidden">
+                    {dryRunJob.videoUrl ? (
+                      <video
+                        src={dryRunJob.videoUrl}
+                        controls
+                        className="h-full w-full object-contain rounded"
+                      />
+                    ) : dryRunJob.imageUrl ? (
+                      <img
+                        src={dryRunJob.imageUrl}
+                        alt="Rendered output"
+                        className="h-full w-full object-contain rounded"
+                      />
+                    ) : (
+                      <span className="text-xs text-[#6e6e80]">No media output rendered</span>
+                    )}
+                  </div>
+
+                  {/* Text & Metadata */}
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <span className="text-[11px] font-semibold text-[#6e6e80] uppercase tracking-wider block mb-1">
+                        Generated Content Text
+                      </span>
+                      <div className="rounded-lg border border-[#1a1a24] bg-[#161620] p-3 text-white font-mono text-xs whitespace-pre-wrap max-h-36 overflow-y-auto">
+                        {dryRunJob.generatedText || 'No text recorded'}
+                      </div>
+                    </div>
+
+                    {dryRunJob.caption && (
+                      <div>
+                        <span className="text-[11px] font-semibold text-[#6e6e80] uppercase tracking-wider block mb-1">
+                          Formatted Caption
+                        </span>
+                        <div className="rounded-lg border border-[#1a1a24] bg-[#161620] p-2.5 text-[#cbd5e1] text-xs whitespace-pre-wrap max-h-24 overflow-y-auto">
+                          {dryRunJob.caption}
+                        </div>
+                      </div>
+                    )}
+
+                    {Array.isArray(dryRunJob.hashtags) && dryRunJob.hashtags.length > 0 && (
+                      <div>
+                        <span className="text-[11px] font-semibold text-[#6e6e80] uppercase tracking-wider block mb-1">
+                          Hashtags
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {dryRunJob.hashtags.map((tag: string, i: number) => (
+                            <span
+                              key={i}
+                              className="rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[11px] text-purple-300 font-mono"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end border-t border-[#1a1a24] pt-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setIsDryRunModalOpen(false);
+                  setActiveDryRunJobId(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       )}

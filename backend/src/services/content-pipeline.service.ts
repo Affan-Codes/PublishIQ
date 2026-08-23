@@ -1012,9 +1012,26 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
       }
     }
 
-    // 2. Check Hold Condition (Manual / Hybrid)
+    // 2. Check Dry Run or Hold Condition (Manual / Hybrid)
     const finalizedJob = await jobRepository.getById(job.id);
     if (!finalizedJob) throw new Error('Job not found');
+
+    if (finalizedJob.isDryRun) {
+      await jobRepository.transitionJobStage(job.id, PipelineStage.Completed, {
+        failedAt: null,
+        failureReason: null,
+        failureStage: null,
+      }, {
+        type: 'JobCompleted',
+        payload: {
+          jobId: job.id,
+          message: 'Dry run job completed successfully without publishing',
+          isDryRun: true,
+        },
+      });
+      logger.info({ jobId: job.id }, 'Dry run job completed without publishing and marked as Completed');
+      return;
+    }
 
     const channel = finalizedJob.channelId ? await channelRepository.getById(finalizedJob.channelId) : null;
 

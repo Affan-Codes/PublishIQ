@@ -267,7 +267,7 @@ export const V1_TEMPLATE_DEFINITIONS: Record<TemplateCategory, TemplateDefinitio
       verticalAnchor: 'center',
       maxContentWidthPx: 880,
       blockGapPx: 48,
-      safeAreaInsetsPx: { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 },
+      safeAreaInsetsPx: { topPx: 150, bottomPx: 200, leftPx: 90, rightPx: 90 },
     },
     typography: {
       heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
@@ -334,7 +334,7 @@ export const V1_TEMPLATE_DEFINITIONS: Record<TemplateCategory, TemplateDefinitio
       verticalAnchor: 'center',
       maxContentWidthPx: 900,
       blockGapPx: 36,
-      safeAreaInsetsPx: { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 },
+      safeAreaInsetsPx: { topPx: 160, bottomPx: 170, leftPx: 85, rightPx: 85 },
     },
     typography: {
       heading: { sizePx: 60, weight: 700, lineHeight: 1.4 },
@@ -399,10 +399,10 @@ export const V1_TEMPLATE_DEFINITIONS: Record<TemplateCategory, TemplateDefinitio
     category: 'Terminal',
     layout: {
       contentAlign: 'left',
-      verticalAnchor: 'center',
+      verticalAnchor: 'top',
       maxContentWidthPx: 920,
       blockGapPx: 28,
-      safeAreaInsetsPx: { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 },
+      safeAreaInsetsPx: { topPx: 180, bottomPx: 150, leftPx: 70, rightPx: 70 },
     },
     typography: {
       heading: { sizePx: 52, weight: 700, lineHeight: 1.4 },
@@ -469,7 +469,7 @@ export const V1_TEMPLATE_DEFINITIONS: Record<TemplateCategory, TemplateDefinitio
       verticalAnchor: 'center',
       maxContentWidthPx: 920,
       blockGapPx: 36,
-      safeAreaInsetsPx: { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 },
+      safeAreaInsetsPx: { topPx: 130, bottomPx: 150, leftPx: 75, rightPx: 75 },
     },
     typography: {
       heading: { sizePx: 56, weight: 700, lineHeight: 1.4 },

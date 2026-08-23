@@ -3,6 +3,8 @@ import contentTypeRepository from '../repositories/contentType.repository.js';
 import promptRepository from '../repositories/prompt.repository.js';
 import templateRepository from '../repositories/template.repository.js';
 import { assetRepository } from '../repositories/asset.repository.js';
+import { prisma } from '../database/db.js';
+import { selectEligibleMusicCandidates } from './content-pipeline.service.js';
 import { NotFoundError, ValidationError } from '../errors/custom-errors.js';
 import { ContentProfile, ContentProfileStatus, Language, AssetType, AssetStatus, LicenseStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
@@ -211,6 +213,122 @@ export const contentProfileService = {
     logger.warn({ id }, 'Deleting content profile');
     await this.getProfileById(id); // Ensure exists
     return contentProfileRepository.delete(id);
+  },
+
+  /**
+   * P1-03: Assesses whether a ContentProfile is fully configured and ready for live publishing.
+   */
+  async getProfileReadiness(
+    profileId: string,
+    workspaceId: string
+  ): Promise<{ ready: boolean; missing: string[] }> {
+    const profile = await contentProfileRepository.getById(profileId, workspaceId);
+    if (!profile) {
+      throw new NotFoundError(`ContentProfile with ID ${profileId} not found`);
+    }
+
+    const missing: string[] = [];
+
+    // 1. Check Prompt & Prompt Version
+    const promptVersion = profile.promptVersion;
+    if (!promptVersion) {
+      missing.push('No Prompt Version configured for this profile');
+    } else if (promptVersion.status !== 'Active' || promptVersion.prompt?.status !== 'Active') {
+      missing.push(`Selected Prompt Version (v${promptVersion.versionNumber}) is inactive or deprecated`);
+    }
+
+    // 2. Check Template & Template Version
+    const templateVersion = profile.templateVersion;
+    if (!templateVersion) {
+      missing.push('No Template Version configured for this profile');
+    } else if (templateVersion.status !== 'Active' || templateVersion.template?.status !== 'Active') {
+      missing.push('Selected Template or Template Version is inactive or deprecated');
+    }
+
+    // 3. Check Background Asset Eligibility
+    const bgRules = (profile.backgroundSelectionRules as Record<string, any>) || {};
+    const bgMode = bgRules.selectionMode;
+    if (bgMode === 'Manual') {
+      if (!bgRules.manualAssetId) {
+        missing.push('Manual background selection mode requires a manualAssetId');
+      } else {
+        const bgAsset = await assetRepository.getById(bgRules.manualAssetId, workspaceId);
+        if (
+          !bgAsset ||
+          bgAsset.workspaceId !== workspaceId ||
+          bgAsset.type !== AssetType.Background ||
+          bgAsset.status !== AssetStatus.Active ||
+          bgAsset.licenseStatus !== LicenseStatus.Confirmed ||
+          !bgAsset.filePath
+        ) {
+          missing.push('Configured manual background asset is missing, inactive, unconfirmed, or invalid');
+        }
+      }
+    } else if (bgMode === 'AI') {
+      const allActiveBackgrounds = await prisma.asset.findMany({
+        where: {
+          workspaceId,
+          type: AssetType.Background,
+          status: AssetStatus.Active,
+          licenseStatus: LicenseStatus.Confirmed,
+        },
+      });
+      if (allActiveBackgrounds.length === 0) {
+        missing.push('No active, confirmed background assets available in workspace');
+      }
+    }
+
+    // 4. Check Music Asset Eligibility
+    const musicRules = (profile.musicSelectionRules as Record<string, any>) || {};
+    const mood = musicRules.mood || 'Inspiring';
+    const genre = musicRules.genre || 'Acoustic';
+    const allActiveMusic = await prisma.asset.findMany({
+      where: {
+        workspaceId,
+        type: AssetType.Music,
+        status: AssetStatus.Active,
+        licenseStatus: LicenseStatus.Confirmed,
+      },
+    });
+    const eligibleMusic = selectEligibleMusicCandidates(allActiveMusic, mood, genre);
+    if (eligibleMusic.length === 0) {
+      missing.push(`No active, confirmed music assets match the configured selection rules (mood: ${mood}, genre: ${genre})`);
+    }
+
+    // 5. Check Linked Channel & Healthy Platform Connection
+    const linkedChannels = await prisma.channel.findMany({
+      where: {
+        workspaceId,
+        contentProfileId: profile.id,
+      },
+      include: {
+        platformConnections: {
+          include: {
+            platformConnection: true,
+          },
+        },
+      },
+    });
+
+    if (linkedChannels.length === 0) {
+      missing.push('No Channel is linked to this Content Profile');
+    } else {
+      const hasHealthyConnection = linkedChannels.some((ch) =>
+        ch.platformConnections.some(
+          (cpc) =>
+            cpc.platformConnection.healthStatus === 'Healthy' &&
+            cpc.platformConnection.status === 'Active'
+        )
+      );
+      if (!hasHealthyConnection) {
+        missing.push('Linked channel has no Healthy active platform connection');
+      }
+    }
+
+    return {
+      ready: missing.length === 0,
+      missing,
+    };
   },
 };
 

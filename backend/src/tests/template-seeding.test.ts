@@ -30,7 +30,9 @@ test('Canonical Template Seeding Tests (P1-01)', async (t) => {
     }
   });
 
-  await t.test('each V1 template defines safeAreaInsetsPx in layout', () => {
+  await t.test('each V1 template defines safeAreaInsetsPx in layout and insets are differentiated (P2-01)', () => {
+    const insetsSignatures = new Set<string>();
+
     for (const cat of categories) {
       const def = V1_TEMPLATE_DEFINITIONS[cat];
       assert.ok(def.layout.safeAreaInsetsPx, `Template ${cat} must define safeAreaInsetsPx`);
@@ -38,7 +40,13 @@ test('Canonical Template Seeding Tests (P1-01)', async (t) => {
       assert.ok(typeof def.layout.safeAreaInsetsPx.bottomPx === 'number');
       assert.ok(typeof def.layout.safeAreaInsetsPx.leftPx === 'number');
       assert.ok(typeof def.layout.safeAreaInsetsPx.rightPx === 'number');
+
+      const sig = `${def.layout.safeAreaInsetsPx.topPx}:${def.layout.safeAreaInsetsPx.bottomPx}:${def.layout.safeAreaInsetsPx.leftPx}:${def.layout.safeAreaInsetsPx.rightPx}`;
+      insetsSignatures.add(sig);
     }
+
+    // Assert that templates do not all share the same generic inset
+    assert.ok(insetsSignatures.size >= 4, 'Templates must have differentiated, layout-specific safe area insets');
   });
 
   await t.test('each V1 template defines compatibility rules', () => {
