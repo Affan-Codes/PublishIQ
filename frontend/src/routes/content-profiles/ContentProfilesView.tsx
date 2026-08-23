@@ -82,7 +82,7 @@ interface ContentProfile {
     tags?: string[];
     orientation?: 'portrait' | 'landscape' | 'square';
   };
-  renderingConfiguration: { resolution?: string; fps?: number; branding?: string; watermark?: string; animation?: { preset?: string } };
+  renderingConfiguration: { animation?: { preset?: string } };
   validationRules: { bannedWords?: string[]; maxLength?: number; minLength?: number; strictProfanity?: boolean };
 }
 
@@ -235,7 +235,6 @@ export const ContentProfilesView: React.FC = () => {
   const [musicMinDuration, setMusicMinDuration] = useState(10);
   const [musicMaxDuration, setMusicMaxDuration] = useState(60);
 
-  const [renderResolution, setRenderResolution] = useState('1080x1920');
   const [renderAnimationPreset, setRenderAnimationPreset] = useState<string>('None');
 
   const [bannedWordsInput, setBannedWordsInput] = useState('');
@@ -357,14 +356,10 @@ export const ContentProfilesView: React.FC = () => {
     };
 
     const renderingConfiguration: any = {
-      resolution: renderResolution,
-      fps: 30,
       animation: {
         preset: renderAnimationPreset || 'None',
       },
     };
-    if (brandingText.trim()) renderingConfiguration.branding = brandingText.trim();
-    if (watermarkText.trim()) renderingConfiguration.watermark = watermarkText.trim();
 
     const validationRules: any = {
       maxLength: Number(valMaxLength) || 300,
@@ -510,7 +505,6 @@ export const ContentProfilesView: React.FC = () => {
     setMusicMinDuration(10);
     setMusicMaxDuration(60);
 
-    setRenderResolution('1080x1920');
     setRenderAnimationPreset('None');
 
     setBannedWordsInput('');
@@ -581,7 +575,6 @@ export const ContentProfilesView: React.FC = () => {
     setMusicMinDuration(profile.musicSelectionRules?.minDurationSeconds ?? 10);
     setMusicMaxDuration(profile.musicSelectionRules?.maxDurationSeconds ?? 60);
 
-    setRenderResolution(profile.renderingConfiguration?.resolution || '1080x1920');
     setRenderAnimationPreset(profile.renderingConfiguration?.animation?.preset || 'None');
 
     setBannedWordsInput((profile.validationRules?.bannedWords || []).join(', '));
@@ -711,7 +704,7 @@ export const ContentProfilesView: React.FC = () => {
                   </div>
                   <div className="flex justify-between text-[11px] text-[#6e6e80] pt-1 border-t border-[#1a1a24]">
                     <span>Music: {profile.musicSelectionRules?.mood || 'Inspiring'} / {profile.musicSelectionRules?.genre || 'Acoustic'}</span>
-                    <span>{profile.renderingConfiguration?.resolution || '1080x1920'}</span>
+                    <span>1080×1920 @ 60 FPS</span>
                   </div>
                   <div className="flex justify-between text-[11px] text-[#6e6e80] pt-1 border-t border-[#1a1a24]">
                     <span>Background:</span>
@@ -1083,65 +1076,119 @@ export const ContentProfilesView: React.FC = () => {
                   </div>
 
                   {/* Prompt Variables Builder */}
-                  <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Custom Prompt Variables</h4>
-                        <p className="text-[11px] text-[#6e6e80]">Define variable values required by the prompt template</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        icon={Plus}
-                        type="button"
-                        onClick={() => setPromptVariablesList([...promptVariablesList, { key: '', value: '' }])}
-                      >
-                        Add Variable
-                      </Button>
-                    </div>
+                  {(() => {
+                    const selectedPromptVer = promptVersions.find((pv: any) => pv.id === watch('promptVersionId')) || promptVersions[0];
+                    const detectedVars: string[] = selectedPromptVer?.variables || [];
+                    const definedKeys = new Set(promptVariablesList.map((pv) => pv.key.trim()).filter(Boolean));
+                    const missingVars = detectedVars.filter((v) => !definedKeys.has(v));
 
-                    {promptVariablesList.length === 0 ? (
-                      <p className="text-xs text-[#6e6e80] italic">No custom variables defined. Default prompt settings will apply.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {promptVariablesList.map((item, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              placeholder="Key (e.g. author)"
-                              value={item.key}
-                              onChange={(e) => {
-                                const next = [...promptVariablesList];
-                                next[index].key = e.target.value;
-                                setPromptVariablesList(next);
-                              }}
-                              className="w-1/2 rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-mono"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Value (e.g. Rumi)"
-                              value={item.value}
-                              onChange={(e) => {
-                                const next = [...promptVariablesList];
-                                next[index].value = e.target.value;
-                                setPromptVariablesList(next);
-                              }}
-                              className="w-1/2 rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPromptVariablesList(promptVariablesList.filter((_, i) => i !== index));
-                              }}
-                              className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
-                            >
-                              <X size={16} />
-                            </button>
+                    return (
+                      <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Custom Prompt Variables</h4>
+                            <p className="text-[11px] text-[#6e6e80]">Define variable values required by the prompt template</p>
                           </div>
-                        ))}
+                          <div className="flex items-center gap-2">
+                            {missingVars.length > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                type="button"
+                                onClick={() => {
+                                  const additions = missingVars.map((k) => ({ key: k, value: '' }));
+                                  setPromptVariablesList([...promptVariablesList, ...additions]);
+                                }}
+                              >
+                                Pre-populate ({missingVars.length})
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              icon={Plus}
+                              type="button"
+                              onClick={() => setPromptVariablesList([...promptVariablesList, { key: '', value: '' }])}
+                            >
+                              Add Variable
+                            </Button>
+                          </div>
+                        </div>
+
+                        {detectedVars.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 p-2 rounded-lg bg-[#161620] border border-[#1a1a24] text-[11px]">
+                            <span className="text-[#6e6e80] font-medium">Prompt Expects:</span>
+                            {detectedVars.map((v) => {
+                              const isFilled = definedKeys.has(v);
+                              return (
+                                <span
+                                  key={v}
+                                  className={`px-2 py-0.5 rounded font-mono text-[10px] ${
+                                    isFilled
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                                  }`}
+                                >
+                                  {`{{${v}}}`} {isFilled ? '✓' : '⚠️'}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {missingVars.length > 0 && (
+                          <div className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 p-2 text-[11px] text-amber-300">
+                            <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-400" />
+                            <span>
+                              The selected prompt expects <strong>{missingVars.join(', ')}</strong>. Unfilled variables will use fallback values or remain unreplaced.
+                            </span>
+                          </div>
+                        )}
+
+                        {promptVariablesList.length === 0 ? (
+                          <p className="text-xs text-[#6e6e80] italic">No custom variables defined. Default prompt settings will apply.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {promptVariablesList.map((item, index) => (
+                              <div key={index} className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Key (e.g. author)"
+                                  value={item.key}
+                                  onChange={(e) => {
+                                    const next = [...promptVariablesList];
+                                    next[index].key = e.target.value;
+                                    setPromptVariablesList(next);
+                                  }}
+                                  className="w-1/2 rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500 font-mono"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Value (e.g. Rumi)"
+                                  value={item.value}
+                                  onChange={(e) => {
+                                    const next = [...promptVariablesList];
+                                    next[index].value = e.target.value;
+                                    setPromptVariablesList(next);
+                                  }}
+                                  className="w-1/2 rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPromptVariablesList(promptVariablesList.filter((_, i) => i !== index));
+                                  }}
+                                  className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1610,35 +1657,24 @@ export const ContentProfilesView: React.FC = () => {
               {/* TAB 5: Rendering & Validation */}
               {activeTab === 'rendering' && (
                 <div className="space-y-6">
-                  {/* Rendering Configuration */}
+                  {/* Video Output Specifications */}
                   <div className="rounded-xl border border-[#1a1a24] bg-[#14141e] p-4 space-y-3">
                     <h4 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2">
                       <Sparkles size={14} className="text-purple-400" />
-                      Video Rendering Pipeline Settings
+                      Video Output Specifications
                     </h4>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border border-[#1a1a24] bg-[#161620]">
                       <div>
-                        <label className="block text-xs text-[#9c9cb0] mb-1">Output Resolution</label>
-                        <select
-                          value={renderResolution}
-                          onChange={(e) => setRenderResolution(e.target.value)}
-                          className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-white outline-none focus:border-purple-500"
-                        >
-                          <option value="1080x1920">1080x1920 (Vertical 9:16 - Reels/Shorts)</option>
-                          <option value="1920x1080">1920x1080 (Landscape 16:9 - YouTube)</option>
-                          <option value="1080x1080">1080x1080 (Square 1:1 - Feed)</option>
-                          <option value="720x1280">720x1280 (HD 9:16)</option>
-                        </select>
+                        <span className="text-xs font-semibold text-white">1080×1920 (Vertical 9:16)</span>
+                        <p className="text-[11px] text-[#6e6e80]">Standard vertical video optimized for YouTube Shorts, Reels, and TikTok</p>
                       </div>
-
-                      <div>
-                        <label className="block text-xs text-[#9c9cb0] mb-1">Frame Rate (FPS)</label>
-                        <div className="flex items-center justify-between rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-xs text-zinc-300">
-                          <span className="font-medium text-white">30 FPS</span>
-                          <span className="text-[10px] text-purple-400 font-mono bg-purple-950/60 border border-purple-800/40 px-1.5 py-0.5 rounded">
-                            Standard Engine
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-2 py-0.5 rounded">
+                          60 FPS High-Framerate
+                        </span>
+                        <span className="text-[10px] text-purple-400 font-mono bg-purple-950/60 border border-purple-800/40 px-1.5 py-0.5 rounded">
+                          Fixed Standard
+                        </span>
                       </div>
                     </div>
                   </div>

@@ -51,3 +51,9 @@ export class ExternalProviderError extends AppError {
     }
   }
 }
+
+export class ContentOverflowError extends AppError {
+  readonly statusCode = 422;
+  readonly code = 'CONTENT_OVERFLOW_ERROR';
+}
+

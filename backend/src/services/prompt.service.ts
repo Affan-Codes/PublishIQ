@@ -4,8 +4,12 @@ import { NotFoundError } from '../errors/custom-errors.js';
 import { Prompt, PromptVersion, PromptStatus } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 import { geminiResponseSchema } from '../providers/ai/gemini.provider.js';
+import { extractPromptVariables } from '../constants/prompt-variables.js';
 
-export type PromptVersionWithUsage = PromptVersion & { usedByProfileCount?: number };
+export type PromptVersionWithUsage = PromptVersion & {
+  usedByProfileCount?: number;
+  variables?: string[];
+};
 
 export const promptService = {
   getOutputContract(): Array<{ key: string; type: string; description: string; required: boolean }> {
@@ -33,6 +37,7 @@ export const promptService = {
     const versionsWithCount = prompt.versions.map((v) => ({
       ...v,
       usedByProfileCount: counts[v.id] || 0,
+      variables: extractPromptVariables(v.body),
     }));
 
     return {
@@ -106,13 +111,16 @@ export const promptService = {
     return prompt.versions;
   },
 
-  async getVersionDetails(promptId: string, versionNumber: number): Promise<PromptVersion> {
+  async getVersionDetails(promptId: string, versionNumber: number): Promise<PromptVersion & { variables?: string[] }> {
     logger.debug({ promptId, versionNumber }, 'Getting prompt version details');
     const version = await promptRepository.getVersion(promptId, versionNumber);
     if (!version) {
       throw new NotFoundError(`Prompt version ${versionNumber} not found for prompt ${promptId}`);
     }
-    return version;
+    return {
+      ...version,
+      variables: extractPromptVariables(version.body),
+    };
   },
 
   async testPromptVersion(

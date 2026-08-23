@@ -99,7 +99,7 @@ export function renderCanvas(
       flex-direction: column;
       justify-content: space-between;
       align-items: center;
-      padding: 140px 80px;
+      padding: ${definition.layout.safeAreaInsetsPx?.topPx ?? 140}px ${definition.layout.safeAreaInsetsPx?.rightPx ?? 80}px ${definition.layout.safeAreaInsetsPx?.bottomPx ?? 160}px ${definition.layout.safeAreaInsetsPx?.leftPx ?? 80}px;
     }
 
     .lang-urdu {

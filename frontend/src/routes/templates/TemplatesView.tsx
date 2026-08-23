@@ -68,217 +68,60 @@ interface Template {
   versions?: TemplateVersion[];
 }
 
-const CATEGORY_PRESETS: Record<string, { label: string; description: string; definition: any; sampleContent: any }> = {
+const CATEGORY_META: Record<string, { label: string; description: string }> = {
   CodeAnalogy: {
     label: 'Code Analogy',
     description: 'Multi-line programming concepts mapped to philosophical emotions (Variables, Functions, Loops)',
-    definition: {
-      category: 'CodeAnalogy',
-      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 900, blockGapPx: 32 },
-      typography: {
-        heading: { sizePx: 56, weight: 700, lineHeight: 1.4 },
-        body: { sizePx: 42, weight: 400, lineHeight: 1.6 },
-        code: { sizePx: 36, lineHeight: 1.5 },
-        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
-      },
-      colors: { background: '#000000', primary: '#FFFFFF', secondary: '#A0AEC0', accent: '#F6AD55', muted: '#718096', error: '#E53E3E' },
-      emphasisRules: {
-        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
-        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
-        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-      },
-      contentMapping: {
-        heading: { typography: 'heading' },
-        body_default: { typography: 'body' },
-        body_label: { typography: 'body', forceEmphasis: 'primary' },
-        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-        code_default: { typography: 'code' },
-        code_command: { typography: 'code', forceEmphasis: 'normal' },
-        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-        list_item_default: { typography: 'body' },
-      },
-      decorations: { divider: 'none', codeIcon: false, terminalPrompt: false, heart: false, cornerMark: false },
-      backgroundTreatment: { mode: 'solid' },
-      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
-      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
-    },
-    sampleContent: {
-      blocks: [
-        { type: 'body', runs: [{ text: 'Variables', emphasis: 'primary' }, { text: ' taught me to store emotions I never expressed.', emphasis: 'normal' }] },
-        { type: 'body', runs: [{ text: 'Functions', emphasis: 'primary' }, { text: ' taught me that giving without return drains you.', emphasis: 'normal' }] },
-        { type: 'body', runs: [{ text: 'Loops', emphasis: 'primary' }, { text: " reminded me that repeating mistakes isn't growth.", emphasis: 'normal' }] },
-        { type: 'body', role: 'attribution', runs: [{ text: '// Execution completed.', emphasis: 'muted' }] },
-      ],
-    },
   },
   MinimalQuote: {
     label: 'Minimal Quote',
     description: 'Clean, bold centered quote with emphasis keywords and subtle attribution',
-    definition: {
-      category: 'MinimalQuote',
-      layout: { contentAlign: 'center', verticalAnchor: 'center', maxContentWidthPx: 880, blockGapPx: 48 },
-      typography: {
-        heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
-        body: { sizePx: 48, weight: 400, lineHeight: 1.6 },
-        code: { sizePx: 38, lineHeight: 1.5 },
-        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
-      },
-      colors: { background: '#0A0A0C', primary: '#FFFFFF', secondary: '#E2E8F0', accent: '#FFFFFF', muted: '#718096', error: '#E53E3E' },
-      emphasisRules: {
-        primary: { colorToken: 'primary', weight: 700, textTransform: 'uppercase' },
-        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
-        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-      },
-      contentMapping: {
-        heading: { typography: 'heading' },
-        body_default: { typography: 'body' },
-        body_label: { typography: 'body', forceEmphasis: 'primary' },
-        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-        code_default: { typography: 'code' },
-        code_command: { typography: 'code', forceEmphasis: 'normal' },
-        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-        list_item_default: { typography: 'body' },
-      },
-      decorations: { divider: 'none', codeIcon: false, terminalPrompt: false, heart: false, cornerMark: false },
-      backgroundTreatment: { mode: 'solid' },
-      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
-      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.65 },
-    },
-    sampleContent: {
-      blocks: [
-        { type: 'heading', runs: [{ text: 'She was my ' }, { text: 'UPDATE', emphasis: 'primary' }, { text: ', but I was just her temporary commit.' }] },
-        { type: 'body', role: 'attribution', runs: [{ text: '@codedropout // Follow for more', emphasis: 'muted' }] },
-      ],
-    },
   },
   SplitStatement: {
     label: 'Split Statement',
     description: 'Header hook with decorative line divider and highlighted body statements over photo backdrop',
-    definition: {
-      category: 'SplitStatement',
-      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 900, blockGapPx: 36 },
-      typography: {
-        heading: { sizePx: 60, weight: 700, lineHeight: 1.4 },
-        body: { sizePx: 44, weight: 400, lineHeight: 1.6 },
-        code: { sizePx: 36, lineHeight: 1.5 },
-        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
-      },
-      colors: { background: '#000000', primary: '#FFFFFF', secondary: '#CBD5E0', accent: '#ED8936', muted: '#A0AEC0', error: '#E53E3E' },
-      emphasisRules: {
-        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
-        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
-        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-      },
-      contentMapping: {
-        heading: { typography: 'heading' },
-        body_default: { typography: 'body' },
-        body_label: { typography: 'body', forceEmphasis: 'primary' },
-        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-        code_default: { typography: 'code' },
-        code_command: { typography: 'code', forceEmphasis: 'normal' },
-        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-        list_item_default: { typography: 'body' },
-      },
-      decorations: { divider: 'line', codeIcon: true, terminalPrompt: false, heart: true, cornerMark: false },
-      backgroundTreatment: { mode: 'image_overlay', scrimOpacity: 0.65 },
-      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
-      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
-    },
-    sampleContent: {
-      blocks: [
-        { type: 'heading', runs: [{ text: 'Relationships are like ' }, { text: 'code', emphasis: 'primary' }, { text: '.' }] },
-        { type: 'divider', runs: [] },
-        { type: 'body', runs: [{ text: 'One small ' }, { text: 'error', emphasis: 'primary' }, { text: ' can break everything if you ignore the ' }, { text: 'warnings', emphasis: 'primary' }, { text: '.' }] },
-      ],
-    },
   },
   Terminal: {
     label: 'Terminal',
     description: 'Developer command prompt with $ command, highlighted error status, and logs',
-    definition: {
-      category: 'Terminal',
-      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 920, blockGapPx: 28 },
-      typography: {
-        heading: { sizePx: 52, weight: 700, lineHeight: 1.4 },
-        body: { sizePx: 38, weight: 400, lineHeight: 1.6 },
-        code: { sizePx: 42, lineHeight: 1.5 },
-        caption: { sizePx: 26, weight: 400, lineHeight: 1.4 },
-      },
-      colors: { background: '#0D1117', primary: '#58A6FF', secondary: '#8B949E', accent: '#7EE787', muted: '#484F58', error: '#FF7B72' },
-      emphasisRules: {
-        primary: { colorToken: 'accent', weight: 700, textTransform: 'none' },
-        secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
-        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-      },
-      contentMapping: {
-        heading: { typography: 'heading' },
-        body_default: { typography: 'body' },
-        body_label: { typography: 'body', forceEmphasis: 'primary' },
-        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-        code_default: { typography: 'code' },
-        code_command: { typography: 'code', forceEmphasis: 'normal' },
-        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-        list_item_default: { typography: 'body' },
-      },
-      decorations: { divider: 'none', codeIcon: false, terminalPrompt: true, heart: false, cornerMark: true },
-      backgroundTreatment: { mode: 'solid' },
-      branding: { typography: 'caption', sizeScalePct: 90, opacityCeiling: 0.8 },
-      watermark: { typography: 'caption', sizeScalePct: 90, opacityCeiling: 0.6 },
-    },
-    sampleContent: {
-      blocks: [
-        { type: 'code', role: 'command', runs: [{ text: './relationship.exe' }] },
-        { type: 'body', role: 'error', runs: [{ text: 'FATAL ERROR: NullPointer in feelings', emphasis: 'primary' }] },
-        { type: 'list_item', runs: [{ text: '-> Expected: reciprocated devotion', emphasis: 'secondary' }] },
-        { type: 'body', role: 'attribution', runs: [{ text: 'Process terminated with exit code 1', emphasis: 'muted' }] },
-      ],
-    },
   },
   CodeBlock: {
     label: 'Code Block',
     description: 'Framed syntax snippet card with monospace styling and bottom reflection narrative',
-    definition: {
-      category: 'CodeBlock',
-      layout: { contentAlign: 'left', verticalAnchor: 'center', maxContentWidthPx: 920, blockGapPx: 36 },
-      typography: {
-        heading: { sizePx: 56, weight: 700, lineHeight: 1.4 },
-        body: { sizePx: 42, weight: 400, lineHeight: 1.6 },
-        code: { sizePx: 38, lineHeight: 1.6 },
-        caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
-      },
-      colors: { background: '#1E1E1E', primary: '#D4D4D4', secondary: '#252526', accent: '#4EC9B0', muted: '#6A9955', error: '#F44747' },
-      emphasisRules: {
-        primary: { colorToken: 'accent', weight: 600, textTransform: 'none' },
-        secondary: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-        muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-      },
-      contentMapping: {
-        heading: { typography: 'heading' },
-        body_default: { typography: 'body' },
-        body_label: { typography: 'body', forceEmphasis: 'primary' },
-        body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-        code_default: { typography: 'code' },
-        code_command: { typography: 'code', forceEmphasis: 'normal' },
-        body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-        list_item_default: { typography: 'body' },
-      },
-      decorations: { divider: 'none', codeIcon: true, terminalPrompt: false, heart: false, cornerMark: false },
-      backgroundTreatment: { mode: 'solid' },
-      branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
-      watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.7 },
-    },
-    sampleContent: {
-      blocks: [
-        { type: 'code', runs: [{ text: 'if (love) {\n  trust();\n  grow();\n} else {\n  refactor(mindset);\n}' }] },
-        { type: 'body', runs: [{ text: 'Never force an algorithm that creates infinite emotional loops.', emphasis: 'normal' }] },
-      ],
-    },
   },
+};
+
+const DEFAULT_FALLBACK_DEFINITION = {
+  category: 'MinimalQuote',
+  layout: { contentAlign: 'center', verticalAnchor: 'center', maxContentWidthPx: 880, blockGapPx: 48, safeAreaInsetsPx: { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 } },
+  typography: {
+    heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
+    body: { sizePx: 48, weight: 400, lineHeight: 1.6 },
+    code: { sizePx: 38, lineHeight: 1.5 },
+    caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
+  },
+  colors: { background: '#0A0A0C', primary: '#FFFFFF', secondary: '#E2E8F0', accent: '#FFFFFF', muted: '#718096', error: '#E53E3E' },
+  emphasisRules: {
+    primary: { colorToken: 'primary', weight: 700, textTransform: 'uppercase' },
+    secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
+    normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
+    muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
+  },
+  contentMapping: {
+    heading: { typography: 'heading' },
+    body_default: { typography: 'body' },
+    body_label: { typography: 'body', forceEmphasis: 'primary' },
+    body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
+    code_default: { typography: 'code' },
+    code_command: { typography: 'code', forceEmphasis: 'normal' },
+    body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
+    list_item_default: { typography: 'body' },
+  },
+  decorations: { divider: 'none', codeIcon: false, terminalPrompt: false, heart: false, cornerMark: false },
+  backgroundTreatment: { mode: 'solid' },
+  branding: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 1.0 },
+  watermark: { typography: 'caption', sizeScalePct: 100, opacityCeiling: 0.65 },
+  compatibility: { supportedBlockTypes: ['heading', 'body', 'divider'], supportedRoles: ['default', 'attribution', 'cta', 'error', 'label'], minBlocks: 1, maxBlocks: 6 },
 };
 
 export const TemplatesView: React.FC = () => {
@@ -294,7 +137,7 @@ export const TemplatesView: React.FC = () => {
 
   // 9-tab Template Editor states
   const [activeEditorTab, setActiveEditorTab] = useState<'layout' | 'typography' | 'colors' | 'emphasis' | 'spacing' | 'decorations' | 'branding' | 'watermark' | 'background'>('layout');
-  const [editorDefinition, setEditorDefinition] = useState<any>(CATEGORY_PRESETS.MinimalQuote.definition);
+  const [editorDefinition, setEditorDefinition] = useState<any>(DEFAULT_FALLBACK_DEFINITION);
   const [editorCategory, setEditorCategory] = useState<string>('MinimalQuote');
   const [versionNotes, setVersionNotes] = useState('');
 
@@ -307,6 +150,13 @@ export const TemplatesView: React.FC = () => {
     },
   });
 
+  const getTemplateForCategory = (cat: string) => {
+    return templates.find((t) => {
+      const activeVer = t.versions?.find((v) => v.status === 'Active') || t.versions?.[0];
+      return activeVer?.category === cat;
+    });
+  };
+
   const { register: regCreate, handleSubmit: subCreate, reset: resetCreate, setValue: setCreateValue, formState: { errors: errCreate } } = useForm<TemplateCreateValues>({
     resolver: zodResolver(templateCreateSchema),
     defaultValues: {
@@ -314,25 +164,30 @@ export const TemplatesView: React.FC = () => {
     },
   });
 
-  // When category changes in form, reset definition to that category preset
+  // When category changes in form, reset definition by cloning from the seeded template of that category
   const handleCategoryChange = (cat: string) => {
     setEditorCategory(cat);
     setCreateValue('category', cat as any);
-    if (CATEGORY_PRESETS[cat]) {
-      setEditorDefinition(JSON.parse(JSON.stringify(CATEGORY_PRESETS[cat].definition)));
+    const existing = getTemplateForCategory(cat);
+    const activeVer = existing?.versions?.find((v) => v.status === 'Active') || existing?.versions?.[0];
+    if (activeVer?.definition) {
+      setEditorDefinition(JSON.parse(JSON.stringify(activeVer.definition)));
+    } else {
+      setEditorDefinition({ ...DEFAULT_FALLBACK_DEFINITION, category: cat });
     }
   };
 
   // Mutations
   const createMutation = useMutation({
     mutationFn: async (values: TemplateCreateValues) => {
-      const preset = CATEGORY_PRESETS[values.category];
+      const existing = getTemplateForCategory(values.category);
+      const activeVer = existing?.versions?.find((v) => v.status === 'Active') || existing?.versions?.[0];
       const payload = {
         name: values.name,
         notes: values.notes,
         category: values.category,
         definition: editorDefinition,
-        sampleContent: preset?.sampleContent,
+        sampleContent: activeVer?.sampleContent || null,
       };
       const res = await apiClient.post('/templates', payload);
       return res.data.data;
@@ -350,11 +205,11 @@ export const TemplatesView: React.FC = () => {
 
   const addVersionMutation = useMutation({
     mutationFn: async () => {
-      const preset = CATEGORY_PRESETS[editorCategory];
+      const activeVer = historyTemplate?.versions?.find((v) => v.status === 'Active') || historyTemplate?.versions?.[0];
       const payload = {
         category: editorCategory,
         definition: editorDefinition,
-        sampleContent: preset?.sampleContent,
+        sampleContent: activeVer?.sampleContent || null,
         notes: versionNotes || undefined,
       };
       const res = await apiClient.post(`/templates/${historyTemplate?.id}/versions`, payload);
@@ -935,8 +790,8 @@ export const TemplatesView: React.FC = () => {
                     onChange={(e) => handleCategoryChange(e.target.value)}
                     className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
                   >
-                    {Object.entries(CATEGORY_PRESETS).map(([cat, preset]) => (
-                      <option key={cat} value={cat}>{preset.label}</option>
+                    {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+                      <option key={cat} value={cat}>{meta.label}</option>
                     ))}
                   </select>
                 </div>
@@ -1097,8 +952,8 @@ export const TemplatesView: React.FC = () => {
                     onChange={(e) => handleCategoryChange(e.target.value)}
                     className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
                   >
-                    {Object.entries(CATEGORY_PRESETS).map(([cat, preset]) => (
-                      <option key={cat} value={cat}>{preset.label}</option>
+                    {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+                      <option key={cat} value={cat}>{meta.label}</option>
                     ))}
                   </select>
                 </div>

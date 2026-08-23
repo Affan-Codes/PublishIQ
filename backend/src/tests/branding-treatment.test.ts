@@ -83,4 +83,22 @@ test('Branding & Watermark Presentation Treatment Tests', async (t) => {
     assert.ok(html.includes('ACME_PRODUCTIONS'), 'Branding text must be present');
     assert.ok(html.includes('@acme_official'), 'Watermark text must be present');
   });
+
+  await t.test('RenderingConfigurationSchema strictly rejects legacy branding and watermark keys', async () => {
+    const { RenderingConfigurationSchema } = await import('../schemas/content-profile.schema.js');
+
+    const validPayload = {
+      animation: { preset: 'SlowZoomIn' },
+    };
+    assert.ok(RenderingConfigurationSchema.safeParse(validPayload).success);
+
+    const legacyPayload = {
+      branding: 'LegacyBrand',
+      watermark: '@legacy',
+      animation: { preset: 'None' },
+    };
+    const parsed = RenderingConfigurationSchema.safeParse(legacyPayload);
+    assert.strictEqual(parsed.success, false, 'RenderingConfigurationSchema must reject legacy branding/watermark fields');
+  });
 });
+

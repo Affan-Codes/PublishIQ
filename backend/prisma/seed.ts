@@ -2,6 +2,10 @@ import { ContentTypeStatus, Role, TemplateCategory } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import { env } from '../src/config/env.js';
 import { prisma } from '../src/database/db.js';
+import {
+  V1_TEMPLATE_DEFINITIONS,
+  V1_SAMPLE_CONTENTS,
+} from '../src/schemas/template-definition.schema.js';
 
 const WORKSPACE_ID = 'd3b07384-d113-495f-a558-9c5c8ee058c4';
 
@@ -41,6 +45,7 @@ async function main() {
   const systemConfigs = [
     { key: 'retry_limit.generation', value: 3 },
     { key: 'retry_limit.duplicate_regeneration', value: 5 },
+    { key: 'retry_limit.template_incompatibility_regeneration', value: 3 },
     { key: 'retry_limit.publish', value: 3 },
     { key: 'render_concurrency', value: 2 },
     { key: 'default_video_duration_seconds', value: 15 },
@@ -139,22 +144,12 @@ async function main() {
     }
   });
 
-  const promptBody = `You are an expert quote generator. Based on the Content Type: {{contentType}}, Language: {{language}}, and Tone: {{tone}}, generate a beautiful quote or Shayari.
-Available background music catalog: {{musicCatalog}}
-CRITICAL CONSTRAINT: Both "title" and "caption" MUST NOT exceed 100 characters in length.
-If the music catalog contains a suitable track for this content's mood and theme, set "selectedMusicAssetId" to that track's exact "id". If none fit or the catalog is empty, omit "selectedMusicAssetId".
-Response MUST be in structured JSON format matching this exact schema:
-{
-  "title": "A short descriptive title for the quote (maximum 100 characters)",
-  "quote": "The quote or Shayari text itself, shaped in beautiful formatting",
-  "caption": "A social media caption description (maximum 100 characters)",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
-  "metadata": {},
-  "language": "{{language}}",
-  "contentType": "{{contentType}}",
-  "selectedMusicAssetId": "optional-id-from-music-catalog"
-}
-Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON string.`;
+  const promptBody = `You are an expert social media content creator and poet.
+Generate a compelling {{contentType}} in {{language}} with a {{tone}} tone and {{style}} style.
+Selected music track: {{musicCatalog}}
+Selected background visuals: {{backgroundCatalog}}
+
+Return a valid JSON object matching the requested schema.`;
 
   await prisma.promptVersion.upsert({
     where: {
@@ -163,7 +158,7 @@ Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON stri
         versionNumber: 1,
       }
     },
-    update: { body: promptBody },
+    update: {},
     create: {
       promptId: defaultPrompt.id,
       versionNumber: 1,
@@ -174,113 +169,67 @@ Do NOT wrap in markdown formatting (like \`\`\`json). Return only pure JSON stri
   });
   console.log('Default prompts seeded.');
 
-  // 6. Seed default Templates and TemplateVersions
-  const defaultTemplate = await prisma.template.upsert({
-    where: { id: 'e3b07384-d113-495f-a558-9c5c8ee058c4' }, // deterministic UUID
-    update: {},
-    create: {
-      id: 'e3b07384-d113-495f-a558-9c5c8ee058c4',
-      workspaceId: workspace.id,
-      name: 'Default Quote Template',
-      status: 'Active',
-      notes: 'Initial default template',
-    }
-  });
+  // 6. Seed all 5 V1 default Templates and TemplateVersions from canonical schema definitions
+  const TEMPLATE_IDS: Record<TemplateCategory, string> = {
+    CodeAnalogy: 'e3b07384-d113-495f-a558-9c5c8ee058c1',
+    SplitStatement: 'e3b07384-d113-495f-a558-9c5c8ee058c2',
+    Terminal: 'e3b07384-d113-495f-a558-9c5c8ee058c3',
+    MinimalQuote: 'e3b07384-d113-495f-a558-9c5c8ee058c4',
+    CodeBlock: 'e3b07384-d113-495f-a558-9c5c8ee058c5',
+  };
 
-  await prisma.templateVersion.upsert({
-    where: {
-      templateId_versionNumber: {
-        templateId: defaultTemplate.id,
+  const TEMPLATE_NAMES: Record<TemplateCategory, string> = {
+    CodeAnalogy: 'Code Analogy Template',
+    MinimalQuote: 'Default Quote Template',
+    SplitStatement: 'Split Statement Template',
+    Terminal: 'Terminal Template',
+    CodeBlock: 'Code Block Template',
+  };
+
+  for (const [categoryKey, definition] of Object.entries(V1_TEMPLATE_DEFINITIONS) as [TemplateCategory, any][]) {
+    const templateId = TEMPLATE_IDS[categoryKey];
+    const templateName = TEMPLATE_NAMES[categoryKey];
+    const sampleContent = V1_SAMPLE_CONTENTS[categoryKey];
+
+    const template = await prisma.template.upsert({
+      where: { id: templateId },
+      update: { name: templateName, status: 'Active' },
+      create: {
+        id: templateId,
+        workspaceId: workspace.id,
+        name: templateName,
+        status: 'Active',
+        notes: `Seeded V1 ${categoryKey} template`,
+      },
+    });
+
+    await prisma.templateVersion.upsert({
+      where: {
+        templateId_versionNumber: {
+          templateId: template.id,
+          versionNumber: 1,
+        },
+      },
+      update: {
+        category: categoryKey,
+        definition,
+        sampleContent,
+        status: 'Active',
+      },
+      create: {
+        templateId: template.id,
         versionNumber: 1,
-      }
-    },
-    update: {},
-    create: {
-      templateId: defaultTemplate.id,
-      versionNumber: 1,
-      componentPath: 'DefaultQuoteTemplate',
-      category: TemplateCategory.MinimalQuote,
-      definition: {
-        category: 'MinimalQuote',
-        layout: {
-          contentAlign: 'center',
-          verticalAnchor: 'center',
-          maxContentWidthPx: 880,
-          blockGapPx: 48,
-        },
-        typography: {
-          heading: { sizePx: 64, weight: 700, lineHeight: 1.5 },
-          body: { sizePx: 48, weight: 400, lineHeight: 1.6 },
-          code: { sizePx: 38, lineHeight: 1.5 },
-          caption: { sizePx: 28, weight: 600, lineHeight: 1.4 },
-        },
-        colors: {
-          background: '#0A0A0C',
-          primary: '#FFFFFF',
-          secondary: '#E2E8F0',
-          accent: '#FFFFFF',
-          muted: '#718096',
-          error: '#E53E3E',
-        },
-        emphasisRules: {
-          primary: { colorToken: 'primary', weight: 700, textTransform: 'uppercase' },
-          secondary: { colorToken: 'secondary', weight: 600, textTransform: 'none' },
-          normal: { colorToken: 'primary', weight: 400, textTransform: 'none' },
-          muted: { colorToken: 'muted', weight: 400, textTransform: 'none' },
-        },
-        contentMapping: {
-          heading: { typography: 'heading' },
-          body_default: { typography: 'body' },
-          body_label: { typography: 'body', forceEmphasis: 'primary' },
-          body_attribution: { typography: 'caption', forceEmphasis: 'muted' },
-          code_default: { typography: 'code' },
-          code_command: { typography: 'code', forceEmphasis: 'normal' },
-          body_error: { typography: 'body', forceEmphasis: 'primary', colorOverride: 'error' },
-          list_item_default: { typography: 'body' },
-        },
-        decorations: {
-          divider: 'none',
-          codeIcon: false,
-          terminalPrompt: false,
-          heart: false,
-          cornerMark: false,
-        },
-        backgroundTreatment: {
-          mode: 'solid',
-        },
-        branding: {
-          typography: 'caption',
-          sizeScalePct: 100,
-          opacityCeiling: 1.0,
-        },
-        watermark: {
-          typography: 'caption',
-          sizeScalePct: 100,
-          opacityCeiling: 0.65,
-        },
+        componentPath: categoryKey === 'MinimalQuote' ? 'DefaultQuoteTemplate' : null,
+        category: categoryKey,
+        definition,
+        sampleContent,
+        previewImageUrl: null,
+        status: 'Active',
+        notes: `Initial version for ${categoryKey}`,
       },
-      sampleContent: {
-        blocks: [
-          {
-            type: 'heading',
-            runs: [
-              { text: 'She was my ' },
-              { text: 'UPDATE', emphasis: 'primary' },
-              { text: ', but I was just her temporary commit.' },
-            ],
-          },
-          {
-            type: 'body',
-            role: 'attribution',
-            runs: [{ text: '@codedropout // Follow for more', emphasis: 'muted' }],
-          },
-        ],
-      },
-      status: 'Active',
-      notes: 'Initial version',
-    }
-  });
-  console.log('Default templates seeded.');
+    });
+  }
+  console.log('All 5 V1 default templates seeded.');
 
   // 7. Seed Cloudinary Music Assets (Trimmed to 15s max)
   const musicAssets = [

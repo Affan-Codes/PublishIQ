@@ -186,8 +186,6 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
   describe('AQL-11: RenderingConfigurationSchema Validation', () => {
     it('should validate valid animation presets', () => {
       const validConfig = {
-        resolution: '1080x1920',
-        fps: 30,
         animation: {
           preset: 'SlowZoomIn',
         },
@@ -198,7 +196,6 @@ describe('Animation Quality & Roman Language Architecture Test Suite', () => {
 
     it('should reject invalid animation presets', () => {
       const invalidConfig = {
-        resolution: '1080x1920',
         animation: {
           preset: 'CrazySpin360',
         },

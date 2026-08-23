@@ -557,14 +557,38 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
 
       const brandingRules = (snapshot.brandingRules !== undefined ? snapshot.brandingRules : profile.brandingRules) as Record<string, any> || {};
       const watermarkRules = (snapshot.watermarkRules !== undefined ? snapshot.watermarkRules : profile.watermarkRules) as Record<string, any> || {};
-      const renderingConfiguration = (snapshot.renderingConfiguration !== undefined ? snapshot.renderingConfiguration : profile.renderingConfiguration) as Record<string, any> || {};
 
-      // CFG-01: Wire brandingRules and watermarkRules text with renderingConfiguration fallback
-      const brandingText = brandingRules.text || renderingConfiguration.branding || 'PUBLISHIQ';
-      const watermarkText = watermarkRules.text || renderingConfiguration.watermark || '@publishiq';
+      // CFG-01 / P0-02: Wire brandingRules and watermarkRules text directly (single source of truth)
+      const brandingText = brandingRules.text || 'PUBLISHIQ';
+      const watermarkText = watermarkRules.text || '@publishiq';
       const brandingOpacity = typeof brandingRules.opacity === 'number' ? brandingRules.opacity : undefined;
       const watermarkOpacity = typeof watermarkRules.opacity === 'number' ? watermarkRules.opacity : undefined;
       const content = snapshot.blocks ? { blocks: snapshot.blocks } : undefined;
+
+      // P1-05: Validate StructuredContent compatibility against pinned template definition capacity
+      const templateDef = snapshot.templateDefinition;
+      if (templateDef?.compatibility && Array.isArray(snapshot.blocks)) {
+        const compatibility = templateDef.compatibility;
+        const blocks = snapshot.blocks;
+        if (blocks.length < compatibility.minBlocks || blocks.length > compatibility.maxBlocks) {
+          throw new ValidationError(
+            `Template incompatibility: Block count (${blocks.length}) outside allowed range [${compatibility.minBlocks}, ${compatibility.maxBlocks}]`
+          );
+        }
+        for (const block of blocks) {
+          if (!compatibility.supportedBlockTypes.includes(block.type)) {
+            throw new ValidationError(
+              `Template incompatibility: Unsupported block type '${block.type}' for template`
+            );
+          }
+          const role = block.role ?? 'default';
+          if (!compatibility.supportedRoles.includes(role)) {
+            throw new ValidationError(
+              `Template incompatibility: Unsupported block role '${role}' for template`
+            );
+          }
+        }
+      }
 
       const hasBackground = !!(snapshot.selectedBackgroundFilePath && snapshot.selectedBackgroundFilePath.trim().length > 0);
 
@@ -862,8 +886,11 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
     // 1. Run Generation & Media Rendering Phase (skipped if resuming from Publishing or Completed)
     if (!isPublishingResume && job.pipelineStage !== PipelineStage.Publishing && job.pipelineStage !== PipelineStage.Completed) {
       let duplicateAttempts = 0;
+      let incompatibilityAttempts = 0;
       const maxDuplicateRetriesVal = await systemConfigCache.get<number>('retry_limit.duplicate_regeneration');
       const maxDuplicateRetries = typeof maxDuplicateRetriesVal === 'number' ? maxDuplicateRetriesVal : 5;
+      const maxIncompatRetriesVal = await systemConfigCache.get<number>('retry_limit.template_incompatibility_regeneration');
+      const maxIncompatRetries = typeof maxIncompatRetriesVal === 'number' ? maxIncompatRetriesVal : 3;
 
       while (true) {
         try {
@@ -955,6 +982,31 @@ export async function runContentPipeline(jobId: string, options?: PipelineOption
             });
             continue;
           }
+
+          // P1-05: Handle template incompatibility with bounded automatic regeneration
+          const isIncompatible = err instanceof ValidationError && err.message.includes('Template incompatibility:');
+          if (isIncompatible) {
+            incompatibilityAttempts++;
+            if (incompatibilityAttempts >= maxIncompatRetries) {
+              throw new ValidationError(
+                `Validation failed: ${err.message}. Automatically regenerated ${incompatibilityAttempts} times but could not produce compatible content.`
+              );
+            }
+            logger.warn({ jobId: job.id, incompatibilityAttempts, error: err.message }, 'Template incompatibility detected. Triggering automatic regeneration...');
+
+            completedStagesInThisRun.clear();
+            startIndex = 0;
+
+            await jobRepository.transitionJobStage(job.id, PipelineStage.Draft, {
+              generatedText: null,
+              imageUrl: null,
+              videoUrl: null,
+              caption: null,
+              hashtags: null,
+            });
+            continue;
+          }
+
           throw err;
         }
       }

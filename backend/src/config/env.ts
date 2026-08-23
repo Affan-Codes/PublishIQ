@@ -40,14 +40,18 @@ const envSchema = z.object({
       if (!data.GEMINI_API_KEY) return false;
       if (!data.FACEBOOK_APP_ID || !data.FACEBOOK_APP_SECRET) return false;
       if (!data.GOOGLE_CLIENT_ID || !data.GOOGLE_CLIENT_SECRET) return false;
+      if (data.APP_BASE_URL === 'http://localhost:4000' || !process.env.APP_BASE_URL) return false;
+      if (data.CORS_ORIGIN === 'http://localhost:5173' || !process.env.CORS_ORIGIN) return false;
     }
     return true;
   },
   {
-    message: 'Required production environment variables (OPERATOR_EMAIL, OPERATOR_PASSWORD, ENCRYPTION_KEY, ENCRYPTION_SALT, SESSION_SECRET, GEMINI_API_KEY, FACEBOOK_APP_ID/SECRET, GOOGLE_CLIENT_ID/SECRET) must be explicitly provided with non-default production values',
-    path: ['ENCRYPTION_KEY'],
+    message: 'Required production environment variables (OPERATOR_EMAIL, OPERATOR_PASSWORD, ENCRYPTION_KEY, ENCRYPTION_SALT, SESSION_SECRET, GEMINI_API_KEY, FACEBOOK_APP_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, APP_BASE_URL, CORS_ORIGIN) must be explicitly provided with non-default production values',
+    path: [],
   }
 );
+
+export { envSchema };
 
 const parsed = envSchema.safeParse(process.env);
 
@@ -59,3 +63,4 @@ if (!parsed.success) {
 
 export const env = parsed.data;
 export type Env = z.infer<typeof envSchema>;
+

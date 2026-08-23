@@ -4,6 +4,8 @@ import { templateRepository } from '../repositories/template.repository.js';
 import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
 import { getTemplateRenderer } from '../templates/index.js';
 import { StructuredContent } from '../schemas/content-block.schema.js';
+import { TemplateDefinition } from '../schemas/template-definition.schema.js';
+import { ContentOverflowError } from '../errors/custom-errors.js';
 
 export interface RenderOptions {
   language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman';
@@ -53,16 +55,15 @@ export const renderingService = {
   },
 
   /**
-   * Renders the content onto vertical image plates (2160x3840 physical at 2x DSF) and returns Cloudinary media URIs.
-   * 
-   * Architecture (MQA-01, MQA-05):
-   * When a background asset is configured, Chromium renders ONLY the transparent foreground plate
-   * (containing typography, branding, watermark, and dark gradient scrim for readability).
-   * The original background photographic asset is fed directly to FFmpeg without browser rasterization.
-   * 
-   * When no background is configured, renders a single full composite image on solid background.
+   * Renders the vertical text plate using Playwright and uploads directly via CloudinaryStorageProvider.
+   * If hasBackground is true, renders a transparent foreground plate with scrim (MQA-05 / MQA-11).
+   * Implements bounded auto-shrink overflow protection with ContentOverflowError.
    */
-  async renderImage(jobId: string, text: string, options: RenderOptions): Promise<RenderImageResult> {
+  async renderImage(
+    jobId: string,
+    text: string,
+    options: RenderOptions
+  ): Promise<RenderImageResult> {
     let templateVersion: any = null;
     if (options.templateVersionId) {
       try {
@@ -110,16 +111,75 @@ export const renderingService = {
 
       let htmlContent: string;
       if (templateVersion?.definition) {
-        htmlContent = (renderer as any)({
-          content: structuredContent,
-          definition: templateVersion.definition,
-          language: options.language,
-          branding: options.branding,
-          watermark: options.watermark,
-          brandingOpacity: options.brandingOpacity,
-          watermarkOpacity: options.watermarkOpacity,
-          layer,
-        });
+        const baseDef = templateVersion.definition as TemplateDefinition;
+        let currentDef = JSON.parse(JSON.stringify(baseDef)) as TemplateDefinition;
+        const insets = currentDef.layout.safeAreaInsetsPx || { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 };
+        const maxSafeHeight = 1920 - insets.topPx - insets.bottomPx;
+
+        const MAX_SHRINK_ITERATIONS = 4;
+        let fits = false;
+
+        for (let iteration = 0; iteration <= MAX_SHRINK_ITERATIONS; iteration++) {
+          htmlContent = (renderer as any)({
+            content: structuredContent,
+            definition: currentDef,
+            language: options.language,
+            branding: options.branding,
+            watermark: options.watermark,
+            brandingOpacity: options.brandingOpacity,
+            watermarkOpacity: options.watermarkOpacity,
+            layer,
+          });
+
+          await page.setContent(htmlContent);
+          await page.evaluate(() => (globalThis as any).document?.fonts?.ready);
+
+          const scrollHeight = await page.evaluate(() => {
+            const doc = (globalThis as any).document;
+            const el = doc ? doc.querySelector('.content-container') : null;
+            return el ? el.scrollHeight : 0;
+          });
+
+          if (scrollHeight <= maxSafeHeight) {
+            fits = true;
+            break;
+          }
+
+          if (iteration < MAX_SHRINK_ITERATIONS) {
+            logger.warn(
+              { jobId, iteration, scrollHeight, maxSafeHeight },
+              'Structured content exceeds safe canvas height; applying bounded auto-shrink'
+            );
+            // Reduce typography sizes by 10% with floor at 60% of base
+            if (currentDef.typography.heading) {
+              currentDef.typography.heading.sizePx = Math.max(
+                Math.round(baseDef.typography.heading.sizePx * 0.6),
+                Math.round(currentDef.typography.heading.sizePx * 0.9)
+              );
+            }
+            if (currentDef.typography.body) {
+              currentDef.typography.body.sizePx = Math.max(
+                Math.round(baseDef.typography.body.sizePx * 0.6),
+                Math.round(currentDef.typography.body.sizePx * 0.9)
+              );
+            }
+            if (currentDef.typography.code) {
+              currentDef.typography.code.sizePx = Math.max(
+                Math.round(baseDef.typography.code.sizePx * 0.6),
+                Math.round(currentDef.typography.code.sizePx * 0.9)
+              );
+            }
+            if (currentDef.layout.blockGapPx) {
+              currentDef.layout.blockGapPx = Math.max(8, Math.round(currentDef.layout.blockGapPx * 0.85));
+            }
+          }
+        }
+
+        if (!fits) {
+          throw new ContentOverflowError(
+            `Structured content exceeds template safe canvas height (${maxSafeHeight}px) even after maximum font reduction attempts.`
+          );
+        }
       } else {
         htmlContent = (renderer as any)({
           text,
@@ -128,11 +188,11 @@ export const renderingService = {
           watermark: options.watermark,
           layer,
         });
-      }
 
-      await page.setContent(htmlContent);
-      // @ts-ignore
-      await page.evaluate(() => document.fonts.ready);
+        await page.setContent(htmlContent);
+        // @ts-ignore
+        await page.evaluate(() => document.fonts.ready);
+      }
 
       if (hasBackground) {
         // Render Transparent Foreground Plate with Scrim Overlay (MQA-05 / MQA-11)
