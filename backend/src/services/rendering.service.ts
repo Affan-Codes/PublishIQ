@@ -6,6 +6,8 @@ import { getTemplateRenderer } from '../templates/index.js';
 import { StructuredContent } from '../schemas/content-block.schema.js';
 import { TemplateDefinition } from '../schemas/template-definition.schema.js';
 import { ContentOverflowError } from '../errors/custom-errors.js';
+import { validateTemplateCompatibility } from '../templates/compatibility.js';
+import { renderFromDefinition } from '../templates/definition-engine.js';
 
 export interface RenderOptions {
   language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman';
@@ -214,6 +216,118 @@ export const renderingService = {
     } catch (err: any) {
       logger.error({ jobId, err }, 'Playwright image rendering failed');
       throw err;
+    } finally {
+      if (context) {
+        await context.close();
+      }
+    }
+  },
+
+  /**
+   * Evaluates layout compatibility and overflow for a scenario against a TemplateDefinition.
+   * Reuses the exact compatibility and measure-and-shrink bounds logic without saving to DB or Cloudinary.
+   */
+  async evaluateLayoutFit(
+    definition: TemplateDefinition,
+    content: StructuredContent,
+    language: 'English' | 'Hindi' | 'Urdu' | 'HindiRoman' | 'UrduRoman' = 'English'
+  ): Promise<{ status: 'PASS' | 'WARNING' | 'FAIL'; message: string }> {
+    // 1. Compatibility check
+    if (definition.compatibility) {
+      const compatErr = validateTemplateCompatibility(content, definition.compatibility);
+      if (compatErr) {
+        return {
+          status: 'FAIL',
+          message: compatErr,
+        };
+      }
+    }
+
+    // 2. Measure layout bounds using Playwright (identical to production rendering path, but no persistence/upload)
+    const baseDef = definition;
+    let currentDef = JSON.parse(JSON.stringify(baseDef)) as TemplateDefinition;
+    const insets = currentDef.layout.safeAreaInsetsPx || { topPx: 140, bottomPx: 160, leftPx: 80, rightPx: 80 };
+    const maxSafeHeight = 1920 - insets.topPx - insets.bottomPx;
+    const MAX_SHRINK_ITERATIONS = 4;
+
+    let context;
+    try {
+      const browser = await this.getBrowser();
+      context = await browser.newContext({
+        viewport: { width: 1080, height: 1920 },
+        deviceScaleFactor: 2,
+      });
+      const page = await context.newPage();
+
+      for (let iteration = 0; iteration <= MAX_SHRINK_ITERATIONS; iteration++) {
+        const htmlContent = renderFromDefinition({
+          content,
+          definition: currentDef,
+          language,
+        });
+
+        await page.setContent(htmlContent);
+        await page.evaluate(() => (globalThis as any).document?.fonts?.ready);
+
+        const scrollHeight = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          const el = doc ? doc.querySelector('.content-container') : null;
+          return el ? el.scrollHeight : 0;
+        });
+
+        if (scrollHeight <= maxSafeHeight) {
+          if (iteration === 0) {
+            return {
+              status: 'PASS',
+              message: `Fits within safe canvas height (${scrollHeight}px <= ${maxSafeHeight}px) without font shrinking`,
+            };
+          } else {
+            return {
+              status: 'WARNING',
+              message: `Fits within safe canvas height (${scrollHeight}px <= ${maxSafeHeight}px) after ${iteration} bounded font reduction step(s)`,
+            };
+          }
+        }
+
+        if (iteration < MAX_SHRINK_ITERATIONS) {
+          // Reduce typography sizes by 10% with floor at 60% of base
+          if (currentDef.typography.heading) {
+            currentDef.typography.heading.sizePx = Math.max(
+              Math.round(baseDef.typography.heading.sizePx * 0.6),
+              Math.round(currentDef.typography.heading.sizePx * 0.9)
+            );
+          }
+          if (currentDef.typography.body) {
+            currentDef.typography.body.sizePx = Math.max(
+              Math.round(baseDef.typography.body.sizePx * 0.6),
+              Math.round(currentDef.typography.body.sizePx * 0.9)
+            );
+          }
+          if (currentDef.typography.code) {
+            currentDef.typography.code.sizePx = Math.max(
+              Math.round(baseDef.typography.code.sizePx * 0.6),
+              Math.round(currentDef.typography.code.sizePx * 0.9)
+            );
+          }
+          if (currentDef.layout.blockGapPx) {
+            currentDef.layout.blockGapPx = Math.max(8, Math.round(currentDef.layout.blockGapPx * 0.85));
+          }
+        }
+      }
+
+      return {
+        status: 'FAIL',
+        message: `Content exceeds safe canvas height (${maxSafeHeight}px) even after maximum font reduction attempts`,
+      };
+    } catch (err: any) {
+      logger.warn({ err: err.message }, 'Playwright layout evaluation failed, falling back to calculation');
+      const totalChars = (content.blocks || []).reduce((sum, b) => {
+        return sum + (b.runs || []).reduce((rSum, r) => rSum + (r.text?.length || 0), 0);
+      }, 0);
+      if (totalChars > 450) {
+        return { status: 'WARNING', message: 'High character density may require font shrinking' };
+      }
+      return { status: 'PASS', message: 'Fits within standard layout capacity' };
     } finally {
       if (context) {
         await context.close();

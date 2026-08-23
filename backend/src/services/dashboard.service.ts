@@ -42,6 +42,17 @@ export const dashboardService = {
       valkeyStatus = 'Offline';
     }
 
+    let workerStatus = 'Offline';
+    let workerCount = 0;
+    try {
+      const workers = await contentPipelineQueue.getWorkers();
+      workerCount = Array.isArray(workers) ? workers.length : 0;
+      workerStatus = workerCount > 0 ? 'Healthy' : 'Offline';
+    } catch {
+      workerStatus = 'Offline';
+      workerCount = 0;
+    }
+
     return {
       counters: {
         totalChannels: channelCount,
@@ -81,6 +92,10 @@ export const dashboardService = {
       health: {
         database: 'Healthy',
         valkey: valkeyStatus,
+        worker: {
+          status: workerStatus,
+          count: workerCount,
+        },
       },
     };
   },

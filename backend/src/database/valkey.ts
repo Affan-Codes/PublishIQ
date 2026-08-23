@@ -74,6 +74,4 @@ export async function closeValkeyInstance(): Promise<void> {
   }
 }
 
-export const getRedisInstance = getValkeyInstance;
-
 export default getValkeyInstance;

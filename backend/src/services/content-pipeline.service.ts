@@ -15,6 +15,7 @@ import { systemConfigCache } from '../config/system-config.cache.js';
 import { getNormalizedHash } from '../utils/normalization.js';
 import { logger } from '../utils/logger.js';
 import { ValidationError, NotFoundError, ExternalProviderError } from '../errors/custom-errors.js';
+import { validateTemplateCompatibility } from '../templates/compatibility.js';
 
 export interface PipelineOptions {
   onStageComplete?: (stage: PipelineStage) => Promise<void>;
@@ -568,25 +569,9 @@ export async function processStage(jobId: string, stage: PipelineStage): Promise
       // P1-05: Validate StructuredContent compatibility against pinned template definition capacity
       const templateDef = snapshot.templateDefinition;
       if (templateDef?.compatibility && Array.isArray(snapshot.blocks)) {
-        const compatibility = templateDef.compatibility;
-        const blocks = snapshot.blocks;
-        if (blocks.length < compatibility.minBlocks || blocks.length > compatibility.maxBlocks) {
-          throw new ValidationError(
-            `Template incompatibility: Block count (${blocks.length}) outside allowed range [${compatibility.minBlocks}, ${compatibility.maxBlocks}]`
-          );
-        }
-        for (const block of blocks) {
-          if (!compatibility.supportedBlockTypes.includes(block.type)) {
-            throw new ValidationError(
-              `Template incompatibility: Unsupported block type '${block.type}' for template`
-            );
-          }
-          const role = block.role ?? 'default';
-          if (!compatibility.supportedRoles.includes(role)) {
-            throw new ValidationError(
-              `Template incompatibility: Unsupported block role '${role}' for template`
-            );
-          }
+        const compatErr = validateTemplateCompatibility({ blocks: snapshot.blocks }, templateDef.compatibility);
+        if (compatErr) {
+          throw new ValidationError(compatErr);
         }
       }
 

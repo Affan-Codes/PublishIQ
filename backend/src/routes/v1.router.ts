@@ -3,6 +3,7 @@ import healthRouter from './health.router.js';
 import authRouter from './auth.router.js';
 import usersRouter from './users.router.js';
 import notificationsRouter from './notifications.router.js';
+import domainEventsRouter from './domain-events.router.js';
 import workspacesRouter from './workspaces.router.js';
 import contentTypesRouter from './content-types.router.js';
 import promptsRouter from './prompts.router.js';
@@ -27,6 +28,7 @@ router.use('/', healthRouter);
 router.use('/', authRouter);
 router.use('/', usersRouter);
 router.use('/', notificationsRouter);
+router.use('/', domainEventsRouter);
 
 // Mount core domains
 router.use('/', workspacesRouter);

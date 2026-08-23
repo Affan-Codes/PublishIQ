@@ -26,7 +26,13 @@ import {
   Layers,
   Image,
   Eye,
+  GitCompare,
+  ShieldCheck,
+  Undo2,
 } from 'lucide-react';
+import { TemplateLivePreview } from '../../components/templates/TemplateLivePreview.js';
+import { StressTestModal } from '../../components/templates/StressTestModal.js';
+import { VersionComparisonModal } from '../../components/templates/VersionComparisonModal.js';
 
 const TemplateCategorySchema = z.enum([
   'CodeAnalogy',
@@ -130,16 +136,23 @@ export const TemplatesView: React.FC = () => {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
+  const [isStressTestOpen, setIsStressTestOpen] = useState(false);
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
   const [historyTemplate, setHistoryTemplate] = useState<Template | null>(null);
   const [selectedVersionForPreview, setSelectedVersionForPreview] = useState<TemplateVersion | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('canonical');
 
   // 9-tab Template Editor states
   const [activeEditorTab, setActiveEditorTab] = useState<'layout' | 'typography' | 'colors' | 'emphasis' | 'spacing' | 'decorations' | 'branding' | 'watermark' | 'background'>('layout');
   const [editorDefinition, setEditorDefinition] = useState<any>(DEFAULT_FALLBACK_DEFINITION);
+  const [lastSavedDefinition, setLastSavedDefinition] = useState<any>(DEFAULT_FALLBACK_DEFINITION);
   const [editorCategory, setEditorCategory] = useState<string>('MinimalQuote');
   const [versionNotes, setVersionNotes] = useState('');
+
+  // Unsaved changes boolean computed via JSON string comparison
+  const hasUnsavedChanges = JSON.stringify(editorDefinition) !== JSON.stringify(lastSavedDefinition);
 
   // Queries
   const { data: templates = [], isLoading, isFetching, isError, error, refetch } = useQuery<Template[]>({
@@ -164,17 +177,55 @@ export const TemplatesView: React.FC = () => {
     },
   });
 
+  // When opening Create Modal
+  const handleOpenCreate = () => {
+    setErrorText(null);
+    setSelectedScenarioId('canonical');
+    const existing = getTemplateForCategory('MinimalQuote');
+    const activeVer = existing?.versions?.find((v) => v.status === 'Active') || existing?.versions?.[0];
+    const initialDef = activeVer?.definition
+      ? JSON.parse(JSON.stringify(activeVer.definition))
+      : { ...DEFAULT_FALLBACK_DEFINITION, category: 'MinimalQuote' };
+    setEditorCategory('MinimalQuote');
+    setEditorDefinition(initialDef);
+    setLastSavedDefinition(JSON.parse(JSON.stringify(initialDef)));
+    resetCreate({ category: 'MinimalQuote', name: '', notes: '' });
+    setIsCreateOpen(true);
+  };
+
+  // When opening Add Version Modal
+  const handleOpenAddVersion = (tmpl: Template) => {
+    setErrorText(null);
+    setSelectedScenarioId('canonical');
+    const activeVer = tmpl.versions?.find((v) => v.status === 'Active') || tmpl.versions?.[0];
+    const cat = activeVer?.category || 'MinimalQuote';
+    const initialDef = activeVer?.definition
+      ? JSON.parse(JSON.stringify(activeVer.definition))
+      : { ...DEFAULT_FALLBACK_DEFINITION, category: cat };
+    setEditorCategory(cat);
+    setEditorDefinition(initialDef);
+    setLastSavedDefinition(JSON.parse(JSON.stringify(initialDef)));
+    setVersionNotes('');
+    setIsVersionOpen(true);
+  };
+
+  // Discard changes
+  const handleDiscardChanges = () => {
+    setEditorDefinition(JSON.parse(JSON.stringify(lastSavedDefinition)));
+    addToast('Unsaved changes discarded', 'info');
+  };
+
   // When category changes in form, reset definition by cloning from the seeded template of that category
   const handleCategoryChange = (cat: string) => {
     setEditorCategory(cat);
     setCreateValue('category', cat as any);
     const existing = getTemplateForCategory(cat);
     const activeVer = existing?.versions?.find((v) => v.status === 'Active') || existing?.versions?.[0];
-    if (activeVer?.definition) {
-      setEditorDefinition(JSON.parse(JSON.stringify(activeVer.definition)));
-    } else {
-      setEditorDefinition({ ...DEFAULT_FALLBACK_DEFINITION, category: cat });
-    }
+    const newDef = activeVer?.definition
+      ? JSON.parse(JSON.stringify(activeVer.definition))
+      : { ...DEFAULT_FALLBACK_DEFINITION, category: cat };
+    setEditorDefinition(newDef);
+    setLastSavedDefinition(JSON.parse(JSON.stringify(newDef)));
   };
 
   // Mutations
@@ -643,7 +694,7 @@ export const TemplatesView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <RefreshButton onRefresh={() => refetch()} isRefreshing={isFetching} title="Refresh templates" />
-          <Button icon={Plus} onClick={() => { setErrorText(null); setIsCreateOpen(true); }}>
+          <Button icon={Plus} onClick={handleOpenCreate}>
             Create Template
           </Button>
         </div>
@@ -674,7 +725,7 @@ export const TemplatesView: React.FC = () => {
           title="No rendering templates configured"
           description="Register visual layout components for automated FFmpeg video rendering."
           actionLabel="Create Template"
-          onAction={() => setIsCreateOpen(true)}
+          onAction={handleOpenCreate}
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -748,12 +799,20 @@ export const TemplatesView: React.FC = () => {
         </div>
       )}
 
-      {/* Create Template Modal */}
+              {/* Create Template Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
-          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
+          <div className="w-full max-w-5xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
-              <h3 className="text-lg font-bold text-white">Create Visual Rendering Template</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-bold text-white">Create Visual Rendering Template</h3>
+                {hasUnsavedChanges && (
+                  <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[10px] font-bold text-amber-400">
+                    Unsaved Changes
+                  </span>
+                )}
+              </div>
               <button onClick={() => setIsCreateOpen(false)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
               </button>
@@ -766,64 +825,116 @@ export const TemplatesView: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                    Template Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Minimalist Quote Poster"
-                    {...regCreate('name')}
-                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+            <form onSubmit={subCreate((v) => createMutation.mutate(v))} className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Column: Form & 9 Tabs */}
+                <div className="lg:col-span-8 space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Template Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Minimalist Quote Poster"
+                        {...regCreate('name')}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+                      />
+                      {errCreate.name && <p className="mt-1 text-xs text-red-400">{errCreate.name.message}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                        Template Category
+                      </label>
+                      <select
+                        value={editorCategory}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+                      >
+                        {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+                          <option key={cat} value={cat}>{meta.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
+                      Template Notes (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Vertical layout for viral social shorts"
+                      {...regCreate('notes')}
+                      className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
+                    />
+                  </div>
+
+                  {/* 9-Tab Template Definition Editor */}
+                  <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                      Template Definition Settings (9 Tabs)
+                    </span>
+                    {renderDefinitionTabs()}
+                  </div>
+                </div>
+
+                {/* Right Column: Live Preview & Stress Testing */}
+                <div className="lg:col-span-4 flex flex-col items-center bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-4">
+                  <div className="w-full flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <Eye size={13} className="text-purple-400" /> Live Canvas
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      icon={ShieldCheck}
+                      onClick={() => setIsStressTestOpen(true)}
+                    >
+                      Test Layout
+                    </Button>
+                  </div>
+
+                  <TemplateLivePreview
+                    definition={editorDefinition}
+                    selectedScenarioId={selectedScenarioId}
+                    onSelectScenario={setSelectedScenarioId}
+                    widthPx={250}
                   />
-                  {errCreate.name && <p className="mt-1 text-xs text-red-400">{errCreate.name.message}</p>}
-                </div>
 
+                  {hasUnsavedChanges && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      icon={Undo2}
+                      onClick={handleDiscardChanges}
+                      className="w-full"
+                    >
+                      Discard Changes
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-[#1a1a24] pt-4">
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                    Template Category
-                  </label>
-                  <select
-                    value={editorCategory}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
-                  >
-                    {Object.entries(CATEGORY_META).map(([cat, meta]) => (
-                      <option key={cat} value={cat}>{meta.label}</option>
-                    ))}
-                  </select>
+                  {hasUnsavedChanges && (
+                    <span className="text-xs text-amber-400/90 font-medium">
+                      You have unsaved definition changes.
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[#6e6e80] mb-1">
-                  Template Notes (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Vertical layout for viral social shorts"
-                  {...regCreate('notes')}
-                  className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none focus:border-purple-500 text-xs"
-                />
-              </div>
-
-              {/* 9-Tab Template Definition Editor */}
-              <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
-                <span className="text-xs font-bold text-white uppercase tracking-wider block">
-                  Template Definition Settings (9 Tabs)
-                </span>
-                {renderDefinitionTabs()}
-              </div>
-
-              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
-                <Button variant="secondary" type="button" onClick={() => setIsCreateOpen(false)} disabled={createMutation.isPending}>
-                  Cancel
-                </Button>
-                <Button type="submit" isLoading={createMutation.isPending} loadingText="Saving...">
-                  Create Template
-                </Button>
+                <div className="flex gap-3">
+                  <Button variant="secondary" type="button" onClick={() => setIsCreateOpen(false)} disabled={createMutation.isPending}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" isLoading={createMutation.isPending} loadingText="Saving...">
+                    Create Template
+                  </Button>
+                </div>
               </div>
             </form>
           </div>
@@ -846,9 +957,21 @@ export const TemplatesView: React.FC = () => {
 
             <div className="flex justify-between items-center bg-[#14141e] p-4 rounded-xl border border-[#1a1a24]">
               <span className="text-xs text-[#9c9cb0]">Manage layout definitions, preview rendered output, or activate older versions.</span>
-              <Button size="sm" icon={Plus} onClick={() => { setErrorText(null); setIsVersionOpen(true); }}>
-                New Version
-              </Button>
+              <div className="flex items-center gap-2">
+                {(historyTemplate.versions?.length || 0) >= 2 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={GitCompare}
+                    onClick={() => setIsComparisonOpen(true)}
+                  >
+                    Compare Versions
+                  </Button>
+                )}
+                <Button size="sm" icon={Plus} onClick={() => handleOpenAddVersion(historyTemplate)}>
+                  New Version
+                </Button>
+              </div>
             </div>
 
             {/* Versions List */}
@@ -928,10 +1051,18 @@ export const TemplatesView: React.FC = () => {
 
       {/* Add Version Modal */}
       {isVersionOpen && historyTemplate && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-sm p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
-          <div className="w-full max-w-2xl rounded-xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-4 sm:p-6 flex justify-center items-start sm:items-center py-8">
+          <div className="w-full max-w-5xl rounded-2xl border border-[#1a1a24] bg-[#0e0e12] p-6 space-y-5 shadow-2xl my-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-[#1a1a24] pb-3">
-              <h3 className="text-lg font-bold text-white">Publish New Template Version</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-bold text-white">Publish New Template Version</h3>
+                {hasUnsavedChanges && (
+                  <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[10px] font-bold text-amber-400">
+                    Unsaved Changes
+                  </span>
+                )}
+              </div>
               <button onClick={() => setIsVersionOpen(false)} className="text-[#6e6e80] hover:text-white cursor-pointer">
                 <X size={20} />
               </button>
@@ -943,51 +1074,106 @@ export const TemplatesView: React.FC = () => {
               </div>
             )}
 
-            <div className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Category</label>
-                  <select
-                    value={editorCategory}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
-                  >
-                    {Object.entries(CATEGORY_META).map(([cat, meta]) => (
-                      <option key={cat} value={cat}>{meta.label}</option>
-                    ))}
-                  </select>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Column: Form & 9 Tabs */}
+                <div className="lg:col-span-8 space-y-4 text-xs">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Category</label>
+                      <select
+                        value={editorCategory}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+                      >
+                        {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+                          <option key={cat} value={cat}>{meta.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Version Notes</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Updated subtitle scaling and palette"
+                        value={versionNotes}
+                        onChange={(e) => setVersionNotes(e.target.value)}
+                        className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 9 Tabs Editor */}
+                  <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider block">
+                      Template Definition Settings (9 Tabs)
+                    </span>
+                    {renderDefinitionTabs()}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[#6e6e80] font-semibold uppercase mb-1">Version Notes</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Updated subtitle scaling and palette"
-                    value={versionNotes}
-                    onChange={(e) => setVersionNotes(e.target.value)}
-                    className="w-full rounded-lg border border-[#1a1a24] bg-[#161620] px-3 py-2 text-white outline-none"
+
+                {/* Right Column: Live Preview & Stress Testing */}
+                <div className="lg:col-span-4 flex flex-col items-center bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-4">
+                  <div className="w-full flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                      <Eye size={13} className="text-purple-400" /> Live Canvas
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      icon={ShieldCheck}
+                      onClick={() => setIsStressTestOpen(true)}
+                    >
+                      Test Layout
+                    </Button>
+                  </div>
+
+                  <TemplateLivePreview
+                    definition={editorDefinition}
+                    canonicalSampleContent={
+                      historyTemplate.versions?.find((v) => v.status === 'Active')?.sampleContent
+                    }
+                    selectedScenarioId={selectedScenarioId}
+                    onSelectScenario={setSelectedScenarioId}
+                    widthPx={250}
                   />
+
+                  {hasUnsavedChanges && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      icon={Undo2}
+                      onClick={handleDiscardChanges}
+                      className="w-full"
+                    >
+                      Discard Changes
+                    </Button>
+                  )}
                 </div>
               </div>
 
-              {/* 9 Tabs Editor */}
-              <div className="bg-[#0b0b10] p-4 rounded-xl border border-[#1a1a24] space-y-3">
-                <span className="text-xs font-bold text-white uppercase tracking-wider block">
-                  Template Definition Settings
-                </span>
-                {renderDefinitionTabs()}
-              </div>
-
-              <div className="flex justify-end gap-3 border-t border-[#1a1a24] pt-4">
-                <Button variant="secondary" type="button" onClick={() => setIsVersionOpen(false)} disabled={addVersionMutation.isPending}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => addVersionMutation.mutate()}
-                  isLoading={addVersionMutation.isPending}
-                  loadingText="Publishing..."
-                >
-                  Publish Version
-                </Button>
+              <div className="flex items-center justify-between border-t border-[#1a1a24] pt-4">
+                <div>
+                  {hasUnsavedChanges && (
+                    <span className="text-xs text-amber-400/90 font-medium">
+                      You have unsaved definition changes.
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="secondary" type="button" onClick={() => setIsVersionOpen(false)} disabled={addVersionMutation.isPending}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => addVersionMutation.mutate()}
+                    isLoading={addVersionMutation.isPending}
+                    loadingText="Publishing..."
+                  >
+                    Publish Version
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1017,6 +1203,23 @@ export const TemplatesView: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Stress Test Modal */}
+      <StressTestModal
+        isOpen={isStressTestOpen}
+        onClose={() => setIsStressTestOpen(false)}
+        definition={editorDefinition}
+        onSelectScenarioForPreview={(scenarioId) => setSelectedScenarioId(scenarioId)}
+      />
+
+      {/* Version Comparison Modal */}
+      {historyTemplate && (
+        <VersionComparisonModal
+          isOpen={isComparisonOpen}
+          onClose={() => setIsComparisonOpen(false)}
+          template={historyTemplate}
+        />
       )}
     </div>
   );

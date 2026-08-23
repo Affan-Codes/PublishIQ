@@ -2,7 +2,6 @@ import { HealthStatus, PipelineStage, PublishRecordStatus } from '@prisma/client
 import { prisma } from '../database/db.js';
 import { env } from '../config/env.js';
 import { jobRepository } from '../repositories/job.repository.js';
-import { logRepository } from '../repositories/log.repository.js';
 import { platformConnectionRepository } from '../repositories/platformConnection.repository.js';
 import { cloudinaryStorageProvider } from '../providers/storage/cloudinary.provider.js';
 import { runContentPipeline } from './content-pipeline.service.js';
@@ -109,16 +108,10 @@ export async function runMediaCleanup(): Promise<{ cleanedJobsCount: number; del
 export async function runCleanup(): Promise<void> {
   logger.info('Running background data cleanup tasks');
   
-  // Clear any logs older than 30 days
-  const thresholdDate = new Date();
-  thresholdDate.setDate(thresholdDate.getDate() - 30);
-
-  const { count } = await logRepository.deleteLogsOlderThan(thresholdDate);
-
   // Run media retention cleanup
   const mediaResult = await runMediaCleanup();
 
-  logger.info({ logsDeleted: count, ...mediaResult }, 'Cleanup completed successfully');
+  logger.info({ ...mediaResult }, 'Cleanup completed successfully');
 }
 
 export async function runRetryPublish(jobId: string): Promise<void> {

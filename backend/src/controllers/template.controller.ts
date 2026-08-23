@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import templateService from '../services/template.service.js';
+import { renderFromDefinition } from '../templates/definition-engine.js';
+import { renderingService } from '../services/rendering.service.js';
+import { STRESS_TEST_SCENARIOS } from '../constants/stress-scenarios.js';
 
 export const templateController = {
   async getById(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -150,6 +153,76 @@ export const templateController = {
         success: true,
         data: version,
         meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Fast, side-effect-free live preview returning pure HTML string from TemplateDefinition + StructuredContent.
+   * Never invokes Playwright, Cloudinary, or any database write.
+   */
+  async preview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { definition, content, language, branding, watermark, brandingOpacity, watermarkOpacity } = req.body;
+
+      const html = renderFromDefinition({
+        definition,
+        content,
+        language: language || 'English',
+        branding,
+        watermark,
+        brandingOpacity,
+        watermarkOpacity,
+      });
+
+      res.json({
+        success: true,
+        data: { html },
+        meta: {},
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * Evaluates fixed stress-test scenarios (short, long, max blocks, heavy emphasis, code, 4 languages)
+   * against the unsaved TemplateDefinition for compatibility and layout overflow.
+   */
+  async stressTest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { definition } = req.body;
+
+      const scenariosResults = await Promise.all(
+        STRESS_TEST_SCENARIOS.map(async (scenario) => {
+          const evalResult = await renderingService.evaluateLayoutFit(
+            definition,
+            scenario.content,
+            scenario.language
+          );
+
+          return {
+            id: scenario.id,
+            name: scenario.name,
+            description: scenario.description,
+            language: scenario.language,
+            status: evalResult.status,
+            message: evalResult.message,
+            content: scenario.content,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: {
+          scenarios: scenariosResults,
+        },
+        meta: {
+          totalScenarios: scenariosResults.length,
+        },
       });
     } catch (error) {
       next(error);

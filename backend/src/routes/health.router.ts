@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import dashboardService from '../services/dashboard.service.js';
 import { getValkeyInstance } from '../database/valkey.js';
+import { contentPipelineQueue } from '../jobs/index.js';
 import { requireAuth } from '../middlewares/auth.js';
 import os from 'os';
 
@@ -39,6 +40,18 @@ router.get('/health/diagnostics', requireAuth, async (req: Request, res: Respons
     const valkeyLatencyMs = Date.now() - valkeyStart;
     const valkeyStatus = pingResult === 'PONG' ? 'healthy' : 'unhealthy';
 
+    // 3. Check BullMQ pipeline worker liveness
+    let workerStatus = 'unhealthy';
+    let workerCount = 0;
+    try {
+      const workers = await contentPipelineQueue.getWorkers();
+      workerCount = Array.isArray(workers) ? workers.length : 0;
+      workerStatus = workerCount > 0 ? 'healthy' : 'unhealthy';
+    } catch {
+      workerStatus = 'unhealthy';
+      workerCount = 0;
+    }
+
     // 3. Collect OS/Process metrics
     const memoryUsage = process.memoryUsage();
     const systemUptime = os.uptime();
@@ -57,6 +70,10 @@ router.get('/health/diagnostics', requireAuth, async (req: Request, res: Respons
         valkey: {
           status: valkeyStatus,
           latencyMs: valkeyLatencyMs,
+        },
+        worker: {
+          status: workerStatus,
+          count: workerCount,
         },
         system: {
           uptimeSeconds: systemUptime,

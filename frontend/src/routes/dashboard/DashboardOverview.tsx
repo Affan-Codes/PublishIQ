@@ -61,6 +61,10 @@ interface DashboardStats {
     database: string;
     valkey?: string;
     redis?: string;
+    worker?: {
+      status: string;
+      count: number;
+    } | string;
   };
 }
 
@@ -318,9 +322,24 @@ export const DashboardOverview: React.FC = () => {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-[#9c9cb0]">BullMQ Pipeline Worker</span>
-                <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" /> Active
-                </span>
+                {(() => {
+                  const workerHealth = stats.health.worker;
+                  const isHealthy = typeof workerHealth === 'object'
+                    ? workerHealth.status?.toLowerCase() === 'healthy'
+                    : (workerHealth === 'Healthy' || workerHealth === 'Active');
+                  const count = typeof workerHealth === 'object' ? workerHealth.count : undefined;
+
+                  return isHealthy ? (
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />{' '}
+                      Healthy{count !== undefined && count > 0 ? ` (${count} active)` : ''}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-rose-400">
+                      <span className="h-2 w-2 rounded-full bg-rose-400" /> Offline
+                    </span>
+                  );
+                })()}
               </div>
             </div>
           </div>

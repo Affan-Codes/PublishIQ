@@ -43,6 +43,20 @@ const versionParamSchema = z.object({
   versionNumber: z.coerce.number().int().positive('Version number must be a positive integer'),
 });
 
+const templatePreviewSchema = z.object({
+  definition: TemplateDefinitionSchema,
+  content: StructuredContentSchema,
+  language: z.enum(['English', 'Hindi', 'Urdu', 'HindiRoman', 'UrduRoman']).default('English'),
+  branding: z.string().optional(),
+  watermark: z.string().optional(),
+  brandingOpacity: z.number().min(0).max(1).optional(),
+  watermarkOpacity: z.number().min(0).max(1).optional(),
+});
+
+const templateStressTestSchema = z.object({
+  definition: TemplateDefinitionSchema,
+});
+
 router.use(requireAuth);
 
 router.get('/templates', templateController.list);
@@ -93,6 +107,18 @@ router.post(
   '/templates/:id/versions/:versionNumber/rollback',
   validateRequest({ params: versionParamSchema }),
   templateController.rollbackVersion
+);
+
+router.post(
+  '/templates/preview',
+  validateRequest({ body: templatePreviewSchema }),
+  templateController.preview
+);
+
+router.post(
+  '/templates/stress-test',
+  validateRequest({ body: templateStressTestSchema }),
+  templateController.stressTest
 );
 
 export default router;
