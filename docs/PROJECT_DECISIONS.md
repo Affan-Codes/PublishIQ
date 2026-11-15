@@ -1,8 +1,8 @@
 # PROJECT_DECISIONS.md
 
 **Status:** FROZEN — FINAL
-**Version:** 2.5
-**Last revised:** 2026-08-22
+**Version:** 2.6
+**Last revised:** 2026-10-15
 
 This document is the constitution of the project. Every future document, diagram, schema, and line of code must conform to the decisions recorded here. No future document may contradict this file. Any change to a decision listed here requires explicit, written approval from the project owner before it takes effect — no exceptions, no silent drift.
 
@@ -18,6 +18,7 @@ This document is the constitution of the project. Every future document, diagram
 - **v2.3 (audit remediation)** — Resolved pipeline state count discrepancies: updated Section 19's state machine to 14 states (incorporating the `Running` state and clean names matching code) and removed dead stages (`GeneratingImage`, `GeneratingVideo`, `SelectingMusic`, `Published`) from the database schema. Documented single hardcoded React layout as the primary v1 rendering path (Section 7.1/13.1), utilizing `TemplateVersion` tracking for future extensibility. Formally approved multi-user roles (`Owner`, `Administrator`, `User`) and authorization middleware scope adjustments (Section 1). Registered Facebook Page publishing as a fully integrated platform connection channel (Section 24). Registered Node.js native test runner (`node:test`) and `tsx` execution as the validated tech stack choice (Section 31).
 - **v2.4 (Prompt, Asset & AI Music Selection Remediation)** — Formally approved dual-phase music selection architecture (Section 9.1): sanitized eligible catalog injection during content generation, optional AI asset selection via `selectedMusicAssetId`, authoritative backend candidate validation, and persistent round-robin ring rotation (`MusicSelectionState`) as the deterministic fallback. Formally recorded Content Profile behavioral configuration snapshotting into `Job.configSnapshot` at creation time (Section 11). Formally added `musicCatalog` to the reserved system prompt variables (Section 12).
 - **v2.5 (Animation Engine Architecture, OAuth Protocol & Connection Safety Remediation)** — Formally approved 60 FPS authoritative rendering standard (`RENDER_FPS = 60`) threaded through all video generation, filter calculations, and test suites (Section 7.2). Formally recorded 7 animation presets (`None`, `SlowZoomIn`, `SlowZoomOut`, `PanLeft`, `PanRight`, `PanUp`, `PanDown`) with duration-independent closed-form cubic Hermite smoothstep easing $S(t) = t^2(3-2t)$ across zoom and pan motions (Section 7.2). Formally mandated explicit input-side demuxer framerate (`-framerate 60`) on looped image streams for pan and none presets while keeping zoom single-input unlooped (Section 7.2). Formally mandated RFC 6749 compliant URL-encoded request body transmission (`application/x-www-form-urlencoded`) for OAuth 2.0 token exchanges and refreshes across all publishing adapters (Section 15.1). Formally mandated transactional referential integrity enforcement on Platform Connection deletion: join entries are cleaned safely, and typed `ConflictError` (HTTP 409) is thrown if immutable `PublishingRecord` audit rows exist (Section 15.2).
+- **v2.6 (Mobile Frontend Architecture & Client Surface Expansion)** — Formally approved native mobile application architecture (`mobile/`) utilizing Expo SDK 57 (React Native 0.86, React 19, New Architecture), Expo Router file-based navigation, TanStack Query v5 with offline-aware caching, cookie-based session authentication with native networking, and unified design token system matching the dark-theme design language. Formally integrated `docs/08-mobile-architecture.md` into the repository constitutional documentation hierarchy.
 
 ---
 

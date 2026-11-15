@@ -14,6 +14,7 @@
 flowchart TB
     subgraph Client
         Dashboard["React Dashboard (SPA)"]
+        MobileApp["Mobile App (Expo / React Native)"]
     end
 
     subgraph API_Container["api container"]
@@ -38,6 +39,7 @@ flowchart TB
     end
 
     Dashboard <-->|REST + SSE| API
+    MobileApp <-->|REST + SSE| API
     API --> PG
     API --> VALKEY
     WPipeline --> VALKEY
@@ -51,7 +53,7 @@ flowchart TB
     API -->|domain events| SSE
 ```
 
-Two Node.js processes share one codebase and one `dist/` build: **`api`** (Express, serves the Dashboard's REST calls and the Notification SSE stream) and **`worker`** (BullMQ workers; no HTTP surface at all). This is a monolith split into two processes only where it must be — a worker needs to run continuously and independently of HTTP traffic — not a microservices decomposition. Both processes talk to the same Postgres and Valkey (Redis protocol compatible) instances.
+Two Node.js processes share one backend codebase and one `dist/` build: **`api`** (Express, serves web and mobile REST calls and the Notification SSE stream) and **`worker`** (BullMQ workers; no HTTP surface at all). Client surfaces comprise the web **Dashboard** (React SPA) and the native **Mobile App** (Expo SDK 57 / React Native 0.86), both interacting with the API via the unified `/api/v1` REST contract and server-sent event streams. Both backend processes talk to the same Postgres and Valkey (Redis protocol compatible) instances.
 
 ---
 

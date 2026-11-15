@@ -1,22 +1,15 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext.js';
 import { connectSSE } from '../lib/sse-client.js';
 
-interface ToastItem {
-  id: string;
-  message: string;
-  type: 'info' | 'error' | 'success';
-}
+type ToastType = 'info' | 'error' | 'success';
 
 interface NotificationContextType {
   unreadCount: number;
-  toasts: ToastItem[];
-  clearToasts: () => void;
-  removeToast: (id: string) => void;
-  addToast: (message: string, type?: ToastItem['type']) => void;
+  addToast: (message: string, type?: ToastType) => void;
   resetUnreadCount: () => void;
   refetchUnreadCount: () => void;
 }
@@ -26,7 +19,6 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   // Standardized plain number React Query unread count fetcher
   const { data: unreadCount = 0, refetch: refetchUnreadCount } = useQuery<number>({
@@ -40,10 +32,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     staleTime: 30000,
   });
 
-  const addToast = (message: string, type: ToastItem['type'] = 'info') => {
-    const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
-
+  const addToast = (message: string, type: ToastType = 'info') => {
     if (type === 'success') {
       toast.success(message);
     } else if (type === 'error') {
@@ -52,12 +41,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       toast.info(message);
     }
   };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const clearToasts = () => setToasts([]);
 
   const resetUnreadCount = () => {
     queryClient.setQueryData<number>(['notifications', 'unread-count'], 0);
@@ -81,9 +64,6 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     <NotificationContext.Provider
       value={{
         unreadCount,
-        toasts,
-        clearToasts,
-        removeToast,
         addToast,
         resetUnreadCount,
         refetchUnreadCount,

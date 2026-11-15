@@ -18,6 +18,7 @@ Do NOT redesign the architecture.
 docs/
 backend/
 frontend/
+mobile/
 ```
 
 ## docs/
@@ -39,6 +40,7 @@ Priority order:
 7. 05-database-design.md
 8. 06-backend-architecture.md
 9. 07-frontend-architecture.md
+10. 08-mobile-architecture.md
 
 Higher-priority documents override lower-priority documents.
 
@@ -58,9 +60,15 @@ Backend application.
 frontend/
 ```
 
-Frontend application.
+Frontend web application.
 
-Never mix frontend and backend code.
+```
+mobile/
+```
+
+Mobile application (Expo SDK 57 + React Native 0.86 New Architecture).
+
+Never mix frontend, mobile, and backend code.
 
 ---
 
@@ -231,6 +239,26 @@ Use:
 React state
 
 for local UI state.
+
+---
+
+# Mobile
+
+Use:
+
+- Expo SDK 57 (New Architecture)
+- React Native 0.86
+- React 19
+- TypeScript
+- Expo Router (file-based navigation)
+- TanStack Query v5 (offline-aware caching)
+- React Hook Form + Zod
+- Axios (cookie-based session auth with native networking)
+- react-native-sse (foreground SSE notifications)
+- Design tokens (`mobile/src/design/tokens.ts` adhering to the dark theme)
+- Lucide React Native
+
+Do not introduce alternative mobile state or navigation frameworks.
 
 ---
 

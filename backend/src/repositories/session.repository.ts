@@ -40,7 +40,6 @@ export const sessionRepository = {
   },
 
   async touch(id: string, expiresAt: Date): Promise<Session> {
-    const hashed = hashToken(id);
     const existing = await this.getById(id);
     if (!existing) {
       throw new Error(`Session not found: ${id}`);
